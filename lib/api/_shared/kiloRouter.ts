@@ -340,6 +340,12 @@ export class KiloRouter {
   /**
    * Marks a key as currently unusable WITHOUT latching it off forever: a bounded
    * cooldown is recorded so {@link reprobeUnusableKeys} can try it again.
+   *
+   * Also clears the rateLimited flag: this method is called for inconclusive
+   * errors (400, 402, 404, 5xx, timeouts), none of which are rate-limit
+   * responses. If we leave rateLimited=true from an earlier 429, the key is
+   * permanently excluded from both reprobeUnusableKeys and kiloInfer's usable
+   * set, creating a self-inflicted deadlock.
    */
   private markKeyUnavailable(
     keyState: KiloKeyState,
@@ -353,12 +359,22 @@ export class KiloRouter {
     keyState.lastCheckedAt = new Date().toISOString();
     keyState.reprobeAfter = new Date(Date.now() + cooldownMs).toISOString();
     keyState.reprobeDelayMs = Math.min(keyState.reprobeDelayMs * 2, KEY_REPROBE_MAX_MS);
+    keyState.rateLimited = false;
+    keyState.rateLimitScope = null;
+    keyState.rateLimitResetAt = null;
+    keyState.rateLimitRemaining = null;
   }
 
   private canReprobe(keyState: KiloKeyState): boolean {
     if (keyState.reprobeAfter === null) return true;
     const at = Date.parse(keyState.reprobeAfter);
     return !Number.isFinite(at) || at <= Date.now();
+  }
+
+  private isRateLimitResetElapsed(keyState: KiloKeyState): boolean {
+    if (!keyState.rateLimited) return true;
+    if (keyState.rateLimitResetAt === null) return false;
+    return Date.parse(keyState.rateLimitResetAt) <= Date.now();
   }
 
   async refreshKiloModels(force: boolean = false, abortSignal?: AbortSignal): Promise<void> {
@@ -685,9 +701,18 @@ export class KiloRouter {
    * elapsed. The previous recovery path only re-fetched the model catalog, so a
    * key that failed a single transient probe stayed dead for the whole
    * instance lifetime.
+   *
+   * Rate-limited keys are also re-probed once their rate-limit cooldown has
+   * elapsed (rateLimitResetAt), since the rateLimited flag is otherwise
+   * permanent and creates a deadlock with the only recovery path.
    */
   private async reprobeUnusableKeys(abortSignal?: AbortSignal): Promise<number> {
-    const pending = this.keyStates.filter((k) => !k.available && !k.rateLimited && this.canReprobe(k));
+    const pending = this.keyStates.filter((k) => {
+      if (k.available) return false;
+      if (!this.canReprobe(k)) return false;
+      if (k.rateLimited && !this.isRateLimitResetElapsed(k)) return false;
+      return true;
+    });
     if (pending.length === 0) return 0;
 
     let models = this.usableProbeModels();
@@ -772,7 +797,10 @@ export class KiloRouter {
     // KEYS, so one transient failure latched every key off for the lifetime of
     // the instance. Models are refreshed, keys whose cooldown has elapsed are
     // re-probed, and an empty catalog falls back to the default model.
-    const hasAnyUsableKeys = this.keyStates.some((k) => k.available && !k.rateLimited);
+    const isKeyUsable = (k: KiloKeyState): boolean =>
+      k.available && (!k.rateLimited || this.isRateLimitResetElapsed(k));
+
+    const hasAnyUsableKeys = this.keyStates.some(isKeyUsable);
     const hasAnyUsableModels = this.modelCandidates.some(isModelUsable);
 
     if (!hasAnyUsableModels) {
@@ -785,7 +813,7 @@ export class KiloRouter {
       this.modelCandidates = this.buildCandidatePool([{ id: DEFAULT_KILO_MODEL_ID }]);
     }
 
-    const keys = this.shuffle(this.keyStates.filter((k) => k.available && !k.rateLimited));
+    const keys = this.shuffle(this.keyStates.filter(isKeyUsable));
 
     // First try zero-cost models only
     let models = this.shuffle(

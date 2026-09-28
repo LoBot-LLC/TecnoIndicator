@@ -511,6 +511,14 @@ export type LivePricesResponse = {
   isLive: boolean;
 };
 
+/** The live water quote surfaced by the water card, derived from /api/prices. */
+export interface LiveWaterQuote {
+  price: number;
+  asOf: string;
+  source: string;
+  range: string;
+}
+
 /* ------------------------------------------------------------------ */
 /* Regional fallback factors (8 per region, 40 total)                 */
 /* ------------------------------------------------------------------ */
@@ -1386,85 +1394,6 @@ export function evaluateRegions(
       outlook,
     };
   }).sort((a, b) => b.score - a.score);
-}
-
-/* ------------------------------------------------------------------ */
-/* "Real-time" simulation                                             */
-/* ------------------------------------------------------------------ */
-
-export function perturbPrices(
-  current: Record<CommodityId, number>,
-): Record<CommodityId, number> {
-  const j = (pct: number) => (Math.random() - 0.5) * 2 * pct;
-  return {
-    oil: round(clamp(current.oil * (1 + j(0.03)), 96, 118), 2),
-    electricity: round(clamp(current.electricity * (1 + j(0.025)), 158, 178), 1),
-    water: round(clamp(current.water * (1 + j(0.04)), 2.15, 3.1), 2),
-  };
-}
-
-/** Live-feed cadence, in milliseconds. */
-export const TICK_MS = 2500;
-
-/** How often the live water quote is automatically re-polled. */
-export const WATER_POLL_MS = 30000;
-
-/** Trading bands + per-tick step size for the streaming market simulation. */
-const TICK_CONFIG: Record<
-  CommodityId,
-  { step: number; lo: number; hi: number; anchor: number; decimals: number }
-> = {
-  oil: { step: 0.0035, lo: 96, hi: 118, anchor: 104.86, decimals: 2 },
-  electricity: { step: 0.0028, lo: 158, hi: 178, anchor: 166, decimals: 1 },
-  water: { step: 0.0042, lo: 2.15, hi: 3.1, anchor: 2.5, decimals: 2 },
-};
-
-/**
- * Advances the market by one tick using a mean-reverting random walk
- * (Ornstein–Uhlenbeck style).
- */
-export function tickPrices(
-  current: Record<CommodityId, number>,
-): Record<CommodityId, number> {
-  const next = {} as Record<CommodityId, number>;
-  for (const c of COMMODITIES) {
-    const cfg = TICK_CONFIG[c.id];
-    const price = current[c.id];
-    const shock = (Math.random() - 0.5) * 2 * cfg.step;
-    const reversion = ((cfg.anchor - price) / cfg.anchor) * 0.08;
-    next[c.id] = round(
-      clamp(price * (1 + shock + reversion), cfg.lo, cfg.hi),
-      cfg.decimals,
-    );
-  }
-  return next;
-}
-
-export interface LiveWaterQuote {
-  price: number;
-  asOf: string;
-  source: string;
-  range: string;
-}
-
-/**
- * Simulated live water-price feed within the realistic ~$2.00–$3.40/m³ band.
- */
-export function fetchLiveWaterPrice(): Promise<LiveWaterQuote> {
-  const price = round(2.22 + Math.random() * 1.08, 2);
-  const asOf = new Date().toLocaleTimeString("en-GB", { hour12: false });
-  return new Promise((resolve) =>
-    setTimeout(
-      () =>
-        resolve({
-          price,
-          asOf,
-          source: "Global Water Index · simulated live feed",
-          range: "$2.00 – $3.40 /m³ global band",
-        }),
-      1100,
-    ),
-  );
 }
 
 /* ------------------------------------------------------------------ */

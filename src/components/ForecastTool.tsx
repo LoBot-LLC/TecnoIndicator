@@ -50,18 +50,22 @@ import {
 } from "../lib/model";
 import { EVENTS } from "../lib/events";
 
-Chart.register(
-  BarController,
-  BarElement,
-  CategoryScale,
-  Filler,
-  Legend,
-  LineController,
-  LineElement,
-  LinearScale,
-  PointElement,
-  Tooltip,
-);
+// Chart.js is only ever instantiated inside useEffect against a real canvas,
+// so registering here is safe even while the tree is server-rendered.
+if (typeof window !== "undefined") {
+  Chart.register(
+    BarController,
+    BarElement,
+    CategoryScale,
+    Filler,
+    Legend,
+    LineController,
+    LineElement,
+    LinearScale,
+    PointElement,
+    Tooltip,
+  );
+}
 
 type ChartKind = "line" | "bar";
 
@@ -563,7 +567,8 @@ export default function ForecastTool({
                 {streaming ? "Live" : "Paused"}
               </span>
               <span className="text-xs text-slate-500">
-                {fmtTime(now)} · upd {fmtTime(lastUpdated)}
+                <span suppressHydrationWarning>{fmtTime(now)}</span> · upd{" "}
+                <span suppressHydrationWarning>{fmtTime(lastUpdated)}</span>
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1011,7 +1016,8 @@ export default function ForecastTool({
           {announce}
         </p>
         <p className="mt-4 text-center text-[11px] text-slate-600">
-          Last updated {fmtTime(lastUpdated)}. Model uses publicly available drivers.
+          Last updated <span suppressHydrationWarning>{fmtTime(lastUpdated)}</span>. Model uses
+          publicly available drivers.
         </p>
       </div>
     </section>

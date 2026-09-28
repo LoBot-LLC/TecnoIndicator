@@ -117,7 +117,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
             <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-slate-500">
               <span className="inline-flex items-center gap-2">
                 <CalendarDays className="h-4 w-4 text-slate-500" />
-                {fmtFullDate(today)}
+                <span suppressHydrationWarning>{fmtFullDate(today)}</span>
               </span>
               <span className="hidden h-1 w-1 rounded-full bg-slate-600 sm:inline-block" />
               <span className="inline-flex items-center gap-2">
@@ -228,9 +228,9 @@ export default function Hero({ prices, deltas }: HeroProps) {
                 />
               </svg>
               <div className="mt-1 flex items-center justify-between text-[10px] text-slate-600">
-                <span>{new Date().getFullYear()}</span>
+                <span suppressHydrationWarning>{new Date().getFullYear()}</span>
                 <span>10-year trajectory</span>
-                <span>{new Date().getFullYear() + 10}</span>
+                <span suppressHydrationWarning>{new Date().getFullYear() + 10}</span>
               </div>
             </div>
 

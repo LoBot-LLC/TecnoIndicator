@@ -6,14 +6,16 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "types": ["node"],
+    "allowJs": true,
+    "incremental": true,
+    "esModuleInterop": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
+    "jsx": "preserve",
 
     /* Path mapping */
     "baseUrl": ".",
@@ -25,7 +27,11 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* Next.js */
+    "plugins": [{ "name": "next" }]
   },
-  "include": ["src", "vite.config.ts", "api"]
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }

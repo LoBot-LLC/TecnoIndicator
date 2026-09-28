@@ -36,7 +36,10 @@ import {
   type Factor,
 } from "../lib/model";
 
-Chart.register(BarController, BarElement, CategoryScale, Legend, LinearScale, Tooltip);
+// Registered on the client only; the Chart instance is built in useEffect.
+if (typeof window !== "undefined") {
+  Chart.register(BarController, BarElement, CategoryScale, Legend, LinearScale, Tooltip);
+}
 
 const COMM_META: Record<
   CommodityId,
@@ -634,7 +637,7 @@ export default function RegionalEvaluation({
               </div>
 
 {/* AI-curated regional factors */}
-               <div id="factors" className="mt-5">
+               <div id="regional-factors" className="mt-5">
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     {healthStatus === "Online Model Connected"

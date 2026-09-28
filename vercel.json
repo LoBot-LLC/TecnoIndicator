@@ -1,1 +1,21 @@
-{"buildCommand": "npm run build", "devCommand": "npm run dev", "installCommand": "npm install", "framework": "vite", "outputDirectory": "dist", "routes": [{"src": "/api/(.*)", "dest": "/api/$1"}, {"handle": "filesystem"}, {"src": "/(.*)", "dest": "/index.html"}], "functions": {"api/*.ts": {"maxDuration": 30}}, "crons": [{"path": "/api/cron/curate-factors", "schedule": "0 2 * * *"}]}
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "functions": {
+    "app/api/prices/route.ts": { "maxDuration": 60 },
+    "app/api/analytics/route.ts": { "maxDuration": 60 },
+    "app/api/regional-analytics/route.ts": { "maxDuration": 60 },
+    "app/api/dynamic-factors/route.ts": { "maxDuration": 60 },
+    "app/api/regional-factors/route.ts": { "maxDuration": 60 },
+    "app/api/solutions/route.ts": { "maxDuration": 60 },
+    "app/api/health/route.ts": { "maxDuration": 60 },
+    "app/api/ai-forecast/route.ts": { "maxDuration": 60 },
+    "app/api/regional-forecast/route.ts": { "maxDuration": 60 },
+    "app/api/cron/curate-factors/route.ts": { "maxDuration": 300 }
+  },
+  "crons": [
+    { "path": "/api/cron/curate-factors", "schedule": "0 2 * * *" }
+  ]
+}

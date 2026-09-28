@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { ArrowUpRight, Shield, Truck, Zap } from "lucide-react";
 import Reveal from "./Reveal";
-import type { Solution } from "../lib/model";
+import type { Factor, Solution } from "../lib/model";
+
+const MAX_SOLUTIONS = 3;
 
 const STRATEGY_ICONS: Record<string, typeof Shield> = {
   resilience: Shield,
@@ -77,21 +79,21 @@ function SolutionCard({
 }
 
 interface SolutionsSectionProps {
-  globalFactors: import("../lib/model").Factor[];
-  dynamicFactors: Record<string, import("../lib/model").Factor[]>;
+  /** Reasons for the active scope — used to derive strategies when the API has none. */
+  fallbackFactors: Factor[];
   healthStatus: "Initializing AI" | "Online Model Connected" | "Offline Model";
-  globalSolutions: Solution[];
+  /** Solutions returned by /api/solutions for the active scope. */
+  solutions: Solution[];
 }
 
 export default function SolutionsSection({
-  dynamicFactors,
+  fallbackFactors,
   healthStatus,
-  globalSolutions,
+  solutions,
 }: SolutionsSectionProps) {
   const allSolutions = useMemo(() => {
-    if (globalSolutions.length > 0) return globalSolutions;
-    const factors = Object.values(dynamicFactors).flat();
-    return factors.slice(0, MAX_SOLUTIONS).map((f) => ({
+    if (solutions.length > 0) return solutions;
+    return fallbackFactors.slice(0, MAX_SOLUTIONS).map((f) => ({
       id: `solution-${f.id}`,
       title: f.name,
       summary: f.explanation,
@@ -103,7 +105,7 @@ export default function SolutionsSection({
       updatedAt: f.updatedAt,
       scope: f.scope,
     }));
-  }, [globalSolutions, dynamicFactors]);
+  }, [solutions, fallbackFactors]);
 
   return (
     <section id="solutions" className="relative scroll-mt-20 border-t border-line py-16 sm:py-20">
@@ -148,5 +150,3 @@ export default function SolutionsSection({
     </section>
   );
 }
-
-const MAX_SOLUTIONS = 3;

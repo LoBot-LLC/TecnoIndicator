@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   COMMODITIES,
   type CommodityId,
+  type LivePricesResponse,
   type LiveWaterQuote,
 } from "../lib/model";
 
@@ -41,7 +42,7 @@ export function useLiveMarket(): UseLiveMarketReturn {
       const url = force ? "/api/prices?force=true" : "/api/prices";
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = (await res.json()) as LivePricesResponse;
       const newPrices = {
         oil: data.oil.price,
         electricity: data.electricity.price,
@@ -74,7 +75,7 @@ export function useLiveMarket(): UseLiveMarketReturn {
     try {
       const res = await fetch("/api/prices?force=true");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = (await res.json()) as LivePricesResponse;
       const newPrices = {
         oil: data.oil.price,
         electricity: data.electricity.price,

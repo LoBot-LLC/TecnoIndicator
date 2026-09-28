@@ -150,17 +150,25 @@ interface FactorsSectionProps {
   horizon: number;
   dynamicFactors?: Factor[];
   healthStatus?: "Initializing AI" | "Online Model Connected" | "Offline Model";
+  factorsPayload?: {
+    aiCurated?: boolean;
+    aiCurationFailed?: boolean;
+    error?: string;
+  };
 }
 
 export default function FactorsSection({
   horizon,
   dynamicFactors,
   healthStatus,
+  factorsPayload,
 }: FactorsSectionProps) {
   const hasDynamicFactors = dynamicFactors && dynamicFactors.length === 8;
   const activeFactors = hasDynamicFactors ? dynamicFactors : FACTORS;
   const isOnline = healthStatus === "Online Model Connected";
   const aiCurated = hasDynamicFactors && isOnline;
+  const aiCurationFailed = factorsPayload?.aiCurationFailed || false;
+  const aiCuratedWithFailure = aiCurated && aiCurationFailed;
 
   const sorted = useMemo(
     () =>
@@ -179,14 +187,30 @@ export default function FactorsSection({
               Key factors & drivers
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
-              {isOnline ? "AI-Curated Factors" : "Key factors & drivers"}
+              {aiCuratedWithFailure
+                ? "AI-Curated Factors (Unavailable - Keys Limited)"
+                : aiCurated
+                ? "AI-Curated Factors"
+                : "Key factors & drivers"}
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-400">
-              {aiCurated
+              {aiCuratedWithFailure
+                ? "AI curation is temporarily unavailable due to limited API keys. Showing static fallback factors."
+                : aiCurated
                 ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."
                 : "Twelve researched drivers shape the forecast paths. Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
             </p>
-            {isOnline && (
+            {aiCuratedWithFailure && (
+              <div className="mt-3 flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-300 border border-amber-400/30">
+                  ⚠️ AI Curation Unavailable
+                </span>
+                {factorsPayload?.error && (
+                  <span className="text-xs text-amber-400/60">({factorsPayload.error})</span>
+                )}
+              </div>
+            )}
+            {isOnline && !aiCuratedWithFailure && (
               <p className="mt-2 text-xs text-teal-300/80">
                 Status: {healthStatus}
               </p>

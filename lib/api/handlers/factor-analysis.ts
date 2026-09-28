@@ -24,6 +24,8 @@ export interface FactorWindow {
   factors: Factor[];
   aiCurated: boolean;
   updatedAt: string;
+  aiCurationFailed?: boolean;
+  aiCurationError?: string;
 }
 
 export interface FactorAnalysisOptions {
@@ -39,13 +41,14 @@ export interface FactorsPayload {
   cacheKey: string;
   updatedAt: string;
   error?: string;
+  aiCurationFailed?: boolean;
 }
 
 export function toFactorsPayload(
   factors: Factor[],
   scope: RegionId,
   aiCurated: boolean,
-  extra: { updatedAt: string; error?: string } = { updatedAt: new Date().toISOString() },
+  extra: { updatedAt: string; error?: string; aiCurationFailed?: boolean } = { updatedAt: new Date().toISOString() },
 ): FactorsPayload {
   return {
     factors,
@@ -55,6 +58,7 @@ export function toFactorsPayload(
     cacheKey: factorKeyForScope(scope),
     updatedAt: extra.updatedAt,
     ...(extra.error ? { error: extra.error } : {}),
+    ...(extra.aiCurationFailed !== undefined ? { aiCurationFailed: extra.aiCurationFailed } : {}),
   };
 }
 
@@ -384,6 +388,29 @@ export async function runFactorAnalysis(
   // are only used when nothing has been curated yet.
   const existing = previous?.factors.length ? previous.factors : buildFallbackFactors(scope);
   const carriedAiCurated = previous?.aiCurated ?? false;
+  const carriedFailed = previous?.aiCurationFailed ?? false;
+
+  // Circuit breaker: check if we have enough usable keys for reliable AI curation.
+  // A healthy configuration should have at least 3 keys to tolerate failures.
+  // If the router is not initialized, we check configured keys count; otherwise
+  // we check the actual usable keys count.
+  const kiloStatus = await kiloRouter.getKiloStatus(signal, true);
+  const configuredKeys = kiloStatus.configuredKeys;
+  const usableKeys = kiloStatus.usableKeys;
+  
+  // Use configuredKeys as a proxy when uninitialized, or actual usableKeys when initialized
+  const availableKeys = kiloStatus.available ? usableKeys : configuredKeys;
+  const circuitBreakerTripped = availableKeys < 3;
+
+  if (circuitBreakerTripped) {
+    const now = new Date().toISOString();
+    return {
+      factors: existing,
+      aiCurated: carriedAiCurated,
+      aiCurationFailed: true,
+      updatedAt: now,
+    };
+  }
 
   const analytics =
     scope === "global" ? await getGlobalAnalytics() : await getRegionalAnalytics(scope as Region);
@@ -401,7 +428,7 @@ export async function runFactorAnalysis(
     .slice(0, 15);
 
   if (candidates.length === 0) {
-    return { factors: existing, aiCurated: carriedAiCurated, updatedAt: new Date().toISOString() };
+    return { factors: existing, aiCurated: carriedAiCurated, aiCurationFailed: true, updatedAt: new Date().toISOString() };
   }
 
   const excerpts = await Promise.all(
@@ -443,7 +470,7 @@ export async function runFactorAnalysis(
   const content = response.choices?.[0]?.message?.content ?? "";
   const parsed = safeParseJson<{ factors?: unknown[] }>(content);
   if (!parsed?.factors || !Array.isArray(parsed.factors)) {
-    return { factors: existing, aiCurated: carriedAiCurated, updatedAt: new Date().toISOString() };
+    return { factors: existing, aiCurated: carriedAiCurated, aiCurationFailed: true, updatedAt: new Date().toISOString() };
   }
 
   const normalized = parsed.factors
@@ -453,12 +480,13 @@ export async function runFactorAnalysis(
     .slice(0, FACTOR_COUNT);
 
   if (normalized.length === 0) {
-    return { factors: existing, aiCurated: carriedAiCurated, updatedAt: new Date().toISOString() };
+    return { factors: existing, aiCurated: carriedAiCurated, aiCurationFailed: true, updatedAt: new Date().toISOString() };
   }
 
   return {
     factors: mergeRollingWindow(existing, normalized),
     aiCurated: true,
+    aiCurationFailed: false,
     updatedAt: new Date().toISOString(),
   };
 }

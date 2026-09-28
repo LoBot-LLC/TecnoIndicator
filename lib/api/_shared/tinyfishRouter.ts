@@ -207,9 +207,9 @@ export class TinyFishRouter {
     let keyState = this.selectKey();
     let lastError: Error | null = null;
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       if (!keyState) {
-        await this.backoff(attempt);
+        if (attempt > 0) await this.backoff(attempt - 1);
         keyState = this.selectKey();
         if (!keyState) break;
       }
@@ -267,6 +267,7 @@ export class TinyFishRouter {
           keyState.available = false;
           keyState.lastCheckedAt = new Date().toISOString();
           keyState = this.rotateKey(keyState);
+          if (keyState) await this.backoff(attempt);
           continue;
         }
 
@@ -274,6 +275,7 @@ export class TinyFishRouter {
           this.parseRateLimitHeaders(keyState, response.headers);
           keyState = this.rotateKey(keyState);
           lastError = new Error("Rate limited");
+          if (keyState) await this.backoff(attempt);
           continue;
         }
 
@@ -288,6 +290,7 @@ export class TinyFishRouter {
       }
 
       keyState = this.selectKey();
+      if (keyState) await this.backoff(attempt);
     }
 
     const cachedFallback = await getCache<TinyFishSearchResponse>(
@@ -314,9 +317,9 @@ export class TinyFishRouter {
     let keyState = this.selectKey();
     let lastError: Error | null = null;
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       if (!keyState) {
-        await this.backoff(attempt);
+        if (attempt > 0) await this.backoff(attempt - 1);
         keyState = this.selectKey();
         if (!keyState) break;
       }
@@ -369,6 +372,7 @@ export class TinyFishRouter {
           keyState.available = false;
           keyState.lastCheckedAt = new Date().toISOString();
           keyState = this.rotateKey(keyState);
+          if (keyState) await this.backoff(attempt);
           continue;
         }
 
@@ -376,6 +380,7 @@ export class TinyFishRouter {
           this.parseRateLimitHeaders(keyState, response.headers);
           keyState = this.rotateKey(keyState);
           lastError = new Error("Rate limited");
+          if (keyState) await this.backoff(attempt);
           continue;
         }
 
@@ -390,6 +395,7 @@ export class TinyFishRouter {
       }
 
       keyState = this.selectKey();
+      if (keyState) await this.backoff(attempt);
     }
 
     console.error("TinyFish scrape failed:", lastError?.message);
@@ -447,8 +453,14 @@ export class TinyFishRouter {
   }
 
   private async backoff(attempt: number): Promise<void> {
-    const delays = [500, 1000, 2000];
-    const delay = delays[Math.min(attempt, delays.length - 1)] ?? 2000;
+    // Exponential backoff with jitter: base = 500ms, max = 5s, factor = 2x
+    const baseDelay = 500;
+    const maxDelay = 5000;
+    const exponential = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+    // Add jitter (±20% to avoid thundering herd)
+    const jitter = exponential * 0.2 * (Math.random() * 2 - 1);
+    const delay = Math.max(100, exponential + jitter);
+    
     await new Promise(resolve => setTimeout(resolve, delay));
   }
 }

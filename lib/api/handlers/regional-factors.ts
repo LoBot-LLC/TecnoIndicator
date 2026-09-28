@@ -46,7 +46,11 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
       const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
       const stored = await writeFactorWindow(region, result.factors, result.aiCurated);
       return Response.json(
-        toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
+        toFactorsPayload(stored.factors, region, stored.aiCurated, {
+          updatedAt: stored.updatedAt,
+          error: result.aiCurationFailed ? "AI curation unavailable; static fallbacks returned" : undefined,
+          aiCurationFailed: result.aiCurationFailed,
+        }),
         { status: 200 },
       );
     } finally {
@@ -60,6 +64,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
       toFactorsPayload(factors, region, stored?.aiCurated ?? false, {
         updatedAt: stored?.updatedAt ?? new Date().toISOString(),
         error: "Regional factors temporarily unavailable; static fallbacks returned",
+        aiCurationFailed: true,
       }),
       { status: 200 },
     );

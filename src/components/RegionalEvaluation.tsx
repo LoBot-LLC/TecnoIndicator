@@ -17,11 +17,18 @@ import {
   Fuel,
   Gauge,
   Globe2,
+  Info,
   TrendingUp,
   Zap,
 } from "lucide-react";
 import Reveal from "./Reveal";
 import { useFlash } from "../hook/useFlash";
+import {
+  allowsAiDecorations,
+  describeReason,
+  isLiveCuration,
+  type PayloadMeta,
+} from "../lib/aiStatus";
 import {
   buildRegionalCSV,
   COMMODITIES,
@@ -205,11 +212,16 @@ function isNewFactor(createdAt: string): boolean {
 function RegionalFactorCard({
   factor,
   index,
+  meta,
 }: {
   factor: Factor;
   index: number;
+  meta?: PayloadMeta;
 }) {
-  const isNew = isNewFactor(factor.createdAt);
+  // Static regional factors carry `createdAt: now` and a synthetic score, so
+  // neither the "New" badge nor the impact score may be shown for them.
+  const isAiRow = allowsAiDecorations(factor, meta);
+  const isNew = isAiRow && isNewFactor(factor.createdAt);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-4 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -222,6 +234,11 @@ function RegionalFactorCard({
             <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold text-amber-300 border-amber-400/30 bg-amber-400/10">
               {factor.magnitude}
             </span>
+            {!isAiRow && (
+              <span className="rounded-full border border-line bg-base/40 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-500">
+                Reference
+              </span>
+            )}
           </div>
           <h4 className="mt-2 font-display text-sm font-semibold text-white leading-snug">
             {factor.name}
@@ -268,7 +285,11 @@ function RegionalFactorCard({
       </div>
 
       <div className="mt-2 flex items-center justify-between text-[10px]">
-        <span className="font-semibold text-teal-300">Impact: {factor.importanceScore}/100</span>
+        {isAiRow ? (
+          <span className="font-semibold text-teal-300">Impact: {factor.importanceScore}/100</span>
+        ) : (
+          <span className="font-semibold text-slate-600">Reference factor</span>
+        )}
         <span className="font-semibold text-slate-500 capitalize">
           {factor.direction} · {factor.bias}
         </span>
@@ -286,7 +307,8 @@ interface RegionalEvaluationProps {
   region: RegionId;
   onRegion: (r: RegionId) => void;
   dynamicFactors: Record<string, Factor[]>;
-  healthStatus: "Initializing AI" | "Online Model Connected" | "Offline Model";
+  /** Honesty fields from /api/regional-factors, keyed by region id. */
+  factorsMeta: Record<string, PayloadMeta>;
 }
 
 export default function RegionalEvaluation({
@@ -296,7 +318,7 @@ export default function RegionalEvaluation({
   region,
   onRegion,
   dynamicFactors,
-  healthStatus,
+  factorsMeta,
 }: RegionalEvaluationProps) {
   const evals = useMemo(
     () => evaluateRegions(prices, horizon, jitter),
@@ -308,6 +330,11 @@ export default function RegionalEvaluation({
   const horizonYear = START_YEAR + horizon;
 
   const selected = evals.find((e) => e.region.id === region) ?? evals[0];
+
+  /** The API's own verdict for the selected region's factor window. */
+  const regionMeta = factorsMeta[selected.region.id];
+  const regionFactors = dynamicFactors[selected.region.id] ?? [];
+  const regionAiCurated = isLiveCuration(regionMeta) && regionFactors.length > 0;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -640,17 +667,32 @@ export default function RegionalEvaluation({
                <div id="regional-factors" className="mt-5">
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    {healthStatus === "Online Model Connected"
-                      ? "AI Factors"
-                      : "Regional factors"}
+                    {regionAiCurated ? "AI Factors" : "Regional factors"}
                   </p>
                   <span className="text-[11px] text-slate-600">
-                    8 factors per region
+                    {regionFactors.length} factors
                   </span>
                 </div>
+                {regionMeta?.degraded === true && (
+                  <p
+                    className="mb-3 flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.07] px-3 py-2 text-[11px] leading-relaxed text-amber-200/90"
+                    title={regionMeta.error}
+                  >
+                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                    <span>
+                      Live AI curation unavailable for {selected.region.name}:{" "}
+                      {describeReason(regionMeta.reason)}. Showing the static reference set.
+                    </span>
+                  </p>
+                )}
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {(dynamicFactors[selected.region.id] ?? []).map((f, i) => (
-                    <RegionalFactorCard key={f.id} factor={f} index={i} />
+                  {regionFactors.map((f, i) => (
+                    <RegionalFactorCard
+                      key={f.id}
+                      factor={f}
+                      index={i}
+                      meta={regionMeta}
+                    />
                   ))}
                 </div>
               </div>

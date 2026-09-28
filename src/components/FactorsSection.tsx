@@ -3,11 +3,13 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   GitBranch,
+  Info,
   Minus,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
 import Reveal from "./Reveal";
+import { allowsAiDecorations, describeReason, isLiveCuration, type PayloadMeta } from "../lib/aiStatus";
 import {
   COMMODITIES,
   FACTORS,
@@ -41,15 +43,21 @@ function FactorCard({
   factor,
   horizon,
   index,
+  meta,
 }: {
   factor: Factor;
   horizon: number;
   index: number;
+  meta?: PayloadMeta;
 }) {
   const relevance = factorRelevance(factor.bias, horizon);
   const trend = relevanceTrend(factor.bias, horizon);
   const width = Math.min(100, Math.round((relevance / 2.0) * 100));
-  const isNew = isNewFactor(factor.createdAt);
+  // The "New" badge and the impact score are AI-only decorations: static
+  // factors carry a `createdAt` of "now" and a synthetic score, so rendering
+  // them would dress the reference set up as fresh model output.
+  const isAiRow = allowsAiDecorations(factor, meta);
+  const isNew = isAiRow && isNewFactor(factor.createdAt);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -65,6 +73,11 @@ function FactorCard({
               <DirectionIcon direction={factor.direction} />
               {factor.magnitude}
             </span>
+            {!isAiRow && (
+              <span className="rounded-full border border-line bg-base/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Reference
+              </span>
+            )}
           </div>
           <h3 className="mt-3 font-display text-base font-semibold text-white">
             {factor.name}
@@ -79,7 +92,7 @@ function FactorCard({
           <span className="font-display text-xs font-bold text-slate-600">
             {String(index + 1).padStart(2, "0")}
           </span>
-          {factor.importanceScore >= 0 && (
+          {isAiRow && factor.importanceScore >= 0 && (
             <span className="text-[11px] font-semibold text-teal-300">
               Impact: {factor.importanceScore}/100
             </span>
@@ -141,7 +154,21 @@ function FactorCard({
         </div>
       </div>
 
-      <p className="mt-3 text-[10px] text-slate-600">Source: {factor.source}</p>
+      <p className="mt-3 text-[10px] text-slate-600">
+        Source:{" "}
+        {factor.sourceUrl ? (
+          <a
+            href={factor.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-line-strong underline-offset-2 hover:text-slate-400"
+          >
+            {factor.source}
+          </a>
+        ) : (
+          factor.source
+        )}
+      </p>
     </article>
   );
 }
@@ -150,17 +177,24 @@ interface FactorsSectionProps {
   horizon: number;
   dynamicFactors?: Factor[];
   healthStatus?: "Initializing AI" | "Online Model Connected" | "Offline Model";
+  /** Honesty fields from /api/dynamic-factors for the factors in `dynamicFactors`. */
+  meta?: PayloadMeta;
 }
 
 export default function FactorsSection({
   horizon,
   dynamicFactors,
   healthStatus,
+  meta,
 }: FactorsSectionProps) {
-  const hasDynamicFactors = dynamicFactors && dynamicFactors.length === 8;
-  const activeFactors = hasDynamicFactors ? dynamicFactors : FACTORS;
+  // "The API delivered 8 factors" is not evidence of AI curation — the static
+  // fallback set is also 8 long. Only the payload's own verdict counts.
   const isOnline = healthStatus === "Online Model Connected";
-  const aiCurated = hasDynamicFactors && isOnline;
+  const aiCurated =
+    isOnline && isLiveCuration(meta) && Array.isArray(dynamicFactors) && dynamicFactors.length > 0;
+  const degraded = meta?.degraded === true;
+  const activeFactors = aiCurated && dynamicFactors ? dynamicFactors : FACTORS;
+  const referenceSet = !aiCurated && degraded;
 
   const sorted = useMemo(
     () =>
@@ -179,14 +213,29 @@ export default function FactorsSection({
               Key factors & drivers
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
-              {isOnline ? "AI-Curated Factors" : "Key factors & drivers"}
+              {aiCurated ? "AI-Curated Factors" : "Key factors & drivers"}
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-400">
               {aiCurated
                 ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."
-                : "Twelve researched drivers shape the forecast paths. Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
+                : referenceSet
+                  ? "Static reference set — live AI curation is currently unavailable, so these researched drivers are shown as-is rather than as model output."
+                  : "Twelve researched drivers shape the forecast paths. Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
             </p>
-            {isOnline && (
+            {degraded && (
+              <p
+                className="mt-3 flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.07] px-3 py-2 text-[11px] leading-relaxed text-amber-200/90"
+                title={meta?.error}
+              >
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                <span>
+                  Live AI curation unavailable: {describeReason(meta?.reason)}. Showing the static
+                  reference set.
+                  {meta?.servedFrom ? ` Served from ${meta.servedFrom}.` : ""}
+                </span>
+              </p>
+            )}
+            {aiCurated && (
               <p className="mt-2 text-xs text-teal-300/80">
                 Status: {healthStatus}
               </p>
@@ -197,7 +246,7 @@ export default function FactorsSection({
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {sorted.map((f, i) => (
             <Reveal key={f.id} delay={Math.min(i * 40, 280)}>
-              <FactorCard factor={f} horizon={horizon} index={i} />
+              <FactorCard factor={f} horizon={horizon} index={i} meta={meta} />
             </Reveal>
           ))}
         </div>

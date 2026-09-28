@@ -3,7 +3,7 @@ import { kiloRouter } from "../_shared/kiloRouter";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { analyticsCacheKey } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
-import { readFactorWindow } from "./factor-analysis";
+import { readFactorRunStatus, readFactorWindow } from "./factor-analysis";
 import type { AnalyticsSnapshot, RegionalAnalyticsSnapshot } from "../_shared/types";
 
 /** Matches the schedule in vercel.json (`0 2 * * *`, UTC). */
@@ -17,11 +17,32 @@ interface HealthResponse {
     usableKeys: number;
     configuredKeys: number;
     keyFormats?: { jwt: number; opaque: number; unrecognized: number };
+    /** Env-var NAMES in use and read. Key VALUES are never exposed or logged. */
+    keyEnvNames: string[];
+    keyEnvNamesRead: string[];
+    /** Per-key probe outcome, so an unusable credential is diagnosable. */
+    keys: Array<{
+      envName: string;
+      available: boolean;
+      rateLimited: boolean;
+      zeroCostVerified: boolean;
+      lastStatus: number | null;
+      lastError: string | null;
+      lastCheckedAt: string | null;
+      lastSuccessAt: string | null;
+      reprobeAfter: string | null;
+    }>;
+    catalogLastRefresh: string | null;
+    modelCount: number;
+    zeroCostModelCount: number;
+    usableModelCount: number;
   };
   tinyfish: {
     available: boolean;
     usableKeys: number;
     configuredKeys: number;
+    keyEnvNames: string[];
+    keyEnvNamesRead: string[];
   };
   onlineModelConnected: boolean;
   analytics: {
@@ -38,21 +59,8 @@ interface HealthResponse {
     >;
   };
   dynamicFactors: {
-    global: {
-      lastRun: string | null;
-      nextRun: string | null;
-      aiCurated: boolean;
-      pollIntervalMs: number;
-    };
-    regional: Record<
-      Region,
-      {
-        lastRun: string | null;
-        nextRun: string | null;
-        aiCurated: boolean;
-        pollIntervalMs: number;
-      }
-    >;
+    global: FactorStatus;
+    regional: Record<Region, FactorStatus>;
   };
 }
 
@@ -67,7 +75,20 @@ function nextCronRun(now: Date = new Date()): string {
 }
 
 type AnalyticsStatus = { lastFetch: string | null; success: boolean };
-type FactorStatus = { lastRun: string | null; nextRun: string | null; aiCurated: boolean; pollIntervalMs: number };
+type FactorStatus = {
+  /** When the stored curated window was last written. */
+  lastRun: string | null;
+  /** When a curation run was last ATTEMPTED (successful or not). */
+  lastAttempt: string | null;
+  /** When an AI-curated window was last written, tracked separately. */
+  lastAiRunAt: string | null;
+  nextRun: string | null;
+  aiCurated: boolean;
+  /** True when the last attempt degraded (and was therefore not persisted). */
+  degraded: boolean;
+  reason: string | null;
+  pollIntervalMs: number;
+};
 
 async function readAnalyticsStatus(scope: "global" | Region): Promise<AnalyticsStatus> {
   const snapshot = await peekCache<AnalyticsSnapshot | RegionalAnalyticsSnapshot>(
@@ -83,14 +104,30 @@ async function readAnalyticsStatus(scope: "global" | Region): Promise<AnalyticsS
 }
 
 async function readFactorStatus(scope: "global" | Region): Promise<FactorStatus> {
-  const window = await readFactorWindow(scope);
+  // The window and the run status are stored under different keys: a degraded
+  // run records its attempt/reason without touching the curated window, so
+  // `lastRun` can never be re-stamped by a failure.
+  const [window, status] = await Promise.all([readFactorWindow(scope), readFactorRunStatus(scope)]);
   if (!window) {
-    return { lastRun: null, nextRun: nextCronRun(), aiCurated: false, pollIntervalMs: FACTOR_POLL_INTERVAL_MS };
+    return {
+      lastRun: null,
+      lastAttempt: status?.lastAttemptAt ?? null,
+      lastAiRunAt: status?.lastAiRunAt ?? null,
+      nextRun: nextCronRun(),
+      aiCurated: false,
+      degraded: status?.reason != null,
+      reason: status?.reason ?? null,
+      pollIntervalMs: FACTOR_POLL_INTERVAL_MS,
+    };
   }
   return {
     lastRun: window.updatedAt,
+    lastAttempt: status?.lastAttemptAt ?? window.updatedAt,
+    lastAiRunAt: window.lastAiRunAt ?? status?.lastAiRunAt ?? null,
     nextRun: nextCronRun(),
     aiCurated: window.aiCurated,
+    degraded: status?.reason != null,
+    reason: status?.reason ?? null,
     pollIntervalMs: FACTOR_POLL_INTERVAL_MS,
   };
 }
@@ -121,10 +158,12 @@ export async function handleHealth(_req: Request): Promise<Response> {
         Promise.all(REGIONS.map((region) => readFactorStatus(region))),
       ]);
 
+    // `zeroCostModels` is a cost preference, not an availability requirement:
+    // a free model listed without usable `pricing` used to flip the whole
+    // product to "unavailable" even though inference would have worked.
     const onlineModelConnected =
       kiloStatus.available &&
       kiloStatus.usableKeys > 0 &&
-      kiloStatus.zeroCostModels.length > 0 &&
       tinyfishStatus.available &&
       tinyfishStatus.usableKeys > 0;
 
@@ -134,11 +173,20 @@ export async function handleHealth(_req: Request): Promise<Response> {
         usableKeys: kiloStatus.usableKeys,
         configuredKeys: kiloStatus.configuredKeys,
         keyFormats: kiloStatus.keyFormats,
+        keyEnvNames: kiloStatus.keyEnvNames,
+        keyEnvNamesRead: kiloStatus.keyEnvNamesRead,
+        keys: kiloStatus.keyDetails,
+        catalogLastRefresh: kiloStatus.catalogLastRefresh,
+        modelCount: kiloStatus.modelCount,
+        zeroCostModelCount: kiloStatus.zeroCostModelCount,
+        usableModelCount: kiloStatus.usableModelCount,
       },
       tinyfish: {
         available: tinyfishStatus.available,
         usableKeys: tinyfishStatus.usableKeys,
         configuredKeys: tinyfishStatus.configuredKeys,
+        keyEnvNames: tinyfishStatus.keyEnvNames,
+        keyEnvNamesRead: tinyfishStatus.keyEnvNamesRead,
       },
       onlineModelConnected,
       analytics: {
@@ -162,8 +210,20 @@ export async function handleHealth(_req: Request): Promise<Response> {
       {
         error: "Health check temporarily unavailable",
         onlineModelConnected: false,
-        kiloGateway: { available: false, usableKeys: 0, configuredKeys: 0, keyFormats: { jwt: 0, opaque: 0, unrecognized: 0 } },
-        tinyfish: { available: false, usableKeys: 0, configuredKeys: 0 },
+        kiloGateway: {
+          available: false,
+          usableKeys: 0,
+          configuredKeys: 0,
+          keyFormats: { jwt: 0, opaque: 0, unrecognized: 0 },
+          keyEnvNames: [],
+          keyEnvNamesRead: [],
+          keys: [],
+          catalogLastRefresh: null,
+          modelCount: 0,
+          zeroCostModelCount: 0,
+          usableModelCount: 0,
+        },
+        tinyfish: { available: false, usableKeys: 0, configuredKeys: 0, keyEnvNames: [], keyEnvNamesRead: [] },
       },
       { status: 200 },
     );

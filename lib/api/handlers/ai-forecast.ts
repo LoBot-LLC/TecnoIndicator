@@ -36,7 +36,10 @@ export async function handleAiForecast(req: Request): Promise<Response> {
 
     const kiloStatus = await kiloRouter.getKiloStatus();
 
-    if (!kiloStatus.available || kiloStatus.zeroCostModels.length === 0) {
+    // Zero-cost models are a cost PREFERENCE, not an availability requirement:
+    // requiring them flipped the whole product to "unavailable" whenever a model
+    // was listed without usable pricing, even though inference would work.
+    if (!kiloStatus.available) {
       const fallback = buildGlobalForecastFallback();
       await setCache(cacheKey, fallback, FORECAST_CACHE_MS);
       return Response.json(fallback, { status: 200 });

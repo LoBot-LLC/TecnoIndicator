@@ -67,8 +67,16 @@ const VALID_REGIONS: RegionId[] = ["global", "asia", "europe", "africa", "americ
 
 interface CachedSolutions {
   solutions: Solution[];
+  /** True only when ALL returned solutions were model-generated. */
   aiCurated: boolean;
+  /** How many of the returned solutions were genuinely model-generated. */
+  aiCount: number;
+  degraded: boolean;
+  reason: string | null;
 }
+
+/** Machine-readable reason the solutions list is not fully AI-generated. */
+type SolutionsReason = "kilo-unavailable" | "kilo-aborted" | "unparseable-json" | "no-ai-solutions" | "threw";
 
 function recentMonth(): string {
   return new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -241,8 +249,12 @@ export async function handleSolutions(req: Request): Promise<Response> {
           scope,
           count: cached.solutions.length,
           aiCurated: cached.aiCurated,
+          aiCount: cached.aiCount,
+          degraded: cached.degraded,
+          ...(cached.reason ? { reason: cached.reason } : {}),
           cacheKey,
           updatedAt: new Date().toISOString(),
+          servedFrom: "cache" as const,
         },
         { status: 200 },
       );
@@ -295,9 +307,12 @@ export async function handleSolutions(req: Request): Promise<Response> {
       ],
       max_tokens: 2048,
       temperature: 0.25,
+      // Keeps the answer parseable as a bare JSON object.
+      response_format: { type: "json_object" },
     };
 
     let aiSolutions: Solution[] = [];
+    let reason: SolutionsReason | null = null;
     try {
       const response = await kiloRouter.kiloInfer(payload, abortController.signal);
       const content = response.choices?.[0]?.message?.content ?? "";
@@ -307,15 +322,35 @@ export async function handleSolutions(req: Request): Promise<Response> {
         .map((s: unknown) => buildSolution(s, scope, VALID_REGIONS))
         .filter((s): s is Solution => s !== null)
         .slice(0, MAX_SOLUTIONS);
+      if (aiSolutions.length === 0) reason = "unparseable-json";
     } catch (error) {
-      console.error("Kilo inference failed, using deterministic fallback:", error);
+      // Previously only console.error'd, so a failed Kilo call was reported as a
+      // perfectly healthy response of three deterministic solutions.
+      const message = String((error as Error)?.message ?? error);
+      if (abortController.signal.aborted) {
+        reason = "kilo-aborted";
+      } else if (/no kilo gateway key|no available kilo|no kilo gateway model/i.test(message)) {
+        reason = "kilo-unavailable";
+      } else {
+        reason = "threw";
+      }
+      console.error("Kilo inference failed, using deterministic fallback:", message);
     }
+    if (aiSolutions.length === 0 && reason === null) reason = "no-ai-solutions";
 
-    const aiCurated = aiSolutions.length > 0;
     const fallback = buildFallbackSolutions(scope, analytics, factors);
     const solutions = [...aiSolutions, ...fallback].slice(0, MAX_SOLUTIONS);
+    // The list is always padded to MAX_SOLUTIONS, so `aiCurated` may only be
+    // true when nothing deterministic had to be added.
+    const aiCount = aiSolutions.length;
+    const aiCurated = aiCount === solutions.length;
+    const degraded = aiCount < solutions.length;
 
-    await setCache(cacheKey, { solutions, aiCurated } satisfies CachedSolutions, SOLUTIONS_CACHE_MS);
+    await setCache(
+      cacheKey,
+      { solutions, aiCurated, aiCount, degraded, reason } satisfies CachedSolutions,
+      SOLUTIONS_CACHE_MS,
+    );
 
     return Response.json(
       {
@@ -323,11 +358,13 @@ export async function handleSolutions(req: Request): Promise<Response> {
         scope,
         count: solutions.length,
         aiCurated,
+        aiCount,
+        degraded,
+        ...(reason ? { reason } : {}),
         cacheKey,
         updatedAt: new Date().toISOString(),
-        ...(aiCurated
-          ? {}
-          : { error: "No AI-curated solutions; static fallbacks returned" }),
+        servedFrom: degraded ? ("fallback" as const) : ("curated" as const),
+        ...(degraded ? { error: "Some solutions are deterministic padding; AI generation degraded" } : {}),
       },
       { status: 200 },
     );
@@ -340,8 +377,12 @@ export async function handleSolutions(req: Request): Promise<Response> {
         scope,
         count: fallback.length,
         aiCurated: false,
+        aiCount: 0,
+        degraded: true,
+        reason: "threw" as const,
         cacheKey: "solutions:error",
         updatedAt: new Date().toISOString(),
+        servedFrom: "fallback" as const,
         error: "Solutions temporarily unavailable; static fallbacks returned",
       },
       { status: 200 },

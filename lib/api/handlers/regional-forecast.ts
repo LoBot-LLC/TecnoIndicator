@@ -64,7 +64,8 @@ export async function handleRegionalForecast(req: Request): Promise<Response> {
 
     const kiloStatus = await kiloRouter.getKiloStatus();
 
-    if (!kiloStatus.available || kiloStatus.zeroCostModels.length === 0) {
+    // Cost preference, not an availability gate (see ai-forecast.ts).
+    if (!kiloStatus.available) {
       const fallback = buildRegionalForecastFallback(region);
       await setCache(cacheKey, fallback, FORECAST_CACHE_MS);
       return Response.json(fallback, { status: 200 });

@@ -9,6 +9,11 @@ export const KILO_GATEWAY_MODELS_URL = `${KILO_GATEWAY_BASE_URL}/models`;
 export const KILO_GATEWAY_CHAT_URL = `${KILO_GATEWAY_BASE_URL}/chat/completions`;
 export const DEFAULT_KILO_MODEL_ID = "kilo-auto/free";
 
+// `KILO_API_KEY` / `TINYFISH_API_KEY` are the names both vendors document in
+// their own quickstarts. Only the suffixed names were read before, so a
+// deployer who followed the docs configured a variable this code ignored and
+// the pipeline saw zero keys. Specific/suffixed names come first; `readConfiguredKeys`
+// dedupes by value, so a key set under two names is still used exactly once.
 export const KILO_KEY_ENV_NAMES = [
   "KILO_GATEWAY_KEY_1",
   "KILO_GATEWAY_KEY_2",
@@ -16,6 +21,7 @@ export const KILO_KEY_ENV_NAMES = [
   "KILO_GATEWAY_KEY_4",
   "KILO_GATEWAY_KEY_5",
   "KILO_GATEWAY_KEY",
+  "KILO_API_KEY",
 ] as const;
 
 export const TINYFISH_KEY_ENV_NAMES = [
@@ -24,6 +30,8 @@ export const TINYFISH_KEY_ENV_NAMES = [
   "TINYFISH_KEY_3",
   "TINYFISH_KEY_4",
   "TINYFISH_KEY_5",
+  "TINYFISH_KEY",
+  "TINYFISH_API_KEY",
 ] as const;
 
 export const FACTOR_COUNT = 8;
@@ -37,6 +45,8 @@ export const FACTORS_CACHE_MS = 60_000;
  */
 export const FACTORS_WINDOW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SEARCH_CACHE_MS = 60_000;
+/** Longer-lived copy of the last good search result, used only when a search fails. */
+export const STALE_SEARCH_CACHE_MS = 60 * 60 * 1000;
 /** Read AND write TTL for scraped article bodies — they must agree. */
 export const SCRAPE_CACHE_MS = 10 * 60_000;
 export const MODEL_CACHE_MS = 60_000;
@@ -73,9 +83,12 @@ export const KILO_GATEWAY_JWT_PREFIX = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
 
 /**
  * Normalizes a raw environment-variable API key.
+ *
  * Env values pasted into dashboards frequently carry a trailing newline, wrapping
- * quotes, or zero-width characters. Those survive the "non-empty" check but make the
- * outgoing `Authorization: Bearer ...` header invalid, so the gateway answers 401.
+ * quotes, zero-width characters, or a leftover `Bearer ` / `Token ` scheme
+ * prefix copied out of an example `curl` command. Those survive the
+ * "non-empty" check but make the outgoing `Authorization: Bearer ...` header
+ * invalid (`Bearer Bearer eyJ...` -> 401), so the scheme prefix is stripped here.
  */
 export function normalizeApiKey(raw: unknown): string {
   if (typeof raw !== "string") return "";
@@ -87,6 +100,8 @@ export function normalizeApiKey(raw: unknown): string {
       value = value.slice(1, -1).trim();
     }
   }
+  // Strip a pasted auth scheme; the header builder adds the prefix itself.
+  value = value.replace(/^(bearer|token)\s+/i, "").trim();
   // Strip zero-width / BOM characters, then any remaining whitespace.
   return value.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").replace(/\s+/g, "");
 }
@@ -183,8 +198,25 @@ export function sanitizeUrl(value: string): string | null {
   }
 }
 
+/**
+ * True only for a genuine *global* rate limit (429).
+ *
+ * 503/504 used to be folded in here, which made the Kilo router latch every
+ * key and every model as `rateLimited` on the first upstream hiccup. Upstream
+ * 503 means "provider temporarily unavailable" (the gateway even remaps an
+ * upstream 402 to 503), so it is handled by {@link isRetryableUpstreamStatus}
+ * and retried per key/model combination instead.
+ */
 export function isGlobalRateLimitStatus(status: number): boolean {
-  return status === 429 || status === 503 || status === 504;
+  return status === 429;
+}
+
+/**
+ * Transient upstream failures: worth retrying against a different key/model
+ * (and honouring `Retry-After`), but never a verdict on the credential.
+ */
+export function isRetryableUpstreamStatus(status: number): boolean {
+  return status === 502 || status === 503 || status === 504 || status === 408;
 }
 
 export function isAccessDeniedStatus(status: number): boolean {
@@ -249,14 +281,120 @@ export const REPUTABLE_HOSTS = [
   "screendaily.com",
 ];
 
+/**
+ * Tier A — the curated host list. Exact/subdomain match, unchanged.
+ *
+ * A single hardcoded gate over this list used to be the *only* admission rule,
+ * which excluded every general newswire and most energy/water trade press; when
+ * nothing survived, the factor route silently returned the static set.
+ */
 export function isReputableSource(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    return REPUTABLE_HOSTS.some((prefix) => host === prefix || host.endsWith(`.${prefix}`));
-  } catch {
-    return false;
-  }
+  return classifySourceTrust(url) === "a";
 }
+
+/**
+ * Tier B — trade press and national/institutional publishers that the Tier A
+ * list never covered (energy + water commodities specifically). Same
+ * exact/subdomain matching.
+ */
+export const TRUSTED_TRADE_HOSTS = [
+  "oilprice.com",
+  "spglobal.com",
+  "argusmedia.com",
+  "utilitydive.com",
+  "offshore-energy.biz",
+  "naturalgasintel.com",
+  "tradingeconomics.com",
+  "pv-magazine.com",
+  "hydrocarbonprocessing.com",
+  "rigzone.com",
+  "renewablesnow.com",
+  "solarpowermagazineonline.com",
+  "hydro-review.com",
+  "watertechnology.org",
+  "wateronline.com",
+  "banquedeltaresearch.com",
+  "capacitymarket.com",
+  "ainenergy.com",
+  "hydrogeninsight.com",
+  "nuclearpowerinternational.com",
+  "afr.com",
+  "mining.com",
+  "mysteel.net",
+  "financialtimes.com",
+  "nikkei.com",
+  "japantimes.co.jp",
+  "scmp.com",
+  "channelnewsasia.com",
+  "straitstimes.com",
+  "abc.net.au",
+  "aljazeera.com",
+  "dw.com",
+  "rfi.fr",
+  "aa.com.tr",
+  "thehindu.com",
+  "timesofindia.indiatimes.com",
+  "bnef.com",
+  "woodmac.com",
+  "ieefa.org",
+  "carbonbrief.org",
+  "nationalgrid.com",
+  "edp.com",
+  "iberdrola.com",
+  "enel.com",
+  "engie.com",
+  "shell.com",
+  "bp.com",
+  "totalenergies.com",
+] as const;
+
+/**
+ * Tier B structural pattern: any institutional suffix (`*.gov`, `*.gov.<cc>`,
+ * `*.edu`, `*.ac.<cc>`). A national regulator, ministry or public utility
+ * publisher is as trustworthy as a hand-listed one, and the shape of the
+ * domain is a stronger signal than our ability to enumerate every ccTLD.
+ */
+function isInstitutionalHost(host: string): boolean {
+  const labels = host.split(".");
+  if (labels.length < 2) return false;
+  for (let i = 1; i < labels.length; i++) {
+    const label = labels[i];
+    if (label !== "gov" && label !== "edu" && label !== "ac") continue;
+    if (i === labels.length - 1) return true;
+    // `gov`/`edu`/`ac` followed by a ccTLD, e.g. `ofgem.gov.uk`, `imperial.ac.uk`.
+    const suffix = labels.slice(i + 1);
+    if (suffix.length > 0 && suffix.every((part) => /^[a-z]{2}$/.test(part))) return true;
+  }
+  return false;
+}
+
+export type SourceTrustTier = "a" | "b" | "c";
+
+/**
+ * Classifies a URL into the trust tier used to admit it as a curation
+ * candidate:
+ *  - "a" the curated host list,
+ *  - "b" trusted trade press or an institutional domain shape,
+ *  - "c" anything else (admitted only to backfill a thin candidate set, and
+ *    capped per host by the caller so one domain cannot fill the window).
+ */
+export function classifySourceTrust(url: string): SourceTrustTier {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return "c";
+  }
+  if (!host) return "c";
+  const matches = (list: readonly string[]) =>
+    list.some((entry) => host === entry || host.endsWith(`.${entry}`));
+  if (matches(REPUTABLE_HOSTS)) return "a";
+  if (isInstitutionalHost(host) || matches(TRUSTED_TRADE_HOSTS)) return "b";
+  return "c";
+}
+
+/** Per-host cap for Tier C backfill candidates. */
+export const TIER_C_MAX_PER_HOST = 2;
 
 export function isRecentPublishedAt(value: string | undefined): boolean {
   if (!value) return true;

@@ -4,6 +4,7 @@ import {
   sanitizeUrl,
   SCRAPE_CACHE_MS,
   SEARCH_CACHE_MS,
+  STALE_SEARCH_CACHE_MS,
 } from "./http";
 import { getCache, setCache } from "./cache";
 import type { Region } from "./regions";
@@ -11,6 +12,13 @@ import type { Region } from "./regions";
 export interface TinyFishKeyState {
   keyIndex: number;
   envName: string;
+  /**
+   * The normalized key material. Carried on the state so requests send exactly
+   * what `readConfiguredKeys` validated, instead of re-reading the raw
+   * `process.env[...]` value (which may carry quotes/whitespace/a `Bearer `
+   * prefix and would 401).
+   */
+  keyValue: string;
   available: boolean;
   rateLimited: boolean;
   rateLimitRemaining: number | null;
@@ -63,6 +71,43 @@ function buildSearchUrl(query: string, limit: number): string {
   return `${SEARCH_URL}?${params.toString()}`;
 }
 
+/**
+ * TinyFish returns the publication date under several names depending on the
+ * upstream index. Only `published_at` was read before, so most results reached
+ * the model with "no date" even when a date was present.
+ *
+ * A value that cannot be parsed, or that is in the future (a badly populated
+ * field), is reported as *no date* rather than as fresh evidence. The caller's
+ * filter fails open for "no date" on purpose.
+ */
+const PUBLISHED_AT_FIELDS = [
+  "published_at",
+  "publishedAt",
+  "published_date",
+  "publishedDate",
+  "pubDate",
+  "date",
+] as const;
+
+function normalizePublishedAt(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim();
+  if (!value) return undefined;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return undefined;
+  if (parsed > Date.now() + 24 * 60 * 60 * 1000) return undefined;
+  return value;
+}
+
+/** First parseable, non-future date under any of the accepted field names. */
+function firstPublishedAt(result: Record<string, unknown>): string | undefined {
+  for (const field of PUBLISHED_AT_FIELDS) {
+    const normalized = normalizePublishedAt(result[field]);
+    if (normalized) return normalized;
+  }
+  return undefined;
+}
+
 export class TinyFishRouter {
   private keyStates: TinyFishKeyState[] = [];
   private initialized: boolean = false;
@@ -79,6 +124,7 @@ export class TinyFishRouter {
     this.keyStates = keys.map((key, index) => ({
       keyIndex: index,
       envName: key.envName,
+      keyValue: key.value,
       available: false, // Will be verified on first use
       rateLimited: false,
       rateLimitRemaining: null,
@@ -97,7 +143,7 @@ export class TinyFishRouter {
     try {
       const probeResults = await Promise.all(
         this.keyStates.map(async (keyState) => {
-          const testKey = process.env[keyState.envName];
+          const testKey = keyState.keyValue;
           if (!testKey) return { keyIndex: keyState.keyIndex, ok: false, status: 0, headers: null as Headers | null };
 
           try {
@@ -215,7 +261,9 @@ export class TinyFishRouter {
       }
 
       try {
-        const testKey = process.env[keyState.envName];
+        // The normalized value carried on the key state, not the raw env value:
+        // a raw `Bearer x` / quoted value would be sent verbatim and 401.
+        const testKey = keyState.keyValue;
         if (!testKey) {
           keyState = this.rotateKey(keyState);
           continue;
@@ -242,7 +290,7 @@ export class TinyFishRouter {
                 title: r.title ?? "",
                 snippet: r.snippet ?? "",
                 url: r.url ?? "",
-                publishedAt: r.published_at ?? undefined,
+                publishedAt: firstPublishedAt(r),
               }))
             : [];
           const result: TinyFishSearchResponse = {
@@ -260,6 +308,11 @@ export class TinyFishRouter {
           }
 
           await setCache(cacheKey, result, SEARCH_CACHE_MS);
+          // Distinct, longer-lived copy so a later failed search still has
+          // evidence to fall back on (the primary entry lives 60s).
+          if (result.results.length > 0) {
+            await setCache(`${cacheKey}:stale`, result, STALE_SEARCH_CACHE_MS);
+          }
           return result;
         }
 
@@ -290,11 +343,12 @@ export class TinyFishRouter {
       keyState = this.selectKey();
     }
 
-    const cachedFallback = await getCache<TinyFishSearchResponse>(
-      cacheKey,
-      60 * 60 * 1000
-    );
-    if (cachedFallback) return cachedFallback;
+    // A stale-but-usable copy of the last good result, kept under its own key.
+    // The old code re-read the *same* key with a 1h TTL argument, but
+    // `getCache` ignores its TTL argument and trusts the stored 60s
+    // `expiresAt`, so the "fallback" was always null (a silent no-op).
+    const stale = await getCache<TinyFishSearchResponse>(`${cacheKey}:stale`, STALE_SEARCH_CACHE_MS);
+    if (stale && Array.isArray(stale.results) && stale.results.length > 0) return stale;
 
     console.error("TinyFish search failed:", lastError?.message);
     return { results: [], total: 0, keyIndex: -1 };
@@ -322,7 +376,9 @@ export class TinyFishRouter {
       }
 
       try {
-        const testKey = process.env[keyState.envName];
+        // The normalized value carried on the key state, not the raw env value:
+        // a raw `Bearer x` / quoted value would be sent verbatim and 401.
+        const testKey = keyState.keyValue;
         if (!testKey) {
           keyState = this.rotateKey(keyState);
           continue;
@@ -347,16 +403,33 @@ export class TinyFishRouter {
           const firstResult = Array.isArray(data.results) && data.results.length > 0
             ? data.results[0]
             : null;
+          // TinyFish answers HTTP 200 *with* a per-URL `errors[]` list when an
+          // individual scrape fails. Caching that empty body for
+          // SCRAPE_CACHE_MS poisoned the excerpts fed to the model, so an empty
+          // result is reported but never cached.
+          const errors = Array.isArray(data.errors)
+            ? data.errors.filter((e: unknown) => typeof e === "string" || (e && typeof e === "object"))
+            : [];
+          const text = typeof firstResult?.text === "string" ? firstResult.text.slice(0, 10000) : "";
           const result: ScrapedContent = {
             url: safeUrl,
             title: firstResult?.title ?? "",
-            text: typeof firstResult?.text === "string" ? firstResult.text.slice(0, 10000) : "",
+            text,
             keyIndex: keyState.keyIndex,
           };
 
           keyState.lastCheckedAt = new Date().toISOString();
           keyState.lastSuccessAt = keyState.lastCheckedAt;
           this.parseRateLimitHeaders(keyState, response.headers);
+
+          if (errors.length > 0 || (!result.text && !result.title)) {
+            console.error(
+              `TinyFish scrape returned no content for ${safeUrl}:`,
+              JSON.stringify(errors).slice(0, 300),
+            );
+            lastError = new Error(`TinyFish scrape reported ${errors.length} error(s) for ${safeUrl}`);
+            continue;
+          }
 
           // Written with the same TTL the read path uses; the shorter
           // SEARCH_CACHE_MS write used to evict the scrape almost immediately,
@@ -401,6 +474,9 @@ export class TinyFishRouter {
     configuredKeys: number;
     usableKeys: number;
     rateLimitedKeys: number[];
+    /** Env-var NAMES holding a configured key. Values are never exposed. */
+    keyEnvNames: string[];
+    keyEnvNamesRead: string[];
   }> {
     if (!quick && !this.initialized) {
       await this.refreshTinyfishStatus(true, abortSignal);
@@ -412,6 +488,7 @@ export class TinyFishRouter {
       this.keyStates = keys.map((key, index) => ({
         keyIndex: index,
         envName: key.envName,
+        keyValue: key.value,
         available: false,
         rateLimited: false,
         rateLimitRemaining: null,
@@ -433,6 +510,8 @@ export class TinyFishRouter {
         configuredKeys: this.keyStates.length,
         usableKeys,
         rateLimitedKeys,
+        keyEnvNames: this.keyStates.map((k) => k.envName),
+        keyEnvNamesRead: [...TINYFISH_KEY_ENV_NAMES],
       };
     }
 
@@ -443,6 +522,8 @@ export class TinyFishRouter {
       rateLimitedKeys: this.keyStates
         .map((k, i) => (k.rateLimited ? i : -1))
         .filter(i => i >= 0),
+      keyEnvNames: this.keyStates.map((k) => k.envName),
+      keyEnvNamesRead: [...TINYFISH_KEY_ENV_NAMES],
     };
   }
 

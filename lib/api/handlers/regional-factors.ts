@@ -1,9 +1,11 @@
 import {
   buildFallbackFactors,
   isFreshWindow,
+  readFactorRunStatus,
   readFactorWindow,
   runFactorAnalysis,
   toFactorsPayload,
+  writeFactorRunStatus,
   writeFactorWindow,
 } from "./factor-analysis";
 import { FACTORS_CACHE_MS } from "../_shared/http";
@@ -34,7 +36,12 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
       const stored = await readFactorWindow(region);
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
         return Response.json(
-          toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
+          toFactorsPayload(stored.factors, region, {
+            aiCurated: stored.aiCurated,
+            updatedAt: stored.updatedAt,
+            degraded: !stored.aiCurated,
+            servedFrom: "cache",
+          }),
           { status: 200 },
         );
       }
@@ -43,10 +50,45 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 25000);
     try {
-      const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
-      const stored = await writeFactorWindow(region, result.factors, result.aiCurated);
+      const outcome = await runFactorAnalysis(region, { abortSignal: abortController.signal });
+      if (!outcome.ok) {
+        // A degraded run is reported but never persisted into the curated key,
+        // and the stored `updatedAt` is returned unchanged.
+        await writeFactorRunStatus(region, {
+          aiCurated: outcome.window.aiCurated,
+          reason: outcome.reason ?? null,
+          lastAttemptAt: new Date().toISOString(),
+          lastAiRunAt: outcome.window.lastAiRunAt ?? null,
+          diagnostics: outcome.diagnostics,
+        });
+        return Response.json(
+          toFactorsPayload(outcome.window.factors, region, {
+            aiCurated: outcome.window.aiCurated,
+            updatedAt: outcome.window.updatedAt,
+            degraded: true,
+            reason: outcome.reason,
+            servedFrom: "fallback",
+            diagnostics: outcome.diagnostics,
+            error: "Regional factors temporarily unavailable; static fallbacks returned",
+          }),
+          { status: 200 },
+        );
+      }
+      const stored = await writeFactorWindow(region, outcome.window.factors, outcome.window.aiCurated);
+      await writeFactorRunStatus(region, {
+        aiCurated: true,
+        reason: null,
+        lastAttemptAt: stored.updatedAt,
+        lastAiRunAt: stored.updatedAt,
+        diagnostics: outcome.diagnostics,
+      });
       return Response.json(
-        toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
+        toFactorsPayload(stored.factors, region, {
+          aiCurated: stored.aiCurated,
+          updatedAt: stored.updatedAt,
+          servedFrom: "curated",
+          diagnostics: outcome.diagnostics,
+        }),
         { status: 200 },
       );
     } finally {
@@ -55,11 +97,17 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
   } catch (error) {
     console.error("Regional factors error:", sanitizeError(String(error)));
     const stored = await readFactorWindow(region).catch(() => null);
+    const status = await readFactorRunStatus(region).catch(() => null);
     const factors = stored?.factors.length ? stored.factors : buildFallbackFactors(region);
     return Response.json(
-      toFactorsPayload(factors, region, stored?.aiCurated ?? false, {
+      toFactorsPayload(factors, region, {
+        aiCurated: stored?.aiCurated ?? false,
         updatedAt: stored?.updatedAt ?? new Date().toISOString(),
+        degraded: true,
+        reason: "threw",
+        servedFrom: "fallback",
         error: "Regional factors temporarily unavailable; static fallbacks returned",
+        ...(status?.diagnostics ? { diagnostics: status.diagnostics } : {}),
       }),
       { status: 200 },
     );

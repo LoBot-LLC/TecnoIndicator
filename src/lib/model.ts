@@ -270,6 +270,12 @@ export interface Factor {
   direction: Direction;
   magnitude: Magnitude;
   source: string;
+  /**
+   * Optional evidence URL backing this factor. `source` is free text, so the
+   * URL is carried separately when the server knows it. Mirrors the server
+   * `Factor` in lib/api/_shared/types.ts.
+   */
+  sourceUrl?: string;
   bias: HorizonBias;
   /** Cumulative adjustment contributed at the 10-year horizon, per commodity. */
   drift: Partial<Record<CommodityId, number>>;
@@ -279,6 +285,13 @@ export interface Factor {
   scope: RegionId;
   /** Importance score 0-100 based on evidence quality and expected price impact */
   importanceScore: number;
+  /**
+   * Optional: "ai" when the model produced this factor, "static" for the
+   * server's graceful-degradation fallback set. Undefined on the hand-authored
+   * client factors below, which are never model output. Mirrors the server
+   * `Factor` in lib/api/_shared/types.ts.
+   */
+  provenance?: "ai" | "static";
   createdAt: string;
   updatedAt: string;
 }

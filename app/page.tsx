@@ -11,6 +11,7 @@ import RegionalEvaluation from "@/components/RegionalEvaluation";
 import AboutSection from "@/components/AboutSection";
 import Footer from "@/components/Footer";
 import { useLiveMarket } from "@/hook/useLiveMarket";
+import { isLiveCuration, type PayloadMeta } from "@/lib/aiStatus";
 import {
   EVAL_REGIONS,
   generateForecast,
@@ -27,6 +28,26 @@ const HEALTH_POLL_MS = 5 * 60_000;
 const REGION_STAGGER_MS = 8_000;
 
 type HealthStatus = "Initializing AI" | "Online Model Connected" | "Offline Model";
+
+/** The honesty fields of a factors/solutions response body. */
+type FactorsMeta = PayloadMeta;
+
+/** Extracts the honesty fields, keeping them even when `factors` is unusable. */
+function readMeta(data: unknown): FactorsMeta | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  return {
+    aiCurated: d.aiCurated === true,
+    degraded: d.degraded === true,
+    ...(typeof d.reason === "string" ? { reason: d.reason } : {}),
+    ...(d.servedFrom === "cache" || d.servedFrom === "curated" || d.servedFrom === "fallback"
+      ? { servedFrom: d.servedFrom }
+      : {}),
+    ...(typeof d.updatedAt === "string" ? { updatedAt: d.updatedAt } : {}),
+    ...(typeof d.error === "string" ? { error: d.error } : {}),
+    ...(typeof d.aiCount === "number" ? { aiCount: d.aiCount } : {}),
+  };
+}
 
 export default function HomePage() {
   const [horizon, setHorizon] = useState(7);
@@ -48,8 +69,11 @@ export default function HomePage() {
 
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("Initializing AI");
   const [globalFactors, setGlobalFactors] = useState<Factor[]>([]);
+  const [globalFactorsMeta, setGlobalFactorsMeta] = useState<FactorsMeta | null>(null);
   const [regionalFactors, setRegionalFactors] = useState<Record<string, Factor[]>>({});
+  const [regionalFactorsMeta, setRegionalFactorsMeta] = useState<Record<string, FactorsMeta>>({});
   const [solutions, setSolutions] = useState<Solution[]>([]);
+  const [solutionsMeta, setSolutionsMeta] = useState<PayloadMeta | null>(null);
   const [analytics, setAnalytics] = useState<Record<string, AnalyticsSnapshot>>({});
 
   const points = useMemo(
@@ -79,7 +103,8 @@ export default function HomePage() {
     [scope, scopeFactors],
   );
 
-  // Initialize regional factors with static fallbacks
+  // Seed the hand-authored regional reference factors. They stay in place
+  // until the API confirms a genuinely AI-curated window for that region.
   useEffect(() => {
     const init: Record<string, Factor[]> = {};
     for (const r of EVAL_REGIONS) {
@@ -149,8 +174,15 @@ export default function HomePage() {
         const res = await fetch("/api/dynamic-factors");
         if (res.ok) {
           const data = await res.json();
-          if (active && Array.isArray(data.factors) && data.factors.length > 0) {
-            setGlobalFactors(data.factors);
+          const meta = readMeta(data);
+          if (!active) return;
+          if (meta) setGlobalFactorsMeta(meta);
+          // Server fallbacks are static reference text, not curation. They are
+          // only accepted when the API confirms a successful AI run; otherwise
+          // the hand-authored client FACTORS stay on screen.
+          const factors = (data as { factors?: Factor[] }).factors;
+          if (meta && isLiveCuration(meta) && Array.isArray(factors) && factors.length > 0) {
+            setGlobalFactors(factors);
           }
         }
       } catch { /* ignore */ }
@@ -159,8 +191,16 @@ export default function HomePage() {
           const res = await fetch(`/api/regional-factors?region=${r.id}`);
           if (res.ok) {
             const data = await res.json();
-            if (active && Array.isArray(data.factors) && data.factors.length > 0) {
-              setRegionalFactors((prev) => ({ ...prev, [r.id]: data.factors }));
+            const meta = readMeta(data);
+            if (!active) return;
+            if (meta) {
+              setRegionalFactorsMeta((prev) => ({ ...prev, [r.id]: meta }));
+            }
+            // Keep the hand-authored regional copy when the server is
+            // degraded — static server text must not beat better local copy.
+            const factors = (data as { factors?: Factor[] }).factors;
+            if (meta && isLiveCuration(meta) && Array.isArray(factors) && factors.length > 0) {
+              setRegionalFactors((prev) => ({ ...prev, [r.id]: factors }));
             }
           }
         } catch { /* ignore */ }
@@ -195,6 +235,7 @@ export default function HomePage() {
         const data = (await res.json()) as { solutions?: Solution[] };
         if (controller.signal.aborted || !Array.isArray(data.solutions)) return;
         setSolutions(data.solutions);
+        setSolutionsMeta(readMeta(data));
       } catch {
         /* keep the last good set of solutions */
       } finally {
@@ -257,11 +298,13 @@ export default function HomePage() {
           fallbackFactors={scopeFactors}
           healthStatus={healthStatus}
           solutions={solutions}
+          meta={solutionsMeta ?? undefined}
         />
         <FactorsSection
           horizon={horizon}
           dynamicFactors={globalFactors}
           healthStatus={healthStatus}
+          meta={globalFactorsMeta ?? undefined}
         />
         <RegionalEvaluation
           prices={prices}
@@ -270,7 +313,7 @@ export default function HomePage() {
           region={region}
           onRegion={setRegion}
           dynamicFactors={regionalFactors}
-          healthStatus={healthStatus}
+          factorsMeta={regionalFactorsMeta}
         />
         <AboutSection />
       </main>

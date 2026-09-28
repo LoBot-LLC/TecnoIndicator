@@ -16,11 +16,23 @@ export interface Factor {
   direction: "up" | "down" | "mixed";
   magnitude: "High" | "Medium" | "Low";
   source: string;
+  /**
+   * Optional: the evidence URL backing this factor. `source` is free text
+   * ("IEA Oil Market Report"), so the URL is carried separately when known.
+   * Optional so the frontend's duplicated `Factor` type stays assignable.
+   */
+  sourceUrl?: string;
   bias: "short" | "mid" | "long" | "flat";
   drift: Partial<Record<CommodityId, number>>;
   regions?: RegionId[];
   scope: "global" | Region;
   importanceScore: number;
+  /**
+   * Optional: "ai" when the model produced this factor, "static" for the
+   * graceful-degradation fallback. Optional so the frontend's duplicated
+   * `Factor` type in src/lib/model.ts stays structurally assignable.
+   */
+  provenance?: "ai" | "static";
   createdAt: string;
   updatedAt: string;
 }
@@ -122,6 +134,25 @@ export interface KiloStatus {
     opaque: number;
     unrecognized: number;
   };
+  /** Env-var NAMES holding a configured key. Values are never exposed. */
+  keyEnvNames: string[];
+  /** Every env-var name this build reads. */
+  keyEnvNamesRead: string[];
+  /** Per-key probe outcome, for diagnosing an unusable credential. */
+  keyDetails: Array<{
+    envName: string;
+    available: boolean;
+    rateLimited: boolean;
+    zeroCostVerified: boolean;
+    lastStatus: number | null;
+    lastError: string | null;
+    lastCheckedAt: string | null;
+    lastSuccessAt: string | null;
+    reprobeAfter: string | null;
+  }>;
+  modelCount: number;
+  zeroCostModelCount: number;
+  usableModelCount: number;
 }
 
 export interface TinyFishStatus {
@@ -149,7 +180,15 @@ export interface SolutionsResponse {
   solutions: Solution[];
   scope: "global" | Region;
   count: number;
+  /** True only when all returned solutions were model-generated. */
   aiCurated: boolean;
+  /** How many of the returned solutions were genuinely model-generated. */
+  aiCount: number;
+  /** True when deterministic padding had to be added to reach MAX_SOLUTIONS. */
+  degraded: boolean;
+  /** Machine-readable degradation reason, present only when degraded. */
+  reason?: string;
   cacheKey: string;
   updatedAt: string;
+  servedFrom: "cache" | "curated" | "fallback";
 }

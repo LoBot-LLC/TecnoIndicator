@@ -8,6 +8,7 @@ import {
   MODEL_CACHE_MS,
   readConfiguredKeys,
   isGlobalRateLimitStatus,
+  isRetryableUpstreamStatus,
   isJwtApiKey,
   isOpaqueApiKey,
   isRecognizedKiloGatewayKeyFormat,
@@ -15,6 +16,45 @@ import {
 } from "./http";
 import { getCache, setCache } from "./cache";
 import { KiloResponse, KiloStatus } from "./types";
+
+/**
+ * The real catalog response is ~481KB, so a 5s internal abort guaranteed a
+ * timeout on a cold start. 15s still fits inside the 25s factor-route budget
+ * and the caller's signal remains authoritative.
+ */
+const CATALOG_FETCH_TIMEOUT_MS = 15_000;
+/** Long-lived copy of the last good catalog, used when a refresh fails. */
+const CATALOG_BACKUP_KEY = "kilo:model-catalog:backup";
+const CATALOG_BACKUP_TTL_MS = 24 * 60 * 60 * 1000;
+/** A 4-token cap is routinely rejected by router/auto models; 32 is safe. */
+const PROBE_MAX_TOKENS = 32;
+const PROBE_TEMPERATURE = 0.2;
+const MAX_PROBE_MODELS_PER_KEY = 2;
+/** Bounded backoff: 60s, 120s, 240s, then capped. */
+const KEY_REPROBE_BASE_MS = 60_000;
+const KEY_REPROBE_MAX_MS = 4 * 60_000;
+/** A rejected credential is still retried occasionally (a key can be rotated). */
+const ACCESS_DENIED_REPROBE_MS = 10 * 60_000;
+const REPROBE_TIMEOUT_MS = 8_000;
+/** How long a model is skipped after a transient upstream failure. */
+const UPSTREAM_BLOCK_DEFAULT_MS = 2_000;
+const UPSTREAM_BLOCK_MAX_MS = 15_000;
+/** At most one auto-retry per key/model combination after a 502/503/504. */
+const MAX_UPSTREAM_RETRIES = 1;
+
+/** Abort-aware sleep used to honour `Retry-After` before a single auto-retry. */
+async function sleep(ms: number, abortSignal?: AbortSignal): Promise<void> {
+  if (!Number.isFinite(ms) || ms <= 0) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    abortSignal?.addEventListener("abort", done, { once: true });
+  });
+}
 
 function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   const controller = new AbortController();
@@ -55,6 +95,14 @@ export interface KiloKeyState {
   rateLimitResetAt: string | null;
   lastCheckedAt: string | null;
   lastSuccessAt: string | null;
+  /** Last HTTP status seen for this key, for /api/health diagnostics. */
+  lastStatus: number | null;
+  /** Last failure message for this key, for /api/health diagnostics. */
+  lastError: string | null;
+  /** Earliest time a failed key may be probed again; null means "no cooldown". */
+  reprobeAfter: string | null;
+  /** Current cooldown length; doubles up to {@link KEY_REPROBE_MAX_MS}. */
+  reprobeDelayMs: number;
 }
 
 export interface ModelCandidate {
@@ -69,6 +117,10 @@ export interface ModelCandidate {
   rateLimitResetAt: string | null;
   lastCheckedAt: string | null;
   lastSuccessAt: string | null;
+  lastStatus: number | null;
+  lastError: string | null;
+  /** Epoch ms until which this model is skipped after a transient failure. */
+  blockedUntil: number | null;
 }
 
 interface KiloModelCatalogEntry {
@@ -81,6 +133,29 @@ interface KiloModelCatalogEntry {
     [key: string]: unknown;
   };
   [key: string]: unknown;
+}
+
+/** A model can be used unless it is rate limited or inside a transient cooldown. */
+function isModelUsable(model: ModelCandidate): boolean {
+  return model.available && !model.rateLimited && (model.blockedUntil ?? 0) <= Date.now();
+}
+
+/**
+ * Accepts every shape the gateway has used for the catalog payload:
+ * `{data: []}`, a bare array, `{models: []}` and `{data: {models: []}}`.
+ * Returning `[]` for an unrecognised shape used to leave the pool empty, which
+ * (combined with a 5s fetch abort on a 481KB payload) killed every key.
+ */
+function parseCatalogModels(data: unknown): KiloModelCatalogEntry[] {
+  if (Array.isArray(data)) return data as KiloModelCatalogEntry[];
+  if (!data || typeof data !== "object") return [];
+  const root = data as Record<string, unknown>;
+  if (Array.isArray(root.data)) return root.data as KiloModelCatalogEntry[];
+  if (Array.isArray(root.models)) return root.models as KiloModelCatalogEntry[];
+  if (root.data && typeof root.data === "object" && Array.isArray((root.data as Record<string, unknown>).models)) {
+    return (root.data as Record<string, unknown>).models as KiloModelCatalogEntry[];
+  }
+  return [];
 }
 
 export interface KiloInferPayload {
@@ -131,6 +206,10 @@ export class KiloRouter {
       rateLimitResetAt: null,
       lastCheckedAt: new Date().toISOString(),
       lastSuccessAt: null,
+      lastStatus: null,
+      lastError: null,
+      reprobeAfter: null,
+      reprobeDelayMs: KEY_REPROBE_BASE_MS,
     }));
 
     for (const key of keys) {
@@ -143,46 +222,52 @@ export class KiloRouter {
       }
     }
 
-await this.refreshKiloModels(true, abortSignal);
+    // `force: false` so a fresh catalog cache entry is honoured instead of
+    // re-downloading ~481KB on every cold start.
+    await this.refreshKiloModels(false, abortSignal);
 
     // Probe keys against eligible models in PARALLEL with a timeout.
     // Prefer zero-cost models, but fall back to any available model.
     // Sequential probing would cause Vercel function timeouts with many keys/models.
-    let eligibleModels = this.modelCandidates.filter(m => m.zeroCostVerified && m.available && !m.rateLimited);
-    if (eligibleModels.length === 0) {
-      eligibleModels = this.modelCandidates.filter(m => m.available && !m.rateLimited);
+    let eligibleModels = this.usableProbeModels();
+    if (eligibleModels.length === 0 && this.modelCandidates.length === 0) {
+      // The catalog fetch failed or returned an unknown shape. Key validity
+      // must not depend on catalog success, so probe against the default model
+      // instead of skipping probing entirely and later throwing "no keys".
+      console.warn(
+        "Kilo model catalog is empty; probing keys against the default model only",
+      );
+      this.modelCandidates = this.buildCandidatePool([{ id: DEFAULT_KILO_MODEL_ID }]);
+      eligibleModels = this.usableProbeModels();
     }
     if (eligibleModels.length > 0) {
-      // Combine the passed abort signal with our 5s internal timeout. The caller's
-      // signal is still honoured, so /api/health's 4s budget continues to bound this.
+      // Combine the passed abort signal with our internal timeout. The caller's
+      // signal is still honoured, so /api/health's 10s budget continues to bound this.
       const controller = new AbortController();
       const combinedSignal = abortSignal
         ? combineAbortSignals(abortSignal, controller.signal)
         : controller.signal;
-      const overallTimeout = setTimeout(() => controller.abort(), 5000);
+      const overallTimeout = setTimeout(() => controller.abort(), 8000);
       try {
-        // For each key, probe against the FIRST eligible model only (one success is enough)
-        // to minimize total probe time. Run all key probes in parallel.
+        // For each key, probe up to MAX_PROBE_MODELS_PER_KEY eligible models
+        // (one success is enough) and run all key probes in parallel.
         const probeResults = await Promise.all(
           this.keyStates.map(async (keyState) => {
-            try {
-              return await this.probeKeyModel(keyState, eligibleModels[0], combinedSignal);
-            } catch {
-              return { success: false };
+            for (const model of eligibleModels.slice(0, MAX_PROBE_MODELS_PER_KEY)) {
+              try {
+                const probe = await this.probeKeyModel(keyState, model, combinedSignal);
+                if (probe.success) return probe;
+              } catch {
+                // Already recorded on the key state by probeKeyModel.
+              }
             }
+            return { success: false };
           }),
         );
       for (let i = 0; i < this.keyStates.length; i++) {
           const keyState = this.keyStates[i];
           const probe = probeResults[i];
-          if (probe.success) {
-            keyState.available = true;
-            keyState.inputPrice = probe.inputPrice ?? null;
-            keyState.outputPrice = probe.outputPrice ?? null;
-            keyState.zeroCostVerified = probe.zeroCostVerified ?? false;
-            keyState.lastCheckedAt = new Date().toISOString();
-            keyState.lastSuccessAt = keyState.lastCheckedAt;
-          }
+          if (probe.success) this.applyProbeResult(keyState, probe);
         }
       } finally {
         clearTimeout(overallTimeout);
@@ -194,27 +279,79 @@ await this.refreshKiloModels(true, abortSignal);
     this.initializing = null;
   }
 
+  /** Models eligible for a probe/inference right now (not rate limited, not cooling down). */
+  private usableProbeModels(): ModelCandidate[] {
+    const usable = this.modelCandidates.filter(isModelUsable);
+    // Prefer zero-cost models, but never at the cost of having no model at all.
+    const zeroCost = usable.filter((m) => m.zeroCostVerified);
+    return zeroCost.length > 0 ? zeroCost : usable;
+  }
+
+  private applyProbeResult(
+    keyState: KiloKeyState,
+    probe: { success: boolean; inputPrice?: number | null; outputPrice?: number | null; zeroCostVerified?: boolean },
+  ): void {
+    if (!probe.success) return;
+    keyState.available = true;
+    keyState.inputPrice = probe.inputPrice ?? null;
+    keyState.outputPrice = probe.outputPrice ?? null;
+    keyState.zeroCostVerified = probe.zeroCostVerified ?? false;
+    keyState.lastCheckedAt = new Date().toISOString();
+    keyState.lastSuccessAt = keyState.lastCheckedAt;
+    keyState.lastStatus = 200;
+    keyState.lastError = null;
+    keyState.rateLimited = false;
+    keyState.rateLimitScope = null;
+    // A key that works again is back to the shortest cooldown.
+    keyState.reprobeAfter = null;
+    keyState.reprobeDelayMs = KEY_REPROBE_BASE_MS;
+  }
+
+  /**
+   * Marks a key as currently unusable WITHOUT latching it off forever: a bounded
+   * cooldown is recorded so {@link reprobeUnusableKeys} can try it again.
+   */
+  private markKeyUnavailable(
+    keyState: KiloKeyState,
+    reason: string,
+    status: number | null,
+    cooldownMs: number = keyState.reprobeDelayMs,
+  ): void {
+    keyState.available = false;
+    keyState.lastStatus = status;
+    keyState.lastError = reason;
+    keyState.lastCheckedAt = new Date().toISOString();
+    keyState.reprobeAfter = new Date(Date.now() + cooldownMs).toISOString();
+    keyState.reprobeDelayMs = Math.min(keyState.reprobeDelayMs * 2, KEY_REPROBE_MAX_MS);
+  }
+
+  private canReprobe(keyState: KiloKeyState): boolean {
+    if (keyState.reprobeAfter === null) return true;
+    const at = Date.parse(keyState.reprobeAfter);
+    return !Number.isFinite(at) || at <= Date.now();
+  }
+
   async refreshKiloModels(force: boolean = false, abortSignal?: AbortSignal): Promise<void> {
     const cached = await getCache<{ models: KiloModelCatalogEntry[]; timestamp: number }>(
       "kilo:model-catalog",
       MODEL_CACHE_MS
     );
 
-    // Combine passed abort signal with our 5s internal timeout. A short budget here
-    // latches `initialized` to true on a cold start, leaving keys permanently
-    // unavailable; the caller's signal still bounds fast paths like /api/health.
+    if (!force && cached && Date.now() - cached.timestamp < MODEL_CACHE_MS) {
+      this.modelCandidates = this.buildCandidatePool(cached.models);
+      this.catalogLastRefresh = new Date(cached.timestamp).toISOString();
+      return;
+    }
+
+    // Combine the passed abort signal with a realistic internal timeout. The
+    // caller's signal still bounds fast paths like /api/health.
     const controller = new AbortController();
     const combinedSignal = abortSignal
       ? combineAbortSignals(abortSignal, controller.signal)
       : controller.signal;
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), CATALOG_FETCH_TIMEOUT_MS);
 
     try {
-      if (!force && cached && Date.now() - cached.timestamp < MODEL_CACHE_MS) {
-        this.modelCandidates = this.buildCandidatePool(cached.models);
-        return;
-      }
-
       try {
         const authKey = this.keyStates[0]?.keyValue ?? "";
         if (abortSignal?.aborted) {
@@ -233,17 +370,29 @@ await this.refreshKiloModels(true, abortSignal);
         }
 
         const data = await response.json();
-        const models: KiloModelCatalogEntry[] = Array.isArray(data.data)
-          ? data.data
-          : Array.isArray(data)
-            ? data
-            : [];
+        const models = parseCatalogModels(data);
 
         this.modelCandidates = this.buildCandidatePool(models);
         this.catalogLastRefresh = new Date().toISOString();
         await setCache("kilo:model-catalog", { models, timestamp: Date.now() }, MODEL_CACHE_MS);
+        // Keep a long-lived copy so a failed refresh can still resolve models.
+        await setCache(CATALOG_BACKUP_KEY, { models, timestamp: Date.now() }, CATALOG_BACKUP_TTL_MS);
       } catch (error) {
         console.error("Kilo model catalog refresh failed:", error);
+        // A failed refresh must not leave the pool empty: fall back to the last
+        // known-good catalog. Previously only a log was emitted, which made every
+        // subsequent request throw "No available Kilo Gateway key/model combinations".
+        const backup = await getCache<{ models: KiloModelCatalogEntry[]; timestamp: number }>(
+          CATALOG_BACKUP_KEY,
+          CATALOG_BACKUP_TTL_MS,
+        );
+        if (backup && Array.isArray(backup.models) && backup.models.length > 0) {
+          this.modelCandidates = this.buildCandidatePool(backup.models);
+          this.catalogLastRefresh = new Date(backup.timestamp).toISOString();
+          console.warn(
+            `Kilo model catalog refresh failed; using last known-good catalog from ${this.catalogLastRefresh}`,
+          );
+        }
       }
     } finally {
       clearTimeout(timeoutId);
@@ -280,6 +429,9 @@ await this.refreshKiloModels(true, abortSignal);
         rateLimitResetAt: null,
         lastCheckedAt: null,
         lastSuccessAt: null,
+        lastStatus: null,
+        lastError: null,
+        blockedUntil: null,
       });
     }
 
@@ -311,10 +463,14 @@ await this.refreshKiloModels(true, abortSignal);
     rateLimitScope?: "key" | "model" | "global" | "unknown" | null;
   }> {
     const probeKey = `kilo:access-probe:${keyState.keyIndex}:${modelCandidate.modelId}`;
-    const cached = await getCache<{ success: boolean; inputPrice: number | null; outputPrice: number | null }>(
-      probeKey,
-      ACCESS_PROBE_CACHE_MS
-    );
+    // `zeroCostVerified` is part of the cached payload: omitting it made a cache
+    // hit silently downgrade the key's zero-cost flag to false.
+    const cached = await getCache<{
+      success: boolean;
+      inputPrice: number | null;
+      outputPrice: number | null;
+      zeroCostVerified?: boolean;
+    }>(probeKey, ACCESS_PROBE_CACHE_MS);
 
     if (cached) {
       return cached;
@@ -339,8 +495,10 @@ await this.refreshKiloModels(true, abortSignal);
               content: "probe-ok",
             },
           ],
-          max_tokens: 4,
-          temperature: 0,
+          // A 4-token cap is routinely rejected by router/auto models, which
+          // turned a perfectly valid key into a "dead" one.
+          max_tokens: PROBE_MAX_TOKENS,
+          temperature: PROBE_TEMPERATURE,
         }),
         signal: abortSignal ? abortSignal : AbortSignal.timeout(10000),
       });
@@ -351,24 +509,43 @@ await this.refreshKiloModels(true, abortSignal);
       const rateLimitRemaining = responseHeaders.get("x-ratelimit-remaining");
       const rateLimitReset = responseHeaders.get("x-ratelimit-reset");
 
-      if (status === 200) {
+      // Any 2xx proves the credential works. Requiring exactly 200 marked a
+      // valid key dead over a harmless status difference.
+      if (status >= 200 && status < 300) {
         const result = {
           success: true,
           inputPrice: modelCandidate.inputPrice,
           outputPrice: modelCandidate.outputPrice,
           zeroCostVerified: modelCandidate.zeroCostVerified,
         };
+        keyState.lastStatus = status;
+        keyState.lastError = null;
         await setCache(probeKey, result, ACCESS_PROBE_CACHE_MS);
         return result;
       }
 
       if (status === 401 || status === 403) {
+        // The only genuinely permanent verdict about a credential — still given a
+        // long cooldown so a rotated key is not re-probed on every request.
         keyState.available = false;
+        keyState.lastStatus = status;
+        keyState.lastError = `Access denied (status ${status})`;
         keyState.lastCheckedAt = new Date().toISOString();
+        keyState.reprobeAfter = new Date(Date.now() + ACCESS_DENIED_REPROBE_MS).toISOString();
         return { success: false };
       }
 
-      if (status === 429 || isGlobalRateLimitStatus(status)) {
+      if (isRetryableUpstreamStatus(status)) {
+        // "Provider temporarily unavailable" is not a verdict on the key: cool
+        // the model down and let the next combination be tried.
+        this.blockModel(modelCandidate, this.retryAfterMs(retryAfter));
+        keyState.lastStatus = status;
+        keyState.lastError = `Upstream unavailable (status ${status})`;
+        keyState.lastCheckedAt = new Date().toISOString();
+        return { success: false, inputPrice: modelCandidate.inputPrice, outputPrice: modelCandidate.outputPrice };
+      }
+
+      if (isGlobalRateLimitStatus(status)) {
         let scope: "key" | "model" | "global" | "unknown" | null = "unknown";
         const body = await response.text();
         const code = this.extractRateLimitCode(body);
@@ -427,16 +604,89 @@ await this.refreshKiloModels(true, abortSignal);
         };
       }
 
-      // Other errors - mark key as unavailable
-      keyState.available = false;
-      keyState.lastCheckedAt = new Date().toISOString();
+      // Anything else (400, 402, 404, 5xx, ...) is inconclusive: park the key
+      // behind a short, growing cooldown instead of latching it off forever.
+      this.markKeyUnavailable(keyState, `Probe failed with status ${status}`, status);
       return { success: false };
     } catch (error) {
-      // Network errors or timeouts
+      // Network errors or timeouts say nothing about the credential either.
       console.error("Kilo access probe failed:", sanitizeError(String(error)));
-      keyState.available = false;
-      keyState.lastCheckedAt = new Date().toISOString();
+      this.markKeyUnavailable(
+        keyState,
+        `Probe error: ${sanitizeError(String(error)).slice(0, 160)}`,
+        null,
+        5000,
+      );
       return { success: false };
+    }
+  }
+
+  /** Temporarily skips a model; the block expires so a later request retries it. */
+  private blockModel(modelCandidate: ModelCandidate, ms: number): void {
+    modelCandidate.blockedUntil = Date.now() + Math.max(0, ms);
+  }
+
+  private retryAfterMs(retryAfter: string | null): number {
+    if (retryAfter) {
+      const seconds = Number(retryAfter);
+      if (Number.isFinite(seconds) && seconds > 0) {
+        return Math.min(seconds * 1000, UPSTREAM_BLOCK_MAX_MS);
+      }
+      const at = Date.parse(retryAfter);
+      if (!Number.isNaN(at)) {
+        return Math.min(Math.max(at - Date.now(), 0), UPSTREAM_BLOCK_MAX_MS);
+      }
+    }
+    return UPSTREAM_BLOCK_DEFAULT_MS;
+  }
+
+  /**
+   * Re-probes keys that are currently marked unavailable whose cooldown has
+   * elapsed. The previous recovery path only re-fetched the model catalog, so a
+   * key that failed a single transient probe stayed dead for the whole
+   * instance lifetime.
+   */
+  private async reprobeUnusableKeys(abortSignal?: AbortSignal): Promise<number> {
+    const pending = this.keyStates.filter((k) => !k.available && !k.rateLimited && this.canReprobe(k));
+    if (pending.length === 0) return 0;
+
+    let models = this.usableProbeModels();
+    if (models.length === 0 && this.modelCandidates.length === 0) {
+      this.modelCandidates = this.buildCandidatePool([{ id: DEFAULT_KILO_MODEL_ID }]);
+      models = this.usableProbeModels();
+    }
+    if (models.length === 0) return 0;
+
+    const controller = new AbortController();
+    const combinedSignal = abortSignal
+      ? combineAbortSignals(abortSignal, controller.signal)
+      : controller.signal;
+    const timeout = setTimeout(() => controller.abort(), REPROBE_TIMEOUT_MS);
+    try {
+      const results = await Promise.all(
+        pending.map(async (keyState) => {
+          for (const model of models.slice(0, MAX_PROBE_MODELS_PER_KEY)) {
+            try {
+              const probe = await this.probeKeyModel(keyState, model, combinedSignal);
+              if (probe.success) {
+                this.applyProbeResult(keyState, probe);
+                return true;
+              }
+            } catch {
+              // Recorded on the key state.
+            }
+          }
+          return false;
+        }),
+      );
+      const recovered = results.filter(Boolean).length;
+      if (recovered > 0) {
+        console.warn(`Kilo: re-probe recovered ${recovered}/${pending.length} previously unavailable key(s)`);
+      }
+      return recovered;
+    } finally {
+      clearTimeout(timeout);
+      controller.abort();
     }
   }
 
@@ -478,53 +728,66 @@ await this.refreshKiloModels(true, abortSignal);
       await this.initializing;
     }
 
-    // Force refresh before returning complete Kilo-unavailable
-    const hasAnyUsableKeys = this.keyStates.some(k => k.available && !k.rateLimited);
-    const hasAnyUsableModels = this.modelCandidates.some(m => m.available && !m.rateLimited);
+    // Recovery. The old path re-fetched the model catalog but never re-probed
+    // KEYS, so one transient failure latched every key off for the lifetime of
+    // the instance. Models are refreshed, keys whose cooldown has elapsed are
+    // re-probed, and an empty catalog falls back to the default model.
+    const hasAnyUsableKeys = this.keyStates.some((k) => k.available && !k.rateLimited);
+    const hasAnyUsableModels = this.modelCandidates.some(isModelUsable);
 
-    if (!hasAnyUsableKeys || !hasAnyUsableModels) {
-      await this.refreshKiloModels(true, abortSignal);
+    if (!hasAnyUsableModels) {
+      await this.refreshKiloModels(false, abortSignal);
+    }
+    if (!hasAnyUsableKeys || !this.modelCandidates.some(isModelUsable)) {
+      await this.reprobeUnusableKeys(abortSignal);
+    }
+    if (this.modelCandidates.length === 0) {
+      this.modelCandidates = this.buildCandidatePool([{ id: DEFAULT_KILO_MODEL_ID }]);
     }
 
-    const keys = this.keyStates
-      .filter(k => k.available && !k.rateLimited)
-      .map((_k, i) => i);
+    const keys = this.shuffle(this.keyStates.filter((k) => k.available && !k.rateLimited));
 
     // First try zero-cost models only
-    let models = this.modelCandidates
-      .filter(m => m.zeroCostVerified && m.available && !m.rateLimited)
-      .map((_m, i) => i);
+    let models = this.shuffle(
+      this.modelCandidates.filter(isModelUsable).filter((m) => m.zeroCostVerified),
+    );
 
     // If no zero-cost models available, fall back to any available model
     if (models.length === 0) {
       console.warn("No zero-cost Kilo models available; falling back to any available model");
-      models = this.modelCandidates
-        .filter(m => m.available && !m.rateLimited)
-        .map((_m, i) => i);
+      models = this.shuffle(this.modelCandidates.filter(isModelUsable));
     }
 
     if (keys.length === 0 || models.length === 0) {
-      const availableKeys = this.keyStates.filter(k => k.available && !k.rateLimited);
-      const configuredKeys = this.keyStates.filter(k => k.keyIndex !== undefined);
-      if (availableKeys.length > 0 && configuredKeys.length > 0) {
-        throw new Error("No zero-cost Kilo Gateway models available and no fallback models available");
+      if (this.keyStates.length === 0) {
+        throw new Error(
+          "No Kilo Gateway key is configured (set KILO_API_KEY or KILO_GATEWAY_KEY[_1..5])",
+        );
       }
-      throw new Error("No available Kilo Gateway key/model combinations");
+      if (models.length === 0) {
+        throw new Error("No Kilo Gateway models available (model catalog empty or all models cooling down)");
+      }
+      const coolingDown = this.keyStates.filter((k) => !this.canReprobe(k)).length;
+      throw new Error(
+        `No available Kilo Gateway key/model combinations (0/${this.keyStates.length} usable keys, ` +
+        `${coolingDown} still in re-probe cooldown)`,
+      );
     }
 
-    // Shuffle keys and models using crypto-secure random
-    const shuffledKeys = this.shuffle(keys);
-    const shuffledModels = this.shuffle(models);
-
     let lastError: Error | null = null;
+    // Bounds the Retry-After auto-retries to one per key/model combination.
+    const retriedUpstreamCombinations = new Set<string>();
 
-    for (const keyIndex of shuffledKeys) {
-      const keyState = this.keyStates[keyIndex];
-      for (const modelIndex of shuffledModels) {
-        const modelCandidate = this.modelCandidates[modelIndex];
+    for (const keyState of keys) {
+      for (const modelCandidate of models) {
+        // If the abort signal has been fired, stop retrying
+        if (abortSignal && abortSignal.aborted) {
+          throw new Error("Kilo inference aborted");
+        }
 
+        let response: Response;
         try {
-          const response = await fetch(KILO_GATEWAY_CHAT_URL, {
+          response = await fetch(KILO_GATEWAY_CHAT_URL, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -539,119 +802,200 @@ await this.refreshKiloModels(true, abortSignal);
             }),
             signal: abortSignal ?? AbortSignal.timeout(10000),
           });
+        } catch (error) {
+          if (abortSignal && abortSignal.aborted) {
+            throw new Error("Kilo inference aborted");
+          }
+          lastError = error instanceof Error ? error : new Error(String(error));
+          this.markKeyUnavailable(
+            keyState,
+            `Request error: ${sanitizeError(String(lastError.message)).slice(0, 160)}`,
+            null,
+            15_000,
+          );
+          continue;
+        }
 
-          const status = response.status;
+        const status = response.status;
 
-          if (status === 200) {
-            const data = await response.json();
-const result: KiloResponse = {
-               id: data.id ?? makeId(),
-               object: data.object ?? "chat.completion",
-              created: data.created ?? Math.floor(Date.now() / 1000),
-              model: data.model ?? modelCandidate.modelId,
-              choices: Array.isArray(data.choices) && data.choices.length > 0
-                ? data.choices.map((choice: any) => ({
-                    index: choice.index ?? 0,
-                    message: {
-                      role: choice.message?.role ?? "assistant",
-                      content: choice.message?.content ?? "",
-                    },
-                    logprobs: choice.logprobs ?? null,
-                    finish_reason: choice.finish_reason ?? "stop",
-                  }))
-                : [],
-              usage: {
-                prompt_tokens: data.usage?.prompt_tokens ?? 0,
-                completion_tokens: data.usage?.completion_tokens ?? 0,
-                total_tokens: data.usage?.total_tokens ?? 0,
+        if (status === 200) {
+          let data: any;
+          try {
+            data = await response.json();
+          } catch (error) {
+            // A body that will not parse is a per-model failure, not a verdict
+            // on the credential; the key must stay usable.
+            this.blockModel(modelCandidate, UPSTREAM_BLOCK_DEFAULT_MS);
+            lastError = new Error(
+              `Kilo returned an unparseable body with status 200: ${sanitizeError(String(error)).slice(0, 120)}`,
+            );
+            continue;
+          }
+
+          const rawChoices = Array.isArray(data?.choices) ? data.choices : [];
+          const firstChoice = rawChoices[0];
+          const content =
+            typeof firstChoice?.message?.content === "string" ? firstChoice.message.content : "";
+          const finishReason =
+            typeof firstChoice?.finish_reason === "string" ? firstChoice.finish_reason : "stop";
+
+          // A 200 whose body is empty or truncated at the token cap is
+          // RETRYABLE. Coercing null content to "" made every caller parse an
+          // empty string and silently fall back to the static factor set.
+          if (rawChoices.length === 0 || content.trim() === "" || finishReason === "length") {
+            this.blockModel(modelCandidate, UPSTREAM_BLOCK_DEFAULT_MS);
+            lastError = new Error(
+              `Kilo response unusable (choices=${rawChoices.length}, finish_reason=${finishReason}, ` +
+              `contentChars=${content.length})`,
+            );
+            console.warn(
+              `Kilo: ${lastError.message} — retrying with a larger max_tokens or the next model`,
+            );
+            continue;
+          }
+
+          const result: KiloResponse = {
+            id: data.id ?? makeId(),
+            object: data.object ?? "chat.completion",
+            created: data.created ?? Math.floor(Date.now() / 1000),
+            model: data.model ?? modelCandidate.modelId,
+            choices: rawChoices.map((choice: any) => ({
+              index: choice?.index ?? 0,
+              message: {
+                role: choice?.message?.role ?? "assistant",
+                content: choice?.message?.content ?? "",
               },
-            };
+              logprobs: choice?.logprobs ?? null,
+              finish_reason: choice?.finish_reason ?? "stop",
+            })),
+            usage: {
+              prompt_tokens: data.usage?.prompt_tokens ?? 0,
+              completion_tokens: data.usage?.completion_tokens ?? 0,
+              total_tokens: data.usage?.total_tokens ?? 0,
+            },
+          };
 
+          keyState.lastCheckedAt = new Date().toISOString();
+          keyState.lastSuccessAt = keyState.lastCheckedAt;
+          keyState.rateLimited = false;
+          keyState.lastStatus = status;
+          keyState.lastError = null;
+          keyState.reprobeAfter = null;
+          keyState.reprobeDelayMs = KEY_REPROBE_BASE_MS;
+          modelCandidate.lastCheckedAt = new Date().toISOString();
+          modelCandidate.lastSuccessAt = modelCandidate.lastCheckedAt;
+          modelCandidate.rateLimited = false;
+          modelCandidate.lastStatus = status;
+          modelCandidate.lastError = null;
+          modelCandidate.blockedUntil = null;
+
+          return result;
+        }
+
+        if (status === 401 || status === 403) {
+          keyState.available = false;
+          keyState.lastStatus = status;
+          keyState.lastError = `Access denied (status ${status})`;
+          keyState.lastCheckedAt = new Date().toISOString();
+          // Long cooldown rather than "never": a rotated credential must be able
+          // to recover without a redeploy.
+          keyState.reprobeAfter = new Date(Date.now() + ACCESS_DENIED_REPROBE_MS).toISOString();
+          continue;
+        }
+
+        if (isRetryableUpstreamStatus(status)) {
+          // 502/503/504 mean "upstream temporarily unavailable" (the gateway even
+          // remaps an upstream 402 to 503). They are handled per model, so a
+          // single hiccup can no longer latch every key and model as blocked.
+          const retryAfterMs = this.retryAfterMs(response.headers.get("retry-after"));
+          this.blockModel(modelCandidate, retryAfterMs);
+          modelCandidate.lastStatus = status;
+          modelCandidate.lastError = `Upstream unavailable (status ${status})`;
+          modelCandidate.lastCheckedAt = new Date().toISOString();
+          keyState.lastStatus = status;
+          keyState.lastError = `Upstream unavailable (status ${status})`;
+          lastError = new Error(`Kilo upstream unavailable (status ${status})`);
+
+          // One bounded auto-retry of the same combination when the upstream
+          // told us when to come back; otherwise fall through to the next model.
+          if (retriedUpstreamCombinations.size < MAX_UPSTREAM_RETRIES) {
+            retriedUpstreamCombinations.add(`${keyState.keyIndex}:${modelCandidate.modelId}`);
+            console.warn(
+              `Kilo: status ${status} on ${modelCandidate.modelId}; retrying this key/model once in ${retryAfterMs}ms`,
+            );
+            await sleep(retryAfterMs, abortSignal);
+            continue;
+          }
+          continue;
+        }
+
+        if (isGlobalRateLimitStatus(status)) {
+          const body = await response.text();
+          const code = this.extractRateLimitCode(body);
+          const retryAfter = response.headers.get("retry-after");
+          const rateLimitRemaining = response.headers.get("x-ratelimit-remaining");
+          const rateLimitReset = response.headers.get("x-ratelimit-reset");
+          let scope: "key" | "model" | "global" | "unknown" | null = "unknown";
+
+          if (code.includes("key") || code.includes("rate_limit_key")) {
+            scope = "key";
+          } else if (code.includes("model") || code.includes("rate_limit_model")) {
+            scope = "model";
+          } else if (code.includes("global") || code.includes("ip")) {
+            scope = "global";
+          }
+
+          const resetAt = this.parseResetAt(retryAfter, rateLimitReset);
+
+          if (scope === "global") {
+            for (const key of this.keyStates) {
+              key.rateLimited = true;
+              key.rateLimitScope = "global";
+              key.rateLimitResetAt = resetAt;
+              key.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
+              key.lastCheckedAt = new Date().toISOString();
+              key.lastStatus = status;
+            }
+            for (const model of this.modelCandidates) {
+              model.rateLimited = true;
+              model.rateLimitScope = "global";
+              model.rateLimitResetAt = resetAt;
+            }
+            throw new Error("Global Kilo rate limit detected");
+          } else if (scope === "key") {
+            keyState.rateLimited = true;
+            keyState.rateLimitScope = "key";
+            keyState.rateLimitResetAt = resetAt;
+            keyState.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
             keyState.lastCheckedAt = new Date().toISOString();
-            keyState.lastSuccessAt = keyState.lastCheckedAt;
-            keyState.rateLimited = false;
+            keyState.lastStatus = status;
+          } else if (scope === "model") {
+            modelCandidate.rateLimited = true;
+            modelCandidate.rateLimitScope = "model";
+            modelCandidate.rateLimitResetAt = resetAt;
+            modelCandidate.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
             modelCandidate.lastCheckedAt = new Date().toISOString();
-            modelCandidate.lastSuccessAt = modelCandidate.lastCheckedAt;
-            modelCandidate.rateLimited = false;
-
-            return result;
-          }
-
-          if (status === 401 || status === 403) {
-            keyState.available = false;
+            modelCandidate.lastStatus = status;
+          } else {
+            keyState.rateLimited = true;
+            keyState.rateLimitScope = "unknown";
+            keyState.rateLimitResetAt = resetAt;
             keyState.lastCheckedAt = new Date().toISOString();
-            continue;
-          }
-
-          if (status === 429 || isGlobalRateLimitStatus(status)) {
-            const body = await response.text();
-            const code = this.extractRateLimitCode(body);
-            const retryAfter = response.headers.get("retry-after");
-            const rateLimitRemaining = response.headers.get("x-ratelimit-remaining");
-            const rateLimitReset = response.headers.get("x-ratelimit-reset");
-            let scope: "key" | "model" | "global" | "unknown" | null = "unknown";
-
-            if (code.includes("key") || code.includes("rate_limit_key")) {
-              scope = "key";
-            } else if (code.includes("model") || code.includes("rate_limit_model")) {
-              scope = "model";
-            } else if (code.includes("global") || code.includes("ip")) {
-              scope = "global";
-            }
-
-            const resetAt = this.parseResetAt(retryAfter, rateLimitReset);
-
-            if (scope === "global") {
-              for (const key of this.keyStates) {
-                key.rateLimited = true;
-                key.rateLimitScope = "global";
-                key.rateLimitResetAt = resetAt;
-                key.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
-                key.lastCheckedAt = new Date().toISOString();
-              }
-              for (const model of this.modelCandidates) {
-                model.rateLimited = true;
-                model.rateLimitScope = "global";
-                model.rateLimitResetAt = resetAt;
-              }
-              throw new Error("Global Kilo rate limit detected");
-            } else if (scope === "key") {
-              keyState.rateLimited = true;
-              keyState.rateLimitScope = "key";
-              keyState.rateLimitResetAt = resetAt;
-              keyState.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
-              keyState.lastCheckedAt = new Date().toISOString();
-            } else if (scope === "model") {
-              modelCandidate.rateLimited = true;
-              modelCandidate.rateLimitScope = "model";
-              modelCandidate.rateLimitResetAt = resetAt;
-              modelCandidate.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
-              modelCandidate.lastCheckedAt = new Date().toISOString();
-            } else {
-              keyState.rateLimited = true;
-              keyState.rateLimitScope = "unknown";
-              keyState.rateLimitResetAt = resetAt;
-              keyState.lastCheckedAt = new Date().toISOString();
-              modelCandidate.rateLimited = true;
-              modelCandidate.rateLimitScope = "unknown";
-              modelCandidate.lastCheckedAt = new Date().toISOString();
-            }
-
-            lastError = new Error(`Kilo request failed with status ${status}`);
-            continue;
+            keyState.lastStatus = status;
+            modelCandidate.rateLimited = true;
+            modelCandidate.rateLimitScope = "unknown";
+            modelCandidate.lastCheckedAt = new Date().toISOString();
+            modelCandidate.lastStatus = status;
           }
 
           lastError = new Error(`Kilo request failed with status ${status}`);
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          keyState.available = false;
-          keyState.lastCheckedAt = new Date().toISOString();
+          continue;
         }
 
-        // If the abort signal has been fired, stop retrying
-        if (abortSignal && abortSignal.aborted) {
-          throw new Error("Kilo inference aborted");
-        }
+        // Anything else (400, 402, 404, unexpected 5xx, ...) is inconclusive:
+        // park the key behind a short cooldown and try the next combination.
+        this.markKeyUnavailable(keyState, `Request failed with status ${status}`, status, 30_000);
+        lastError = new Error(`Kilo request failed with status ${status}`);
       }
     }
 
@@ -683,6 +1027,10 @@ const result: KiloResponse = {
         rateLimitResetAt: null,
         lastCheckedAt: new Date().toISOString(),
         lastSuccessAt: null,
+        lastStatus: null,
+        lastError: null,
+        reprobeAfter: null,
+        reprobeDelayMs: KEY_REPROBE_BASE_MS,
       }));
     }
 
@@ -711,6 +1059,7 @@ const result: KiloResponse = {
           opaque: this.keyStates.filter(k => isOpaqueApiKey(k.keyValue)).length,
           unrecognized: this.keyStates.filter(k => !isRecognizedKiloGatewayKeyFormat(k.keyValue)).length,
         },
+        ...this.diagnosticFields(),
       };
     }
 
@@ -750,6 +1099,33 @@ const result: KiloResponse = {
         opaque: this.keyStates.filter(k => isOpaqueApiKey(k.keyValue)).length,
         unrecognized: this.keyStates.filter(k => !isRecognizedKiloGatewayKeyFormat(k.keyValue)).length,
       },
+      ...this.diagnosticFields(),
+    };
+  }
+
+  /**
+   * Diagnostic detail for /api/health: the env-var NAMES in use (never values),
+   * per-key probe outcomes and catalog state. A pipeline that silently serves
+   * static fallbacks is otherwise impossible to debug.
+   */
+  private diagnosticFields() {
+    return {
+      keyEnvNames: this.keyStates.map((k) => k.envName),
+      keyEnvNamesRead: [...KILO_KEY_ENV_NAMES],
+      keyDetails: this.keyStates.map((k) => ({
+        envName: k.envName,
+        available: k.available,
+        rateLimited: k.rateLimited,
+        zeroCostVerified: k.zeroCostVerified,
+        lastStatus: k.lastStatus,
+        lastError: k.lastError,
+        lastCheckedAt: k.lastCheckedAt,
+        lastSuccessAt: k.lastSuccessAt,
+        reprobeAfter: k.reprobeAfter,
+      })),
+      modelCount: this.modelCandidates.length,
+      zeroCostModelCount: this.modelCandidates.filter((m) => m.zeroCostVerified).length,
+      usableModelCount: this.modelCandidates.filter(isModelUsable).length,
     };
   }
 

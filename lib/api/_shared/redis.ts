@@ -1,3 +1,12 @@
+/**
+ * Per-call Redis timeout. A cold request performs ~45 sequential Redis
+ * round-trips, so a 3s per-call cap was a hidden multiplier worth up to +135s
+ * on top of every route budget. 750ms is ample for an Upstash edge round-trip
+ * and caps the total hidden I/O at ~34s; Redis is optional and every caller
+ * already treats a null/missed value as a cache miss.
+ */
+const REDIS_CALL_TIMEOUT_MS = 750;
+
 export interface RedisRestClient {
   get: (key: string) => Promise<string | null>;
   set: (key: string, value: string, ttlSeconds?: number) => Promise<void>;
@@ -26,7 +35,7 @@ async function getRedis(): Promise<RedisRestClient | null> {
         const response = await fetch(`${baseUrl}/get/${encodeURIComponent(key)}`, {
           method: "GET",
           headers: { Authorization: auth },
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(REDIS_CALL_TIMEOUT_MS),
         });
         if (!response.ok) return null;
         const data: { result?: string } = await response.json();
@@ -48,7 +57,7 @@ async function getRedis(): Promise<RedisRestClient | null> {
             method: "POST",
             headers: { Authorization: auth, "Content-Type": "text/plain" },
             body: value,
-            signal: AbortSignal.timeout(3000),
+            signal: AbortSignal.timeout(REDIS_CALL_TIMEOUT_MS),
           },
         );
         if (!response.ok) {
@@ -65,7 +74,7 @@ async function getRedis(): Promise<RedisRestClient | null> {
         const response = await fetch(`${baseUrl}/del/${encodeURIComponent(key)}`, {
           method: "POST",
           headers: { Authorization: auth },
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(REDIS_CALL_TIMEOUT_MS),
         });
         if (!response.ok) {
           console.warn("Redis DEL failed with status", response.status);

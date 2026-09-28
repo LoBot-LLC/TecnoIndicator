@@ -18,11 +18,12 @@ import { getCache, setCache } from "./cache";
 import { KiloResponse, KiloStatus } from "./types";
 
 /**
- * The real catalog response is ~481KB, so a 5s internal abort guaranteed a
- * timeout on a cold start. 15s still fits inside the 25s factor-route budget
- * and the caller's signal remains authoritative.
+ * The real catalog response is ~481KB, so an aggressive abort can time out on a
+ * cold start. 8s (down from 15s) is the compromise: the
+ * `kilo:model-catalog:backup` 24h key still resolves a miss, and the catalog
+ * fetch no longer eats a third of a 45s route budget while serving one.
  */
-const CATALOG_FETCH_TIMEOUT_MS = 15_000;
+const CATALOG_FETCH_TIMEOUT_MS = 8_000;
 /** Long-lived copy of the last good catalog, used when a refresh fails. */
 const CATALOG_BACKUP_KEY = "kilo:model-catalog:backup";
 const CATALOG_BACKUP_TTL_MS = 24 * 60 * 60 * 1000;
@@ -35,7 +36,23 @@ const KEY_REPROBE_BASE_MS = 60_000;
 const KEY_REPROBE_MAX_MS = 4 * 60_000;
 /** A rejected credential is still retried occasionally (a key can be rotated). */
 const ACCESS_DENIED_REPROBE_MS = 10 * 60_000;
-const REPROBE_TIMEOUT_MS = 8_000;
+const REPROBE_TIMEOUT_MS = 5_000;
+/** Overall budget for the whole init-time key-probe phase (was 8s). */
+const INIT_PROBE_TIMEOUT_MS = 3_000;
+/**
+ * Per-attempt cap for a single Kilo chat call.
+ *
+ * `abortSignal ?? AbortSignal.timeout(10_000)` meant the cap was DEAD whenever a
+ * route passed its own timer, so one hung fetch could consume the whole route
+ * budget. The caller's signal and this cap are now always combined.
+ */
+const PER_ATTEMPT_TIMEOUT_MS = 10_000;
+/**
+ * How many usable models `kiloInfer` will try. The K x M fan-out was unbounded:
+ * a large catalog meant dozens of sequential 10s attempts, which no route budget
+ * can contain. The first three usable models is ample.
+ */
+const MAX_INFER_MODELS = 3;
 /** How long a model is skipped after a transient upstream failure. */
 const UPSTREAM_BLOCK_DEFAULT_MS = 2_000;
 const UPSTREAM_BLOCK_MAX_MS = 15_000;
@@ -68,6 +85,12 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
     }, { once: true });
   }
   return controller.signal;
+}
+
+/** Caller signal (may be absent) AND a per-attempt cap, always both. */
+function attemptSignal(abortSignal?: AbortSignal): AbortSignal {
+  const perAttempt = AbortSignal.timeout(PER_ATTEMPT_TIMEOUT_MS);
+  return abortSignal ? combineAbortSignals(abortSignal, perAttempt) : perAttempt;
 }
 
 function makeId(prefix = "chatcmpl"): string {
@@ -180,7 +203,14 @@ export class KiloRouter {
       return;
     }
     this.initializing = this._doInit(abortSignal);
-    await this.initializing;
+    try {
+      await this.initializing;
+    } finally {
+      // A failed/aborted init must not poison the instance: without this the
+      // rejected promise stayed cached as `initializing` and every later request
+      // rethrew the FIRST caller's timeout.
+      if (!this.initialized) this.initializing = null;
+    }
   }
 
   private async _doInit(abortSignal?: AbortSignal): Promise<void> {
@@ -247,7 +277,7 @@ export class KiloRouter {
       const combinedSignal = abortSignal
         ? combineAbortSignals(abortSignal, controller.signal)
         : controller.signal;
-      const overallTimeout = setTimeout(() => controller.abort(), 8000);
+      const overallTimeout = setTimeout(() => controller.abort(), INIT_PROBE_TIMEOUT_MS);
       try {
         // For each key, probe up to MAX_PROBE_MODELS_PER_KEY eligible models
         // (one success is enough) and run all key probes in parallel.
@@ -378,6 +408,11 @@ export class KiloRouter {
         // Keep a long-lived copy so a failed refresh can still resolve models.
         await setCache(CATALOG_BACKUP_KEY, { models, timestamp: Date.now() }, CATALOG_BACKUP_TTL_MS);
       } catch (error) {
+        // A caller-cancelled refresh is a TIMEOUT, not a failed refresh. Falling
+        // through to the backup lookup and then to key probing here burned up to
+        // 8 more seconds PAST the caller's deadline, which is how an aborted
+        // request kept running well after its route timer had fired.
+        if (abortSignal?.aborted) throw error;
         console.error("Kilo model catalog refresh failed:", error);
         // A failed refresh must not leave the pool empty: fall back to the last
         // known-good catalog. Previously only a log was emitted, which made every
@@ -500,7 +535,7 @@ export class KiloRouter {
           max_tokens: PROBE_MAX_TOKENS,
           temperature: PROBE_TEMPERATURE,
         }),
-        signal: abortSignal ? abortSignal : AbortSignal.timeout(10000),
+        signal: attemptSignal(abortSignal),
       });
 
       const status = response.status;
@@ -611,6 +646,11 @@ export class KiloRouter {
     } catch (error) {
       // Network errors or timeouts say nothing about the credential either.
       console.error("Kilo access probe failed:", sanitizeError(String(error)));
+      // BUT a probe that was cut short by the caller's budget is not evidence
+      // about the key at all. Walking a healthy key onto the 60 -> 120 -> 240s
+      // cooldown ladder because a route timed out is a self-inflicted outage:
+      // the key is reported as failed and never retried for minutes.
+      if (abortSignal?.aborted) return { success: false };
       this.markKeyUnavailable(
         keyState,
         `Probe error: ${sanitizeError(String(error)).slice(0, 160)}`,
@@ -758,7 +798,16 @@ export class KiloRouter {
       models = this.shuffle(this.modelCandidates.filter(isModelUsable));
     }
 
+    // Bound the K x M fan-out. With a large catalog the unbounded loop below
+    // could make dozens of sequential 10s attempts, which no route budget can
+    // contain; the first few usable models are enough to get a usable answer.
+    if (models.length > MAX_INFER_MODELS) models = models.slice(0, MAX_INFER_MODELS);
+
     if (keys.length === 0 || models.length === 0) {
+      // FIRST, before any diagnostic: a timeout must never be reported as an
+      // unavailable gateway. Callers map this message onto `kilo-unavailable`,
+      // which blames the credential for what is really an exhausted budget.
+      if (abortSignal?.aborted) throw new Error("Kilo inference aborted");
       if (this.keyStates.length === 0) {
         throw new Error(
           "No Kilo Gateway key is configured (set KILO_API_KEY or KILO_GATEWAY_KEY[_1..5])",
@@ -800,7 +849,7 @@ export class KiloRouter {
               temperature: payload.temperature ?? 0.7,
               response_format: payload.response_format ?? undefined,
             }),
-            signal: abortSignal ?? AbortSignal.timeout(10000),
+            signal: attemptSignal(abortSignal),
           });
         } catch (error) {
           if (abortSignal && abortSignal.aborted) {
@@ -1146,3 +1195,22 @@ export class KiloRouter {
 }
 
 export const kiloRouter = new KiloRouter();
+
+/**
+ * Warms the Kilo router once per instance, at module load, off the request path.
+ *
+ * Kilo init alone can cost ~11s (8s catalog fetch of a ~481KB payload + a 3s
+ * probe) and it used to run lazily INSIDE `kiloInfer`, competing with the very
+ * request it was serving. `initKiloRouter` is idempotent, so a later request
+ * just awaits the same in-flight promise. Guarded to run once per instance, and
+ * any rejection is swallowed so a failed warm-up never breaks module load.
+ */
+(function warmKiloRouterOnce(): void {
+  try {
+    void kiloRouter.initKiloRouter().catch((error: unknown) => {
+      console.warn("Kilo router warm-up failed:", error instanceof Error ? error.message : String(error));
+    });
+  } catch (error) {
+    console.warn("Kilo router warm-up could not start:", error);
+  }
+})();

@@ -55,6 +55,13 @@ export async function handleRegionalForecast(req: Request): Promise<Response> {
   const region = regionParam as Region;
   const cacheKey = `regional-forecast:${region}`;
 
+  // The TinyFish search and `kiloInfer` were both previously unbounded against
+  // vercel.json's 60s kill, so a hung vendor produced an HTTP 504 instead of the
+  // deterministic regional forecast. One 45s controller now bounds the whole
+  // live phase, leaving >=10s of headroom.
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), 45000);
+
   try {
     const forceRefresh = url.searchParams.get("force") === "true";
     const cached = forceRefresh ? null : await getCache<RegionalForecastPoint[]>(cacheKey, FORECAST_CACHE_MS);
@@ -62,7 +69,7 @@ export async function handleRegionalForecast(req: Request): Promise<Response> {
       return Response.json(cached, { status: 200 });
     }
 
-    const kiloStatus = await kiloRouter.getKiloStatus();
+    const kiloStatus = await kiloRouter.getKiloStatus(abortController.signal);
 
     // Cost preference, not an availability gate (see ai-forecast.ts).
     if (!kiloStatus.available) {
@@ -72,9 +79,11 @@ export async function handleRegionalForecast(req: Request): Promise<Response> {
     }
 
     const analytics = await getRegionalAnalytics(region);
-    const search = await tinyfishRouter.tinyfishSearch(`${REGION_NAMES[region]} oil electricity water prices 2026`, {
-      region,
-    });
+    const search = await tinyfishRouter.tinyfishSearch(
+      `${REGION_NAMES[region]} oil electricity water prices 2026`,
+      { region },
+      abortController.signal,
+    );
     const regionalWindow = await readFactorWindow(region);
     const factors: Factor[] = regionalWindow?.factors ?? (await readFactorWindow("global"))?.factors ?? [];
 
@@ -104,7 +113,7 @@ export async function handleRegionalForecast(req: Request): Promise<Response> {
 
     let response: Awaited<ReturnType<typeof kiloRouter.kiloInfer>>;
     try {
-      response = await kiloRouter.kiloInfer(payload);
+      response = await kiloRouter.kiloInfer(payload, abortController.signal);
     } catch {
       const fallback = buildRegionalForecastFallback(region);
       await setCache(cacheKey, fallback, FORECAST_CACHE_MS);
@@ -154,5 +163,7 @@ export async function handleRegionalForecast(req: Request): Promise<Response> {
     console.error("Regional forecast error:", error);
     const fallback = buildRegionalForecastFallback(region);
     return Response.json(fallback, { status: 503 });
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

@@ -27,6 +27,13 @@ function buildGlobalForecastFallback(): ForecastPoint[] {
 
 /** GET /api/ai-forecast — 11-year global oil/electricity/water forecast band. */
 export async function handleAiForecast(req: Request): Promise<Response> {
+  // `getKiloStatus` and `kiloInfer` were both previously unbounded against
+  // vercel.json's 60s kill, so a hung gateway produced an HTTP 504 instead of
+  // the deterministic forecast. One 45s controller now bounds the whole live
+  // phase, leaving >=10s of headroom.
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), 45000);
+
   try {
     const url = new URL(req.url, "http://localhost");
     const forceRefresh = url.searchParams.get("force") === "true";
@@ -34,7 +41,7 @@ export async function handleAiForecast(req: Request): Promise<Response> {
     const cached = forceRefresh ? null : await getCache<ForecastPoint[]>(cacheKey, FORECAST_CACHE_MS);
     if (cached) return Response.json(cached, { status: 200 });
 
-    const kiloStatus = await kiloRouter.getKiloStatus();
+    const kiloStatus = await kiloRouter.getKiloStatus(abortController.signal);
 
     // Zero-cost models are a cost PREFERENCE, not an availability requirement:
     // requiring them flipped the whole product to "unavailable" whenever a model
@@ -68,7 +75,7 @@ export async function handleAiForecast(req: Request): Promise<Response> {
 
     let kiloResponse: Awaited<ReturnType<typeof kiloRouter.kiloInfer>>;
     try {
-      kiloResponse = await kiloRouter.kiloInfer(payload);
+      kiloResponse = await kiloRouter.kiloInfer(payload, abortController.signal);
     } catch {
       const fallback = buildGlobalForecastFallback();
       await setCache(cacheKey, fallback, FORECAST_CACHE_MS);
@@ -111,5 +118,7 @@ export async function handleAiForecast(req: Request): Promise<Response> {
     console.error("AI forecast error:", error);
     const fallback = buildGlobalForecastFallback();
     return Response.json(fallback, { status: 503 });
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

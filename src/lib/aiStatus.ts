@@ -32,6 +32,9 @@ export interface PayloadMeta {
 
 const REASON_TEXT: Record<string, string> = {
   "no-evidence": "no reputable sources returned by the news search",
+  // A search that was cut short by the request's time budget, as opposed to one
+  // that ran and genuinely found nothing (`no-evidence`).
+  "search-aborted": "the news search ran out of time",
   "kilo-unavailable": "the AI gateway key is not usable",
   "kilo-aborted": "the request timed out",
   "unparseable-json": "the AI response could not be parsed",

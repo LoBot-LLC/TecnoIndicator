@@ -44,17 +44,34 @@ export const FACTORS_CACHE_MS = 60_000;
  * thrown away between cron runs and the oldest reason could never be evicted.
  */
 export const FACTORS_WINDOW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-export const SEARCH_CACHE_MS = 60_000;
+/**
+ * TTL for the `dynamic-factors:{scope}:status` diagnostics key only.
+ *
+ * It used to reuse {@link FACTORS_WINDOW_TTL_MS}, which pinned a single timed-out
+ * run's `kilo-aborted` reason into /api/health for seven days. The curated
+ * window's 7-day retention is a product requirement and is untouched; a run
+ * STATUS is only interesting until the next attempt, so an hour is plenty.
+ */
+export const FACTOR_STATUS_TTL_MS = 60 * 60_000;
+/**
+ * 10 minutes, not 60s: the identical query was re-issued (and re-billed) every
+ * minute by every request, which is exactly the vendor time the route budget
+ * cannot afford.
+ */
+export const SEARCH_CACHE_MS = 10 * 60_000;
 /** Longer-lived copy of the last good search result, used only when a search fails. */
 export const STALE_SEARCH_CACHE_MS = 60 * 60 * 1000;
 /** Read AND write TTL for scraped article bodies — they must agree. */
 export const SCRAPE_CACHE_MS = 10 * 60_000;
-export const MODEL_CACHE_MS = 60_000;
+/**
+ * 30 minutes. The catalog is a ~481KB payload; re-downloading it twice a minute
+ * burned both bandwidth and several seconds of a cold request's budget.
+ */
+export const MODEL_CACHE_MS = 30 * 60_000;
 export const ACCESS_PROBE_CACHE_MS = 5 * 60_000;
 export const FORECAST_CACHE_MS = 5 * 60_000;
 export const SOLUTIONS_CACHE_MS = 60_000;
 export const MAX_SOLUTIONS = 3;
-export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
 
 /**
  * The single canonical cache key for curated price factors.

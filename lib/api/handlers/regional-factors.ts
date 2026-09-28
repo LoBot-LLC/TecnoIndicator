@@ -48,7 +48,10 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     }
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 25000);
+    // 45s, mirroring /api/dynamic-factors: >=10s of headroom under vercel.json's
+    // 60s maxDuration, so this abort always fires first and the response stays
+    // a graceful JSON fallback rather than a 504.
+    const timeoutId = setTimeout(() => abortController.abort(), 45000);
     try {
       const outcome = await runFactorAnalysis(region, { abortSignal: abortController.signal });
       if (!outcome.ok) {

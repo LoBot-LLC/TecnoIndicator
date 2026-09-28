@@ -62,7 +62,11 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     }
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 25000);
+    // 45s, under vercel.json's 60s maxDuration with >=10s of headroom, so our own
+    // abort ALWAYS wins and the user gets a graceful JSON fallback instead of an
+    // HTTP 504. 25s was far below the pipeline's worst case, so the reported
+    // `reason` depended on whichever stage happened to be running at t=25s.
+    const timeoutId = setTimeout(() => abortController.abort(), 45000);
     try {
       const outcome = await runFactorAnalysis(scope, { abortSignal: abortController.signal });
       if (!outcome.ok) {

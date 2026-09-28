@@ -102,40 +102,46 @@ async function resolvePrices(req: Request): Promise<Response> {
     }
   }
 
-  // Bounded live-price attempt: TinyFish search + Kilo extraction.
+  // Bounded live-price attempt: TinyFish search + Kilo extraction. 30s leaves
+  // 30s of headroom under vercel.json's 60s maxDuration, so this abort always
+  // fires before Vercel's kill.
   const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), 25000);
+  const timeoutId = setTimeout(() => abortController.abort(), 30000);
 
   try {
-    const searchResults = await getLivePricesFromTinyFish(scope, abortController.signal);
+    try {
+      const searchResults = await getLivePricesFromTinyFish(scope, abortController.signal);
 
-    if (searchResults.isLive) {
-      await setCache(cacheKey, searchResults, SEARCH_CACHE_MS);
-      return Response.json(searchResults, { status: 200 });
+      if (searchResults.isLive) {
+        await setCache(cacheKey, searchResults, SEARCH_CACHE_MS);
+        return Response.json(searchResults, { status: 200 });
+      }
+    } catch (error) {
+      console.warn("TinyFish search failed, falling back to defaults:", error);
     }
-  } catch (error) {
-    console.warn("TinyFish search failed, falling back to defaults:", error);
+
+    // Deterministic fallbacks. Oil is quoted per barrel from its own benchmark;
+    // the retail diesel figure (USD per litre) is used for the fuel levy only and
+    // must never be served as a per-barrel price.
+    const analytics = scope === "global" ? await getGlobalAnalytics() : await getRegionalAnalytics(scope as Region);
+    const defaults = getScopePriceDefaults(scope === "global" ? "global" : (scope as Region));
+
+    const fallbackResult: PricesPayload = {
+      oil: { ...defaults.oil, isLive: false },
+      electricity: { ...defaults.electricity, isLive: false },
+      water: { ...defaults.water, isLive: false },
+      asOf: new Date().toISOString(),
+      dataSource: analytics.dataSource,
+      isLive: false,
+    };
+
+    await setCache(cacheKey, fallbackResult, SEARCH_CACHE_MS);
+    return Response.json(fallbackResult, { status: 200 });
   } finally {
+    // Cleared ONCE, around the whole thing. It used to be cleared inside the
+    // first `try`, so the deterministic fallback below ran completely unbounded.
     clearTimeout(timeoutId);
   }
-
-  // Deterministic fallbacks. Oil is quoted per barrel from its own benchmark;
-  // the retail diesel figure (USD per litre) is used for the fuel levy only and
-  // must never be served as a per-barrel price.
-  const analytics = scope === "global" ? await getGlobalAnalytics() : await getRegionalAnalytics(scope as Region);
-  const defaults = getScopePriceDefaults(scope === "global" ? "global" : (scope as Region));
-
-  const fallbackResult: PricesPayload = {
-    oil: { ...defaults.oil, isLive: false },
-    electricity: { ...defaults.electricity, isLive: false },
-    water: { ...defaults.water, isLive: false },
-    asOf: new Date().toISOString(),
-    dataSource: analytics.dataSource,
-    isLive: false,
-  };
-
-  await setCache(cacheKey, fallbackResult, SEARCH_CACHE_MS);
-  return Response.json(fallbackResult, { status: 200 });
 }
 
 function extractPriceFromText(text: string): number | null {
@@ -173,7 +179,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
         }, abortSignal);
       } catch (error) {
         console.warn(`Failed to search for ${commodity}:`, error);
-        return { results: [], total: 0, keyIndex: -1 };
+        return { results: [], total: 0, keyIndex: -1, aborted: abortSignal.aborted };
       }
     }),
   );

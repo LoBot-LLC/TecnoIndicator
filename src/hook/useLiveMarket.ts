@@ -36,33 +36,46 @@ export function useLiveMarket(): UseLiveMarketReturn {
   const tickRef = useRef<number | null>(null);
   const prevPricesRef = useRef<Record<CommodityId, number>>(getDefaultPrices());
 
-  // Fetch prices from API
-  const fetchPrices = useCallback(async (force = false) => {
-    try {
-      const url = force ? "/api/prices?force=true" : "/api/prices";
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as LivePricesResponse;
-      const newPrices = {
-        oil: data.oil.price,
-        electricity: data.electricity.price,
-        water: data.water.price,
-      };
-      // Compute real deltas from previous prices
-      setDeltas({
-        oil: (newPrices.oil - prevPricesRef.current.oil) / prevPricesRef.current.oil,
-        electricity: (newPrices.electricity - prevPricesRef.current.electricity) / prevPricesRef.current.electricity,
-        water: (newPrices.water - prevPricesRef.current.water) / prevPricesRef.current.water,
-      });
-      prevPricesRef.current = newPrices;
-      setPrices(newPrices);
-      setIsLive(data.isLive);
-      setLastUpdated(new Date(data.asOf));
-    } catch {
-      setPrices(getDefaultPrices());
-      setIsLive(false);
-    }
+  /**
+   * Applies one /api/prices body: the price list, the deltas against the
+   * previous values, the liveness flag and the timestamp. Shared by every
+   * caller so a single response can serve the price list and the water quote.
+   */
+  const applyPrices = useCallback((data: LivePricesResponse) => {
+    const newPrices = {
+      oil: data.oil.price,
+      electricity: data.electricity.price,
+      water: data.water.price,
+    };
+    // Compute real deltas from previous prices
+    setDeltas({
+      oil: (newPrices.oil - prevPricesRef.current.oil) / prevPricesRef.current.oil,
+      electricity:
+        (newPrices.electricity - prevPricesRef.current.electricity) /
+        prevPricesRef.current.electricity,
+      water: (newPrices.water - prevPricesRef.current.water) / prevPricesRef.current.water,
+    });
+    prevPricesRef.current = newPrices;
+    setPrices(newPrices);
+    setIsLive(data.isLive);
+    setLastUpdated(new Date(data.asOf));
   }, []);
+
+  // Fetch prices from API
+  const fetchPrices = useCallback(
+    async (force = false) => {
+      try {
+        const url = force ? "/api/prices?force=true" : "/api/prices";
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        applyPrices((await res.json()) as LivePricesResponse);
+      } catch {
+        setPrices(getDefaultPrices());
+        setIsLive(false);
+      }
+    },
+    [applyPrices],
+  );
 
   // Manual refresh - fetches with force=true
   const refresh = useCallback(() => {
@@ -76,33 +89,20 @@ export function useLiveMarket(): UseLiveMarketReturn {
       const res = await fetch("/api/prices?force=true");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as LivePricesResponse;
-      const newPrices = {
-        oil: data.oil.price,
-        electricity: data.electricity.price,
-        water: data.water.price,
-      };
-      // Compute real deltas from previous prices
-      setDeltas({
-        oil: (newPrices.oil - prevPricesRef.current.oil) / prevPricesRef.current.oil,
-        electricity: (newPrices.electricity - prevPricesRef.current.electricity) / prevPricesRef.current.electricity,
-        water: (newPrices.water - prevPricesRef.current.water) / prevPricesRef.current.water,
-      });
-      prevPricesRef.current = newPrices;
-      setPrices(newPrices);
+      applyPrices(data);
       setWaterLive({
         price: data.water.price,
         asOf: new Date(data.asOf).toLocaleTimeString("en-GB", { hour12: false }),
         source: data.water.source || data.dataSource,
         range: data.water.isLive ? "Live feed" : "Static benchmark",
       });
-      setIsLive(data.isLive);
-      setLastUpdated(new Date(data.asOf));
     } catch {
       setWaterLive(null);
+      setIsLive(false);
     } finally {
       setWaterFetching(false);
     }
-  }, []);
+  }, [applyPrices]);
 
   const toggleLive = useCallback(() => {
     setIsLive((prev) => !prev);
@@ -149,13 +149,12 @@ export function useLiveMarket(): UseLiveMarketReturn {
     };
   }, [isLive, fetchPrices]);
 
-  // Initial fetch
+  // Initial fetch: ONE /api/prices request feeds both the price list and the
+  // water quote. The old mount path fired fetchPrices() and fetchWater()
+  // concurrently, so every page load paid two requests for the same body.
   useEffect(() => {
-    void fetchPrices();
-    // Initial water fetch for backward compatibility
     void fetchWater();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchWater]);
 
   return {
     prices,

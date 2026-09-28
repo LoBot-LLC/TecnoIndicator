@@ -40,6 +40,14 @@ interface TinyFishSearchResponse {
   results: SearchResult[];
   total: number;
   keyIndex: number;
+  /**
+   * True when the search ended because the caller's signal was aborted.
+   *
+   * An aborted search previously returned the same `{results: [], total: 0}` as a
+   * genuine miss, so a budget exhaustion upstream was reported to the model and
+   * to the user as "no reputable sources returned by the news search".
+   */
+  aborted: boolean;
 }
 
 interface ScrapedContent {
@@ -51,6 +59,15 @@ interface ScrapedContent {
 
 const SEARCH_URL = "https://api.search.tinyfish.ai";
 const FETCH_URL = "https://api.fetch.tinyfish.ai";
+/**
+ * Per-attempt cap for a single TinyFish call.
+ *
+ * This used to be `abortSignal ?? AbortSignal.timeout(10_000)`, which meant the
+ * cap was DEAD whenever a route passed its own timer: one hung fetch could then
+ * consume the entire route budget. The caller's signal and this per-attempt cap
+ * are always combined, so neither can outlive the other.
+ */
+const PER_ATTEMPT_TIMEOUT_MS = 10_000;
 
 function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   const controller = new AbortController();
@@ -64,6 +81,30 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
     }, { once: true });
   }
   return controller.signal;
+}
+
+/** Caller signal (may be absent) AND a per-attempt cap, always both. */
+function attemptSignal(abortSignal?: AbortSignal): AbortSignal {
+  const perAttempt = AbortSignal.timeout(PER_ATTEMPT_TIMEOUT_MS);
+  return abortSignal ? combineAbortSignals(abortSignal, perAttempt) : perAttempt;
+}
+
+/**
+ * Abort-aware sleep. `backoff` was the only sleep in the codebase that kept
+ * sleeping through a cancelled request, burning budget after the route timer had
+ * already fired.
+ */
+async function sleep(ms: number, abortSignal?: AbortSignal): Promise<void> {
+  if (!Number.isFinite(ms) || ms <= 0) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    abortSignal?.addEventListener("abort", done, { once: true });
+  });
 }
 
 function buildSearchUrl(query: string, limit: number): string {
@@ -248,14 +289,19 @@ export class TinyFishRouter {
 
     const cacheKey = `tinyfish:search:${query}:${options.region ?? "global"}`;
     const cached = await getCache<TinyFishSearchResponse>(cacheKey, SEARCH_CACHE_MS);
-    if (cached) return cached;
+    // A cache entry written before `aborted` existed is normalized here so
+    // callers can rely on the field being present.
+    if (cached) return { ...cached, aborted: false };
 
     let keyState = this.selectKey();
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < 3; attempt++) {
+      // Guarded at the TOP as well as at the bottom: a request that arrives with
+      // an already-expired budget must not spend one more vendor call on it.
+      if (abortSignal?.aborted) break;
       if (!keyState) {
-        await this.backoff(attempt);
+        await this.backoff(attempt, abortSignal);
         keyState = this.selectKey();
         if (!keyState) break;
       }
@@ -276,7 +322,7 @@ export class TinyFishRouter {
            headers: {
              "X-API-Key": testKey,
            },
-           signal: abortSignal ?? AbortSignal.timeout(10000),
+           signal: attemptSignal(abortSignal),
          });
 
         const status = response.status;
@@ -293,11 +339,12 @@ export class TinyFishRouter {
                 publishedAt: firstPublishedAt(r),
               }))
             : [];
-          const result: TinyFishSearchResponse = {
-            results,
-            total: data.total_results ?? 0,
-            keyIndex: keyState.keyIndex,
-          };
+           const result: TinyFishSearchResponse = {
+             results,
+             total: data.total_results ?? 0,
+             keyIndex: keyState.keyIndex,
+             aborted: false,
+           };
 
           keyState.lastCheckedAt = new Date().toISOString();
           keyState.lastSuccessAt = keyState.lastCheckedAt;
@@ -309,7 +356,8 @@ export class TinyFishRouter {
 
           await setCache(cacheKey, result, SEARCH_CACHE_MS);
           // Distinct, longer-lived copy so a later failed search still has
-          // evidence to fall back on (the primary entry lives 60s).
+          // evidence to fall back on (the primary entry lives
+          // SEARCH_CACHE_MS).
           if (result.results.length > 0) {
             await setCache(`${cacheKey}:stale`, result, STALE_SEARCH_CACHE_MS);
           }
@@ -348,10 +396,12 @@ export class TinyFishRouter {
     // `getCache` ignores its TTL argument and trusts the stored 60s
     // `expiresAt`, so the "fallback" was always null (a silent no-op).
     const stale = await getCache<TinyFishSearchResponse>(`${cacheKey}:stale`, STALE_SEARCH_CACHE_MS);
-    if (stale && Array.isArray(stale.results) && stale.results.length > 0) return stale;
+    if (stale && Array.isArray(stale.results) && stale.results.length > 0) {
+      return { ...stale, aborted: false };
+    }
 
     console.error("TinyFish search failed:", lastError?.message);
-    return { results: [], total: 0, keyIndex: -1 };
+    return { results: [], total: 0, keyIndex: -1, aborted: Boolean(abortSignal?.aborted) };
   }
 
   async tinyfishScrape(url: string, abortSignal?: AbortSignal): Promise<ScrapedContent | null> {
@@ -365,12 +415,17 @@ export class TinyFishRouter {
     const cached = await getCache<ScrapedContent>(cacheKey, SCRAPE_CACHE_MS);
     if (cached) return cached;
 
+    if (abortSignal?.aborted) return null;
+
     let keyState = this.selectKey();
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < 3; attempt++) {
+      // Guarded at the TOP as well as at the bottom: a request that arrives with
+      // an already-expired budget must not spend one more vendor call on it.
+      if (abortSignal?.aborted) break;
       if (!keyState) {
-        await this.backoff(attempt);
+        await this.backoff(attempt, abortSignal);
         keyState = this.selectKey();
         if (!keyState) break;
       }
@@ -393,7 +448,7 @@ export class TinyFishRouter {
           body: JSON.stringify({
             urls: [safeUrl],
           }),
-          signal: abortSignal ?? AbortSignal.timeout(10000),
+          signal: attemptSignal(abortSignal),
         });
 
         const status = response.status;
@@ -527,11 +582,28 @@ export class TinyFishRouter {
     };
   }
 
-  private async backoff(attempt: number): Promise<void> {
+  private async backoff(attempt: number, abortSignal?: AbortSignal): Promise<void> {
     const delays = [500, 1000, 2000];
     const delay = delays[Math.min(attempt, delays.length - 1)] ?? 2000;
-    await new Promise(resolve => setTimeout(resolve, delay));
+    await sleep(delay, abortSignal);
   }
 }
 
 export const tinyfishRouter = new TinyFishRouter();
+
+/**
+ * Warms the TinyFish key probe once per instance, at module load, off the
+ * request path. The probe used to run lazily inside the first search of the
+ * first request that needed it, competing with the very request it was serving.
+ * Guarded so it happens exactly once per instance, and any rejection is
+ * swallowed: a failed warm-up must not take the module down.
+ */
+(function warmTinyfishRouterOnce(): void {
+  try {
+    void tinyfishRouter.refreshTinyfishStatus().catch((error: unknown) => {
+      console.warn("TinyFish router warm-up failed:", error instanceof Error ? error.message : String(error));
+    });
+  } catch (error) {
+    console.warn("TinyFish router warm-up could not start:", error);
+  }
+})();

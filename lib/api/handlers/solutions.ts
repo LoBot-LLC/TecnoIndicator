@@ -8,7 +8,8 @@ import { safeParseJson } from "../_shared/validation";
 import { isRegion, type Region } from "../_shared/regions";
 import type { Factor, RegionId, Solution } from "../_shared/types";
 
-const EVIDENCE_CACHE_MS = 30_000;
+/** Aligned with SCRAPE_CACHE_MS so the evidence prompt is not re-paid every 30s. */
+const EVIDENCE_CACHE_MS = 5 * 60_000;
 
 const GLOBAL_QUERIES = [
   "global oil market prices OPEC supply demand 2026",
@@ -77,6 +78,13 @@ interface CachedSolutions {
 
 /** Machine-readable reason the solutions list is not fully AI-generated. */
 type SolutionsReason = "kilo-unavailable" | "kilo-aborted" | "unparseable-json" | "no-ai-solutions" | "threw";
+
+/**
+ * TTL for a body that was produced only because a request ran out of budget.
+ * Long enough to absorb a burst of concurrent readers, short enough that one
+ * timeout is not re-served to everyone for a full SOLUTIONS_CACHE_MS.
+ */
+const TRANSIENT_SOLUTIONS_CACHE_MS = 10_000;
 
 function recentMonth(): string {
   return new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -262,7 +270,10 @@ export async function handleSolutions(req: Request): Promise<Response> {
   }
 
   const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), 30000);
+  // 45s with >=10s of headroom under vercel.json's 60s maxDuration: our abort
+  // always fires before Vercel's kill, so a slow gateway degrades to the
+  // deterministic solutions instead of an HTTP 504.
+  const timeoutId = setTimeout(() => abortController.abort(), 45000);
 
   let analytics: Record<string, unknown>;
   let factors: Factor[] = [];
@@ -346,10 +357,15 @@ export async function handleSolutions(req: Request): Promise<Response> {
     const aiCurated = aiCount === solutions.length;
     const degraded = aiCount < solutions.length;
 
+    // Caching a degraded body for the full SOLUTIONS_CACHE_MS re-served one
+    // timeout to every reader for a minute. A genuinely good body still uses the
+    // full TTL; an aborted/threw body is written with a 10s TTL so the very next
+    // request can recover immediately.
+    const transient = reason === "kilo-aborted" || reason === "threw";
     await setCache(
       cacheKey,
       { solutions, aiCurated, aiCount, degraded, reason } satisfies CachedSolutions,
-      SOLUTIONS_CACHE_MS,
+      transient ? TRANSIENT_SOLUTIONS_CACHE_MS : SOLUTIONS_CACHE_MS,
     );
 
     return Response.json(

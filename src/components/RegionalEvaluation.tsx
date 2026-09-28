@@ -309,6 +309,11 @@ interface RegionalEvaluationProps {
   dynamicFactors: Record<string, Factor[]>;
   /** Honesty fields from /api/regional-factors, keyed by region id. */
   factorsMeta: Record<string, PayloadMeta>;
+  /**
+   * Region whose factor window is currently being curated, or null. The factors
+   * it shows are the hand-authored reference set until the live window lands.
+   */
+  loadingRegion?: string | null;
 }
 
 export default function RegionalEvaluation({
@@ -319,6 +324,7 @@ export default function RegionalEvaluation({
   onRegion,
   dynamicFactors,
   factorsMeta,
+  loadingRegion = null,
 }: RegionalEvaluationProps) {
   const evals = useMemo(
     () => evaluateRegions(prices, horizon, jitter),
@@ -673,6 +679,16 @@ export default function RegionalEvaluation({
                     {regionFactors.length} factors
                   </span>
                 </div>
+                {loadingRegion === selected.region.id && (
+                  <p className="mb-3 flex items-center gap-2 text-[11px] text-slate-500">
+                    <span
+                      aria-hidden
+                      className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-teal-300"
+                    />
+                    Curating live AI factors for {selected.region.name} — showing the static
+                    reference set until the model responds.
+                  </p>
+                )}
                 {regionMeta?.degraded === true && (
                   <p
                     className="mb-3 flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.07] px-3 py-2 text-[11px] leading-relaxed text-amber-200/90"

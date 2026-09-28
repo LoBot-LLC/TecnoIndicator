@@ -139,13 +139,32 @@ async function readFactorStatus(scope: "global" | Region): Promise<FactorStatus>
  * reported a successful, never-run analysis.
  */
 export async function handleHealth(_req: Request): Promise<Response> {
+  // The page polls this every 5 minutes, which makes it the ideal place to keep
+  // the module-level router singletons warm. Both initializations are idempotent
+  // and return early once warmed, so this costs a cheap boolean check on the
+  // hot path while removing the catalog fetch + probe from the first user
+  // request. Rejections are swallowed: a warm-up failure is not a health answer.
+  try {
+    void kiloRouter.initKiloRouter().catch(() => undefined);
+  } catch {
+    // ignored: warm-up is best-effort
+  }
+  try {
+    void tinyfishRouter.refreshTinyfishStatus().catch(() => undefined);
+  } catch {
+    // ignored: warm-up is best-effort
+  }
+
   // Health check triggers full initialization (model catalog fetch + key probing)
   // so that the returned status accurately reflects whether a live Kilo Gateway
   // connection is available.  The initialization is protected by the same
   // abortController, so a cold start that exceeds the timeout will still be
   // caught and the endpoint will return a degraded-but-informed response.
+  // 20s (was 10s): the 8s catalog fetch plus the 3s probe cannot fit in 10s, so
+  // this endpoint was structurally always reporting degraded. Still >=40s of
+  // headroom under vercel.json's 60s maxDuration.
   const abortController = new AbortController();
-  const totalTimeoutId = setTimeout(() => abortController.abort(), 10000);
+  const totalTimeoutId = setTimeout(() => abortController.abort(), 20000);
 
   try {
     const [kiloStatus, tinyfishStatus, globalAnalytics, regionalAnalytics, globalFactors, regionalFactors] =

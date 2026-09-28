@@ -5,6 +5,7 @@ import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/determinist
 import {
   FACTOR_COUNT,
   FACTORS_WINDOW_TTL_MS,
+  FACTOR_STATUS_TTL_MS,
   TIER_C_MAX_PER_HOST,
   classifySourceTrust,
   factorCacheKey,
@@ -39,6 +40,12 @@ export interface FactorWindow {
  */
 export type FactorRunReason =
   | "no-evidence"
+  /**
+   * At least one TinyFish search was cut short by the route's abort timer. An
+   * aborted search returns `{results: []}` silently, so without this code the
+   * same budget defect was reported as "no reputable sources" (`no-evidence`).
+   */
+  | "search-aborted"
   | "kilo-unavailable"
   | "kilo-aborted"
   | "unparseable-json"
@@ -54,6 +61,8 @@ export interface FactorDiagnostics {
   candidatesUsed: number;
   rejectedHosts: Array<{ host: string; count: number }>;
   scrapesOk: number;
+  /** Scrapes cut short by the abort timer, so a thin prompt is not silent. */
+  scrapesAborted: number;
   aiFactorsReturned: number;
   normalizedDropped: number;
   elapsedMs: number;
@@ -301,13 +310,13 @@ export async function writeFactorWindow(
 }
 
 export async function readFactorRunStatus(scope: RegionId): Promise<FactorRunStatus | null> {
-  const raw = await getCache<FactorRunStatus>(factorStatusKeyForScope(scope), FACTORS_WINDOW_TTL_MS);
+  const raw = await getCache<FactorRunStatus>(factorStatusKeyForScope(scope), FACTOR_STATUS_TTL_MS);
   if (!raw || typeof raw !== "object") return null;
   return raw;
 }
 
 export async function writeFactorRunStatus(scope: RegionId, status: FactorRunStatus): Promise<void> {
-  await setCache(factorStatusKeyForScope(scope), status, FACTORS_WINDOW_TTL_MS);
+  await setCache(factorStatusKeyForScope(scope), status, FACTOR_STATUS_TTL_MS);
 }
 
 /** True when the stored window is recent enough to answer a request without re-curating. */
@@ -545,12 +554,23 @@ interface EvidenceCandidate {
 
 /** Below this many Tier A/B candidates, unknown hosts are used to backfill. */
 const MIN_TRUSTED_CANDIDATES = 3;
-/** Upper bound on articles fed to the model, applied BEFORE the scrape fan-out. */
-const MAX_CANDIDATES = 15;
-/** Concurrent article scrapes; unbounded fan-out exhausted the 25s budget. */
-const SCRAPE_CONCURRENCY = 5;
+/**
+ * Upper bound on articles fed to the model, applied BEFORE the scrape fan-out.
+ *
+ * Halved from 15. 15 candidates meant 15 article bodies (up to 6KB each) in the
+ * prompt, a scrape fan-out the route budget could never cover, and a model
+ * prompt big enough to time out on its own. 8 well-sourced candidates is ample
+ * for an 8-slot factor window.
+ */
+const MAX_CANDIDATES = 8;
+/**
+ * Concurrent article scrapes. Raised from 5 so that MAX_CANDIDATES is a SINGLE
+ * wave instead of three sequential ones — the number of waves, not the size of
+ * each one, is what multiplied the scrape phase's worst case by 3.
+ */
+const SCRAPE_CONCURRENCY = 8;
 /** A snippet at least this long is already enough evidence; skip the scrape. */
-const MIN_SNIPPET_CHARS_FOR_SKIP = 400;
+const MIN_SNIPPET_CHARS_FOR_SKIP = 600;
 const MAX_REJECTED_HOSTS_REPORTED = 5;
 
 function hostOf(url: string): string {
@@ -561,13 +581,21 @@ function hostOf(url: string): string {
   }
 }
 
+/**
+ * Runs `fn` over `items` in waves of `limit`, stopping between waves as soon as
+ * the caller's signal is aborted. Without the check the loop kept scheduling new
+ * waves past the route budget, which is how a 45s timer used to be overrun by
+ * the scrape phase it was supposed to bound.
+ */
 async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
   fn: (item: T, index: number) => Promise<R>,
+  signal?: AbortSignal,
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   for (let start = 0; start < items.length; start += limit) {
+    if (signal?.aborted) break;
     const batch = items.slice(start, start + limit);
     const settled = await Promise.all(batch.map((item, i) => fn(item, start + i)));
     settled.forEach((value, i) => {
@@ -608,6 +636,7 @@ export async function runFactorAnalysis(
     candidatesUsed: 0,
     rejectedHosts: [],
     scrapesOk: 0,
+    scrapesAborted: 0,
     aiFactorsReturned: 0,
     normalizedDropped: 0,
     elapsedMs: 0,
@@ -710,26 +739,45 @@ export async function runFactorAnalysis(
   diagnostics.candidatesUsed = candidates.length;
 
   if (candidates.length === 0) {
+    // A timed-out search returns `{results: []}` with no error, so an empty
+    // candidate set is EITHER "the vendors found nothing" or "we ran out of
+    // budget". Reporting the second as the first is what made two previous
+    // rounds of this bug undiagnosable.
+    if (signal?.aborted) return finish(false, "kilo-aborted");
+    if (searches.some((s) => s.aborted)) return finish(false, "search-aborted");
     return finish(false, "no-evidence");
   }
 
   // Scrape only what the snippet does not already answer, at most
-  // SCRAPE_CONCURRENCY at a time.
-  const scraped = await mapWithConcurrency(candidates, SCRAPE_CONCURRENCY, async (candidate) => {
-    if ((candidate.snippet ?? "").length >= MIN_SNIPPET_CHARS_FOR_SKIP) return candidate;
-    try {
-      const content = await tinyfishRouter.tinyfishScrape(candidate.url, signal);
-      if (!content || (!content.text && !content.title)) return candidate;
-      diagnostics.scrapesOk += 1;
-      return {
-        ...candidate,
-        text: content.text,
-        title: content.title || candidate.title,
-      };
-    } catch {
-      return candidate;
-    }
-  });
+  // SCRAPE_CONCURRENCY at a time and never past the abort signal.
+  const scraped = await mapWithConcurrency(
+    candidates,
+    SCRAPE_CONCURRENCY,
+    async (candidate) => {
+      if ((candidate.snippet ?? "").length >= MIN_SNIPPET_CHARS_FOR_SKIP) return candidate;
+      if (signal?.aborted) {
+        diagnostics.scrapesAborted += 1;
+        return candidate;
+      }
+      try {
+        const content = await tinyfishRouter.tinyfishScrape(candidate.url, signal);
+        if (!content || (!content.text && !content.title)) {
+          if (signal?.aborted) diagnostics.scrapesAborted += 1;
+          return candidate;
+        }
+        diagnostics.scrapesOk += 1;
+        return {
+          ...candidate,
+          text: content.text,
+          title: content.title || candidate.title,
+        };
+      } catch {
+        if (signal?.aborted) diagnostics.scrapesAborted += 1;
+        return candidate;
+      }
+    },
+    signal,
+  );
 
   const excerpts = scraped;
 
@@ -807,6 +855,8 @@ export async function runFactorAnalysis(
       const repairedContent = repaired.choices?.[0]?.message?.content ?? "";
       parsed = safeParseJson<{ factors?: unknown[] }>(repairedContent);
     } catch (error) {
+      // An aborted repair call is a TIMEOUT, not a malformed answer.
+      if (signal?.aborted) return finish(false, "kilo-aborted");
       console.error(`[factors:${scope}] JSON repair attempt failed: ${String((error as Error)?.message ?? error)}`);
     }
   }

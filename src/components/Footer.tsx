@@ -103,11 +103,14 @@ export default function Footer({ lastUpdated }: FooterProps) {
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-line pt-6 sm:flex-row sm:items-center">
           <p className="text-xs text-slate-600">
-            © {new Date().getFullYear()} TecnoIndicator 
+            <span suppressHydrationWarning>© {new Date().getFullYear()}</span> TecnoIndicator{" "}
           </p>
           <p className="text-xs text-slate-600">
-            Last updated: {fmtFullDate(lastUpdated)} · {fmtTime(lastUpdated)} · Model uses publicly
-            available drivers.
+            Last updated:{" "}
+            <span suppressHydrationWarning>
+              {fmtFullDate(lastUpdated)} · {fmtTime(lastUpdated)}
+            </span>{" "}
+            · Model uses publicly available drivers.
           </p>
         </div>
       </div>

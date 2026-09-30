@@ -27,7 +27,6 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "MXN", symbol: "$", name: "Mexican Peso", countries: ["MX"], decimals: 2 },
   { code: "GTQ", symbol: "Q", name: "Guatemalan Quetzal", countries: ["GT"], decimals: 2 },
   { code: "BZD", symbol: "BZ$", name: "Belize Dollar", countries: ["BZ"], decimals: 2 },
-  { code: "SVC", symbol: "₡", name: "Salvadoran Colón", countries: ["SV"], decimals: 2 },
   { code: "HNL", symbol: "L", name: "Honduran Lempira", countries: ["HN"], decimals: 2 },
   { code: "NIO", symbol: "C$", name: "Nicaraguan Córdoba", countries: ["NI"], decimals: 2 },
   { code: "CRC", symbol: "₡", name: "Costa Rican Colón", countries: ["CR"], decimals: 2 },
@@ -61,7 +60,6 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "CNY", symbol: "¥", name: "Chinese Yuan", countries: ["CN"], decimals: 2 },
   { code: "JPY", symbol: "¥", name: "Japanese Yen", countries: ["JP"], decimals: 0 },
   { code: "KRW", symbol: "₩", name: "South Korean Won", countries: ["KR"], decimals: 0 },
-  { code: "KPW", symbol: "₩", name: "North Korean Won", countries: ["KP"], decimals: 2 },
   { code: "MNT", symbol: "₮", name: "Mongolian Tögrög", countries: ["MN"], decimals: 2 },
   { code: "MOP", symbol: "P", name: "Macanese Pataca", countries: ["MO"], decimals: 2 },
 
@@ -178,10 +176,10 @@ export const CURRENCIES: CurrencyInfo[] = [
  * Used to build the full currency selector list.
  */
 export const UN_MEMBER_CURRENCIES: string[] = [
-  "USD", "CAD", "MXN", "GTQ", "BZD", "SVC", "HNL", "NIO", "CRC", "PAB", "CUP", "DOP",
+   "USD", "CAD", "MXN", "GTQ", "BZD", "HNL", "NIO", "CRC", "PAB", "CUP", "DOP",
   "JMD", "TTD", "BBD", "GYD", "SRD", "FJD", "SBD", "VUV", "PGK", "AUD", "NZD", "HKD",
   "SGD", "TWD", "KHR", "LAK", "THB", "MYR", "IDR", "PHP", "BND", "MMK", "CNY", "JPY",
-  "KRW", "KPW", "MNT", "MOP", "INR", "PKR", "BDT", "LKR", "NPR", "BTN", "MVR",
+  "KRW", "MNT", "MOP", "INR", "PKR", "BDT", "LKR", "NPR", "BTN", "MVR",
   "SAR", "AED", "QAR", "BHD", "KWD", "OMR", "JOD", "LBP", "SYP", "IQD", "IRR",
   "ILS", "YER", "TMT", "TJS", "UZS", "AZN", "AMD", "GEL", "RUB", "BYN", "MDL",
   "RON", "BGN", "BAM", "EUR", "GBP", "CHF", "ISK", "NOK", "SEK", "DKK",

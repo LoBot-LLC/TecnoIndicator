@@ -32,6 +32,11 @@ A modern, clean, professional single-page web application that delivers illustra
   - Smooth animations & micro-interactions
   - Accessibility (ARIA labels, keyboard navigation, high contrast)
   - Clear disclaimers throughout
+- **AI Model Integration**
+  - Search and fetch current prices
+  - Search, analyze and display 8 dynamic factors affecting the prices
+  - Updating 3 dynamic AI-powered solutions based on the updating factors 
+  - Executed via models from Kilo Gateway and TinyFish API
 
 ---
 

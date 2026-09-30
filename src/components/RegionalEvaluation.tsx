@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import Reveal from "./Reveal";
 import { useFlash } from "../hook/useFlash";
+import { useCurrency } from "../context/CurrencyContext";
 import {
   buildRegionalCSV,
   COMMODITIES,
@@ -45,7 +46,7 @@ const COMM_META: Record<
   CommodityId,
   { label: string; icon: typeof Fuel; color: string; decimals: number; unit: string }
 > = {
-  oil: { label: "Oil", icon: Fuel, color: "#f5b840", decimals: 1, unit: "bbl" },
+  oil: { label: "Oil", icon: Fuel, color: "#f5b840", decimals: 1, unit: `bbl` },
   electricity: { label: "Power", icon: Zap, color: "#2dd4bf", decimals: 0, unit: "MWh" },
   water: { label: "Water", icon: Droplets, color: "#38bdf8", decimals: 2, unit: "m³" },
 };
@@ -167,7 +168,7 @@ function RegionCard({
               <p
                 className={`mt-1 font-display text-sm font-bold tabular-nums text-slate-100 ${flashes[c.id]}`}
               >
-                {fmtUsd(ev.spots[c.id], meta.decimals)}
+                {formatPrice(ev.spots[c.id], selectedCurrency)}
               </p>
               <div className="mt-1">
                 <DeltaBadge value={ev.deltaPct[c.id]} />
@@ -298,6 +299,7 @@ export default function RegionalEvaluation({
   dynamicFactors,
   healthStatus,
 }: RegionalEvaluationProps) {
+  const { selectedCurrency, formatPrice } = useCurrency();
   const evals = useMemo(
     () => evaluateRegions(prices, horizon, jitter),
     [prices, horizon, jitter],
@@ -478,9 +480,9 @@ export default function RegionalEvaluation({
               </div>
               <p className="mt-2 font-display text-lg font-semibold text-white">
                 {cheapestPower.region.flag} {cheapestPower.region.name}{" "}
-                <span className="text-elec">
-                  {fmtUsd(cheapestPower.spots.electricity, 0)}/MWh
-                </span>
+               <span className="text-elec">
+                   {formatPrice(cheapestPower.spots.electricity, selectedCurrency)}/{COMM_META.electricity.unit}
+                 </span>
               </p>
             </div>
             <div className="rounded-2xl border border-line bg-panel/60 p-4">
@@ -490,7 +492,7 @@ export default function RegionalEvaluation({
               </div>
               <p className="mt-2 font-display text-lg font-semibold text-white">
                 {dearestWater.region.flag} {dearestWater.region.name}{" "}
-                <span className="text-water">{fmtUsd(dearestWater.spots.water, 2)}/m³</span>
+                <span className="text-water">{formatPrice(dearestWater.spots.water, selectedCurrency)}/{COMM_META.water.unit}</span>
               </p>
             </div>
           </div>

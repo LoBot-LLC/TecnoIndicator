@@ -3,6 +3,7 @@ import { ChevronDown, Download, FileImage, FileText, Menu, X } from "lucide-reac
 import Logo from "./Logo";
 import { GithubIcon } from "./icons";
 import { EVENTS, emit } from "../lib/events";
+import CurrencySelector from "./CurrencySelector";
 
 const LINKS = [
   { href: "#forecast", label: "Forecast" },
@@ -78,6 +79,9 @@ export default function Navbar() {
         </nav>
 
         <div className="hidden items-center gap-2.5 md:flex">
+          {/* Currency selector */}
+          <CurrencySelector className="mr-2" />
+
           {/* Export dropdown */}
           <div className="relative" ref={exportRef}>
             <button
@@ -175,3 +179,4 @@ export default function Navbar() {
     </header>
   );
 }
+

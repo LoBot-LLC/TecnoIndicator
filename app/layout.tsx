@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { CurrencyProvider } from "../src/context/CurrencyContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -36,7 +37,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
         <link rel="icon" href={FAVICON} />
       </head>
-      <body>{children}</body>
+      <body>
+        <CurrencyProvider>{children}</CurrencyProvider>
+      </body>
     </html>
   );
 }

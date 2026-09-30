@@ -158,7 +158,10 @@ export default function Navbar() {
               </a>
             ))}
           </nav>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex justify-end">
+            <CurrencySelector />
+          </div>
+          <div className="mt-2 flex gap-2">
             <button
               type="button"
               onClick={() => doExport("png")}

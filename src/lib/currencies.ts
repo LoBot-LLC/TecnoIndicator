@@ -27,9 +27,9 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "MXN", symbol: "$", name: "Mexican Peso", countries: ["MX"], decimals: 2 },
   { code: "GTQ", symbol: "Q", name: "Guatemalan Quetzal", countries: ["GT"], decimals: 2 },
   { code: "BZD", symbol: "BZ$", name: "Belize Dollar", countries: ["BZ"], decimals: 2 },
-  { code: "SV", symbol: "₡", name: "Salvadoran Colón", countries: ["SV"], decimals: 2 },
+  { code: "SVC", symbol: "₡", name: "Salvadoran Colón", countries: ["SV"], decimals: 2 },
   { code: "HNL", symbol: "L", name: "Honduran Lempira", countries: ["HN"], decimals: 2 },
-  { code: "NIC", symbol: "C$", name: "Nicaraguan Córdoba", countries: ["NI"], decimals: 2 },
+  { code: "NIO", symbol: "C$", name: "Nicaraguan Córdoba", countries: ["NI"], decimals: 2 },
   { code: "CRC", symbol: "₡", name: "Costa Rican Colón", countries: ["CR"], decimals: 2 },
   { code: "PAB", symbol: "B/.", name: "Panamanian Balboa", countries: ["PA"], decimals: 2 },
   { code: "CUP", symbol: "$", name: "Cuban Peso", countries: ["CU"], decimals: 2 },
@@ -56,7 +56,6 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "PHP", symbol: "₱", name: "Philippine Peso", countries: ["PH"], decimals: 2 },
   { code: "BND", symbol: "B$", name: "Brunei Dollar", countries: ["BN"], decimals: 2 },
   { code: "MMK", symbol: "K", name: "Myanmar Kyat", countries: ["MM"], decimals: 2 },
-  { code: "BOC", name: "Burmese Kyat", countries: ["MM"], decimals: 2, symbol: "K" },
 
   // === East Asia ===
   { code: "CNY", symbol: "¥", name: "Chinese Yuan", countries: ["CN"], decimals: 2 },
@@ -73,7 +72,7 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "LKR", symbol: "Rs", name: "Sri Lankan Rupee", countries: ["LK"], decimals: 2 },
   { code: "NPR", symbol: "₨", name: "Nepalese Rupee", countries: ["NP"], decimals: 2 },
   { code: "BTN", symbol: "Nu.", name: "Bhutanese Ngultrum", countries: ["BT"], decimals: 2 },
-  { code: "MV", name: "Maldivian Rufiyaa", countries: ["MV"], decimals: 2, code: "MVR", symbol: "Rf" },
+  { code: "MVR", symbol: "Rf", name: "Maldivian Rufiyaa", countries: ["MV"], decimals: 2 },
 
   // === Middle East ===
   { code: "SAR", symbol: "ر.س", name: "Saudi Riyal", countries: ["SA"], decimals: 2 },
@@ -101,8 +100,7 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "MDL", symbol: "L", name: "Moldovan Leu", countries: ["MD"], decimals: 2 },
   { code: "RON", symbol: "lei", name: "Romanian Leu", countries: ["RO"], decimals: 2 },
   { code: "BGN", symbol: "лв", name: "Bulgarian Lev", countries: ["BG"], decimals: 2 },
-  { code: "HRK", symbol: "kn", name: "Croatian Kuna", countries: ["HR"], decimals: 2 },
-  { code: "BAM", symbol: "KM", name: "Bosnia-Herzegovina Convertible Mark", countries: ["BA"], decimals: 2 },
+    { code: "BAM", symbol: "KM", name: "Bosnia-Herzegovina Convertible Mark", countries: ["BA"], decimals: 2 },
 
   // === Europe ===
   { code: "EUR", symbol: "€", name: "Euro", countries: ["AL", "AD", "AT", "BA", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IS", "IE", "IT", "XK", "LV", "LI", "LT", "LU", "MT", "MD", "MC", "ME", "NL", "MK", "NO", "PL", "PT", "RO", "SM", "RS", "SK", "SI", "ES", "SE", "CH", "UA", "VA", "EU"], decimals: 2 },
@@ -114,7 +112,7 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "DKK", symbol: "kr", name: "Danish Krone", countries: ["DK"], decimals: 2 },
   { code: "PLN", symbol: "zł", name: "Polish Złoty", countries: ["PL"], decimals: 2 },
   { code: "CZK", symbol: "Kč", name: "Czech Koruna", countries: ["CZ"], decimals: 2 },
-  { code: "HUF", symbol: "Ft", name: "Hungarian Forint", countries: ["HU"], decimals: 2 },
+  { code: "HUF", symbol: "Ft", name: "Hungarian Forint", countries: ["HU"], decimals: 0 },
   { code: "RON", symbol: "lei", name: "Romanian Leu", countries: ["RO"], decimals: 2 },
   { code: "BGN", symbol: "лв", name: "Bulgarian Lev", countries: ["BG"], decimals: 2 },
 
@@ -126,7 +124,7 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "BOB", symbol: "Bs.", name: "Bolivian Boliviano", countries: ["BO"], decimals: 2 },
   { code: "CLP", symbol: "$", name: "Chilean Peso", countries: ["CL"], decimals: 0 },
   { code: "COP", symbol: "Col$", name: "Colombian Peso", countries: ["CO"], decimals: 2 },
-  { code: "VEF", symbol: "Bs.F.", name: "Venezuelan Bolívar", countries: ["VE"], decimals: 2 },
+  { code: "VES", symbol: "Bs.", name: "Venezuelan Bolívar", countries: ["VE"], decimals: 2 },
   { code: "CUP", symbol: "$", name: "Cuban Peso", countries: ["CU"], decimals: 2 },
   { code: "DOP", symbol: "RD$", name: "Dominican Peso", countries: ["DO"], decimals: 2 },
 
@@ -157,7 +155,7 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "NGN", symbol: "₦", name: "Nigerian Naira", countries: ["NG"], decimals: 2 },
   { code: "RWF", symbol: "Fr", name: "Rwandan Franc", countries: ["RW"], decimals: 0 },
   { code: "STN", symbol: "Db", name: "São Tomé and Príncipe Dobra", countries: ["ST"], decimals: 2 },
-  { code: "SLL", symbol: "Le", name: "Sierra Leonean Leone", countries: ["SL"], decimals: 2 },
+  { code: "SLE", symbol: "Le", name: "Sierra Leonean Leone", countries: ["SL"], decimals: 2 },
   { code: "SOS", symbol: "Sh", name: "Somali Shilling", countries: ["SO"], decimals: 2 },
   { code: "SSP", symbol: "£", name: "South Sudanese Pound", countries: ["SS"], decimals: 2 },
   { code: "SZL", symbol: "L", name: "Swazi Lilangeni", countries: ["SZ"], decimals: 2 },
@@ -169,7 +167,6 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "ZMW", symbol: "ZK", name: "Zambian Kwacha", countries: ["ZM"], decimals: 2 },
   { code: "ZWL", symbol: "Z$", name: "Zimbabwean Dollar", countries: ["ZW"], decimals: 2 },
   { code: "KES", symbol: "KSh", name: "Kenyan Shilling", countries: ["KE"], decimals: 2 },
-  { code: "TZA", symbol: "Sh", name: "Tanzanian Shilling", countries: ["TZ"], decimals: 2 },
   { code: "UGX", symbol: "Sh", name: "Ugandan Shilling", countries: ["UG"], decimals: 0 },
   { code: "RWF", symbol: "Fr", name: "Rwandan Franc", countries: ["RW"], decimals: 0 },
   { code: "BIF", symbol: "Fr", name: "Burundian Franc", countries: ["BI"], decimals: 0 },
@@ -187,11 +184,11 @@ export const UN_MEMBER_CURRENCIES: string[] = [
   "KRW", "KPW", "MNT", "MOP", "INR", "PKR", "BDT", "LKR", "NPR", "BTN", "MVR",
   "SAR", "AED", "QAR", "BHD", "KWD", "OMR", "JOD", "LBP", "SYP", "IQD", "IRR",
   "ILS", "YER", "TMT", "TJS", "UZS", "AZN", "AMD", "GEL", "RUB", "BYN", "MDL",
-  "RON", "BGN", "HRK", "BAM", "EUR", "GBP", "CHF", "ISK", "NOK", "SEK", "DKK",
-  "PLN", "CZK", "HUF", "BRL", "ARS", "UYU", "PYG", "BOB", "CLP", "COP", "VEF",
+  "RON", "BGN", "BAM", "EUR", "GBP", "CHF", "ISK", "NOK", "SEK", "DKK",
+  "PLN", "CZK", "HUF", "BRL", "ARS", "UYU", "PYG", "BOB", "CLP", "COP", "VES",
   "DZD", "AOA", "BIF", "XAF", "XOF", "CVE", "KMF", "CDF", "DJF", "EGP", "ERN",
   "ETB", "GMD", "GHS", "GNF", "LRD", "LYD", "MGA", "MWK", "MRU", "MUR", "MZN",
-  "NAD", "NGN", "RWF", "STN", "SLL", "SOS", "SSP", "SZL", "SDG", "TZS", "TND",
+  "NAD", "NGN", "RWF", "STN", "SLE", "SOS", "SSP", "SZL", "SDG", "TZS", "TND",
   "UGX", "ZAR", "ZMW", "ZWL",
 ];
 

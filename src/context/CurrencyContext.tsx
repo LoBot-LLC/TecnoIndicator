@@ -1,162 +1,225 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { CURRENCIES, type CurrencyInfo, getCurrencyInfo, DEFAULT_CURRENCY } from "./currencies";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  ALL_CURRENCIES,
+  DEFAULT_CURRENCY,
+  getCurrencyInfo,
+  type CurrencyInfo,
+} from "../lib/currencies";
 
-interface ExchangeRates {
-  base: string;
-  rates: Record<string, number>;
-  lastUpdated: Date;
-}
+const STORAGE_KEY = "tecno.currency";
+const REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
-interface CurrencyContextType {
+/** Set of every currency code we actually know about. */
+const VALID_CODES = new Set<string>(ALL_CURRENCIES.map((c) => c.code));
+
+export interface CurrencyContextValue {
   selectedCurrency: string;
   setSelectedCurrency: (code: string) => void;
-  exchangeRates: ExchangeRates | null;
-  isLoadingRates: boolean;
+  rates: Record<string, number> | null;
+  isLoading: boolean;
   error: string | null;
-  convertPrice: (usdPrice: number, targetCurrency: string) => number;
-  formatPrice: (usdPrice: number, targetCurrency: string) => string;
+  convertPrice: (usd: number, code: string) => number;
+  formatPrice: (usd: number, code: string) => string;
   getCurrencyInfo: (code: string) => CurrencyInfo;
   currencies: CurrencyInfo[];
+  /**
+   * True when the currently selected currency has no usable USD rate, so
+   * prices silently degrade to raw USD numbers. Consumers can use this to warn
+   * the user instead of showing a USD amount stamped with a foreign symbol.
+   *
+   * Always false while `rates` is still null (not loaded yet) so the UI does
+   * not flash a warning on every page load.
+   */
+  rateUnavailable: boolean;
 }
 
-// Fetch exchange rates from a free API (Frankfurter API)
-async function fetchExchangeRates(base: string = "USD"): Promise<Record<string, number>> {
-  try {
-    // Frankfurter API provides free historical and current exchange rates
-    const response = await fetch(
-      `https://api.frankfurter.app/latest?from=${base}&to=EUR,GBP,JPY,CAD,AUD,CHF,CNY,INR,SAR,AED,SEK,NOK,DKK,NZD,PLN,MXN,BRL,ARS,COP,CLP,ZAR`
-    );
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    return data.rates || {};
-  } catch (error) {
-    console.error("Error fetching exchange rates:", error);
-    // Return empty object on error
-    return {};
+const CurrencyContext = createContext<CurrencyContextValue | undefined>(undefined);
+
+interface RatesResponse {
+  base?: string;
+  rates?: Record<string, number>;
+  timestamp?: string;
+  source?: string;
+  stale?: boolean;
+}
+
+function isValidCode(code: string): boolean {
+  return VALID_CODES.has(code.toUpperCase());
+}
+
+/**
+ * Whether a usable USD rate exists for `code`.
+ *
+ * When `rates` is still null (not loaded yet) we optimistically return true so
+ * consumers do not grey out or warn during the initial load. Only once rates
+ * have actually been fetched does a missing entry mean "this provider cannot
+ * quote this currency" (e.g. SVC, KPW).
+ */
+export function hasUsableRate(code: string, rates: Record<string, number> | null): boolean {
+  if (code === "USD") return true;
+  if (rates == null) return true;
+  const rate = rates[code];
+  return typeof rate === "number" && Number.isFinite(rate) && rate > 0;
+}
+
+/**
+ * Pull only the rates for currencies we have a definition for, so we never
+ * expose a rate that cannot be formatted.
+ */
+function sanitizeRates(raw: Record<string, number> | undefined | null): Record<string, number> {
+  const clean: Record<string, number> = { USD: 1 };
+  if (!raw || typeof raw !== "object") return clean;
+  for (const [code, rate] of Object.entries(raw)) {
+    if (!isValidCode(code)) continue;
+    if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) continue;
+    clean[code.toUpperCase()] = rate;
   }
+  return clean;
 }
 
-const CurrencyContext = createContext<CurrencyContextType | undefined>(undefined);
-
-interface CurrencyProviderProps {
-  children: React.ReactNode;
-}
-
-export function CurrencyProvider({ children }: CurrencyProviderProps) {
-  const [selectedCurrency, setSelectedCurrency] = useState<string>(() => {
-    // Load from localStorage if available
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("selectedCurrency");
-      return stored || DEFAULT_CURRENCY;
-    }
-    return DEFAULT_CURRENCY;
-  });
-
-  const [exchangeRates, setExchangeRates] = useState<ExchangeRates | null>(null);
-  const [isLoadingRates, setIsLoadingRates] = useState<boolean>(true);
+export function CurrencyProvider({ children }: { children: React.ReactNode }) {
+  // Always start from the default on both server and client so the very first
+  // render is identical (no hydration mismatch). The stored preference is
+  // applied in an effect, after hydration.
+  const [selectedCurrency, setSelectedCurrencyState] = useState<string>(DEFAULT_CURRENCY);
+  const [rates, setRates] = useState<Record<string, number> | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch exchange rates on mount and every hour
+  // Hydration-safe read of the persisted preference.
   useEffect(() => {
-    const fetchRates = async () => {
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (stored && isValidCode(stored)) {
+        setSelectedCurrencyState(stored.toUpperCase());
+      }
+    } catch {
+      // localStorage can be unavailable (private mode, blocked cookies) — ignore.
+    }
+  }, []);
+
+  // Rates come from our own API route, which handles caching/fallbacks.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRates = async () => {
       try {
-        setIsLoadingRates(true);
+        setIsLoading(true);
         setError(null);
-        const rates = await fetchExchangeRates(DEFAULT_CURRENCY);
-        
-        // Ensure all major currencies are present
-        const targetCurrencies = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "SAR", "AED", "SEK", "NOK", "DKK", "NZD", "PLN", "MXN", "BRL", "ARS", "COP", "CLP", "ZAR"];
-        const completeRates: Record<string, number> = {};
-        
-        // Set USD as base (always 1.0)
-        completeRates.USD = 1.0;
-        
-        // Add fetched rates or default to 1.0 for major currencies
-        for (const code of targetCurrencies) {
-          if (code === "USD") continue;
-          completeRates[code] = rates[code] || 1.0;
+        const response = await fetch("/api/rates", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`Failed to load exchange rates (HTTP ${response.status})`);
         }
-        
-        setExchangeRates({
-          base: DEFAULT_CURRENCY,
-          rates: completeRates,
-          lastUpdated: new Date(),
-        });
+        const data = (await response.json()) as RatesResponse;
+        if (cancelled) return;
+        setRates(sanitizeRates(data?.rates));
       } catch (err) {
+        if (cancelled) return;
+        // Keep rates as-is (null on first load) and degrade to USD pricing.
+        setRates(null);
         setError(err instanceof Error ? err.message : "Failed to fetch exchange rates");
       } finally {
-        setIsLoadingRates(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
-    fetchRates();
-    
-    // Refresh rates every hour
-    const interval = setInterval(fetchRates, 60 * 60 * 1000);
-    
-    return () => clearInterval(interval);
+    void loadRates();
+    const interval = setInterval(() => {
+      void loadRates();
+    }, REFRESH_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
-  const convertPrice = (usdPrice: number, targetCurrency: string): number => {
-    if (!exchangeRates || targetCurrency === DEFAULT_CURRENCY) {
-      return usdPrice;
-    }
-    
-    const rate = exchangeRates.rates[targetCurrency];
-    if (!rate) {
-      return usdPrice;
-    }
-    
-    return usdPrice * rate;
-  };
+  const convertPrice = useCallback(
+    (usd: number, code: string): number => {
+      if (!Number.isFinite(usd)) return usd;
+      if (code === DEFAULT_CURRENCY) return usd;
+      const rate = rates?.[code];
+      if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) return usd;
+      return usd * rate;
+    },
+    [rates]
+  );
 
-  const formatPrice = (usdPrice: number, targetCurrency: string): string => {
-    const convertedPrice = convertPrice(usdPrice, targetCurrency);
-    const currency = getCurrencyInfo(targetCurrency);
-    const decimals = currency.decimals;
-    
-    return convertedPrice.toLocaleString("en-US", {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-    });
-  };
+  const formatPrice = useCallback(
+    (usd: number, code: string): string => {
+      const info = getCurrencyInfo(code);
+      const value = convertPrice(usd, code);
 
-  const getCurrencyInfoLocal = (code: string): CurrencyInfo => {
-    return getCurrencyInfo(code);
-  };
+      if (!Number.isFinite(value)) return "—";
 
-  const handleCurrencyChange = (code: string) => {
-    setSelectedCurrency(code);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("selectedCurrency", code);
-    }
-    
-    // Reload page to apply currency changes globally
-    // This is a simple approach - in a real app you might want to
-    // use state management that updates all components without reload
-    window.location.reload();
-  };
+      const formatted = value.toLocaleString("en-US", {
+        minimumFractionDigits: info.decimals,
+        maximumFractionDigits: info.decimals,
+      });
 
-  const value: CurrencyContextType = {
-    selectedCurrency,
-    setSelectedCurrency: handleCurrencyChange,
-    exchangeRates,
-    isLoadingRates,
-    error,
-    convertPrice,
-    formatPrice,
-    getCurrencyInfo: getCurrencyInfoLocal,
-    currencies: CURRENCIES,
-  };
+      const symbol = info.symbol && info.symbol.length > 0 ? info.symbol : `${info.code}\u00A0`;
+      return `${symbol}${formatted}`;
+    },
+    [convertPrice]
+  );
+
+  const setSelectedCurrency = useCallback(
+    (code: string) => {
+      if (!code || !isValidCode(code)) return;
+
+      const normalized = code.toUpperCase();
+
+      // Re-picking the current currency must not trigger a reload loop.
+      if (normalized === selectedCurrency) return;
+
+      setSelectedCurrencyState(normalized);
+
+      try {
+        window.localStorage.setItem(STORAGE_KEY, normalized);
+      } catch {
+        // Persisting failed; still reload so the in-memory choice applies.
+      }
+
+      // The user asked for the site to reload so all content re-renders in
+      // the newly chosen currency.
+      window.location.reload();
+    },
+    [selectedCurrency]
+  );
+
+  const rateUnavailable = !hasUsableRate(selectedCurrency, rates);
+
+  const value = useMemo<CurrencyContextValue>(
+    () => ({
+      selectedCurrency,
+      setSelectedCurrency,
+      rates,
+      isLoading,
+      error,
+      convertPrice,
+      formatPrice,
+      getCurrencyInfo,
+      currencies: ALL_CURRENCIES,
+      rateUnavailable,
+    }),
+    [
+      selectedCurrency,
+      setSelectedCurrency,
+      rates,
+      isLoading,
+      error,
+      convertPrice,
+      formatPrice,
+      rateUnavailable,
+    ]
+  );
 
   return <CurrencyContext.Provider value={value}>{children}</CurrencyContext.Provider>;
 }
 
-export function useCurrency() {
+export function useCurrency(): CurrencyContextValue {
   const context = useContext(CurrencyContext);
   if (context === undefined) {
     throw new Error("useCurrency must be used within a CurrencyProvider");
@@ -164,4 +227,4 @@ export function useCurrency() {
   return context;
 }
 
-export { CURRENCIES, DEFAULT_CURRENCY };
+export { ALL_CURRENCIES, DEFAULT_CURRENCY };

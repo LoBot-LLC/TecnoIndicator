@@ -259,7 +259,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
                         <p className="text-[11px] text-slate-500">{r.unit}</p>
                       </div>
                     </div>
-                    <LivePrice value={prices[r.id]} decimals={r.decimals} />
+                    <LivePrice value={prices[r.id]} />
                   </div>
                 );
               })}

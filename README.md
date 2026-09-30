@@ -103,8 +103,8 @@ these as project environment variables.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `TINYFISH_KEY_1` … `TINYFISH_KEY_5` | Recommended | TinyFish search/fetch API keys used to gather and scrape market evidence. Without them the app still runs and serves deterministic fallback data. |
-| `KILO_GATEWAY_KEY` or `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Recommended | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. |
+| `TINYFISH_KEY_1` … `TINYFISH_KEY_5` | Required | TinyFish search/fetch API keys used to gather and scrape market evidence. Without them the app still runs and serves deterministic fallback data. |
+| `KILO_GATEWAY_KEY` or `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Required | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional | Upstash Redis REST credentials for a shared cache across serverless instances. `REDIS_URL` / `REDIS_TOKEN` are accepted as aliases. Without Redis an in-memory per-instance cache is used. |
 | `FUEL_BASE_DIESEL_PRICE`, `FUEL_FACTOR`, `GRID_LOSS_FACTOR`, `WATER_SCARCITY_MULTIPLIER` | Optional | Override the deterministic analytics constants. |
 

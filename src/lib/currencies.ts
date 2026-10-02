@@ -63,6 +63,9 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: "MNT", symbol: "₮", name: "Mongolian Tögrög", countries: ["MN"], decimals: 2 },
   { code: "MOP", symbol: "P", name: "Macanese Pataca", countries: ["MO"], decimals: 2 },
 
+  // === Southeast Asia ===
+  { code: "VND", symbol: "₫", name: "Vietnamese Đồng", countries: ["VN"], decimals: 0 },
+
   // === South Asia ===
   { code: "INR", symbol: "₹", name: "Indian Rupee", countries: ["IN"], decimals: 2 },
   { code: "PKR", symbol: "₨", name: "Pakistani Rupee", countries: ["PK"], decimals: 2 },
@@ -179,7 +182,7 @@ export const UN_MEMBER_CURRENCIES: string[] = [
    "USD", "CAD", "MXN", "GTQ", "BZD", "HNL", "NIO", "CRC", "PAB", "CUP", "DOP",
   "JMD", "TTD", "BBD", "GYD", "SRD", "FJD", "SBD", "VUV", "PGK", "AUD", "NZD", "HKD",
   "SGD", "TWD", "KHR", "LAK", "THB", "MYR", "IDR", "PHP", "BND", "MMK", "CNY", "JPY",
-  "KRW", "MNT", "MOP", "INR", "PKR", "BDT", "LKR", "NPR", "BTN", "MVR",
+   "KRW", "MNT", "MOP", "VND", "INR", "PKR", "BDT", "LKR", "NPR", "BTN", "MVR",
   "SAR", "AED", "QAR", "BHD", "KWD", "OMR", "JOD", "LBP", "SYP", "IQD", "IRR",
   "ILS", "YER", "TMT", "TJS", "UZS", "AZN", "AMD", "GEL", "RUB", "BYN", "MDL",
   "RON", "BGN", "BAM", "EUR", "GBP", "CHF", "ISK", "NOK", "SEK", "DKK",

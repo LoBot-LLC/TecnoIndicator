@@ -1,5 +1,6 @@
 import { Droplets, Fuel, TrendingDown, TrendingUp, Zap } from "lucide-react";
-import { fmtUsd, type CommodityId } from "../lib/model";
+import { useCurrency } from "../context/CurrencyContext";
+import { type CommodityId } from "../lib/model";
 
 const META: Record<
   CommodityId,
@@ -16,6 +17,7 @@ interface TickerProps {
 }
 
 export default function Ticker({ prices, deltas }: TickerProps) {
+  const { selectedCurrency, formatPrice } = useCurrency();
   const items = (Object.keys(META) as CommodityId[]).map((id) => {
     const m = META[id];
     const delta = deltas[id] ?? 0;
@@ -34,7 +36,7 @@ export default function Ticker({ prices, deltas }: TickerProps) {
               {it.name}
             </span>
             <span className="font-display text-sm font-semibold text-slate-100">
-              {fmtUsd(it.price, it.id === "electricity" ? 1 : 2)}
+              {formatPrice(it.price, selectedCurrency)}
               <span className="ml-1 text-[11px] font-medium text-slate-500">/{it.unit}</span>
             </span>
             <span

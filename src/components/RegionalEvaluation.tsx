@@ -22,12 +22,12 @@ import {
 } from "lucide-react";
 import Reveal from "./Reveal";
 import { useFlash } from "../hook/useFlash";
+import { useCurrency } from "../context/CurrencyContext";
 import {
   buildRegionalCSV,
   COMMODITIES,
   downloadFile,
   evaluateRegions,
-  fmtUsd,
   hexToRgba,
   START_YEAR,
   type CommodityId,
@@ -45,7 +45,7 @@ const COMM_META: Record<
   CommodityId,
   { label: string; icon: typeof Fuel; color: string; decimals: number; unit: string }
 > = {
-  oil: { label: "Oil", icon: Fuel, color: "#f5b840", decimals: 1, unit: "bbl" },
+  oil: { label: "Oil", icon: Fuel, color: "#f5b840", decimals: 1, unit: `bbl` },
   electricity: { label: "Power", icon: Zap, color: "#2dd4bf", decimals: 0, unit: "MWh" },
   water: { label: "Water", icon: Droplets, color: "#38bdf8", decimals: 2, unit: "m³" },
 };
@@ -104,6 +104,7 @@ function RegionCard({
   onSelect: () => void;
   rank: number;
 }) {
+  const { selectedCurrency, formatPrice } = useCurrency();
   const oilFlash = useFlash(ev.spots.oil);
   const elecFlash = useFlash(ev.spots.electricity);
   const waterFlash = useFlash(ev.spots.water);
@@ -167,7 +168,7 @@ function RegionCard({
               <p
                 className={`mt-1 font-display text-sm font-bold tabular-nums text-slate-100 ${flashes[c.id]}`}
               >
-                {fmtUsd(ev.spots[c.id], meta.decimals)}
+                {formatPrice(ev.spots[c.id], selectedCurrency)}
               </p>
               <div className="mt-1">
                 <DeltaBadge value={ev.deltaPct[c.id]} />
@@ -298,6 +299,7 @@ export default function RegionalEvaluation({
   dynamicFactors,
   healthStatus,
 }: RegionalEvaluationProps) {
+  const { selectedCurrency, formatPrice } = useCurrency();
   const evals = useMemo(
     () => evaluateRegions(prices, horizon, jitter),
     [prices, horizon, jitter],
@@ -367,8 +369,7 @@ export default function RegionalEvaluation({
             cornerRadius: 10,
             callbacks: {
               label: (ctx: TooltipItem<"bar">) => {
-                const d = COMM_META[focusCommodity].decimals;
-                return ` ${ctx.dataset.label}: ${fmtUsd(Number(ctx.parsed.y), d)}`;
+                return ` ${ctx.dataset.label}: ${formatPrice(Number(ctx.parsed.y), selectedCurrency)}`;
               },
             },
           },
@@ -404,7 +405,7 @@ export default function RegionalEvaluation({
     return () => {
       // keep chart instance across commodity toggles; destroy on unmount only
     };
-  }, [evals, focusCommodity, horizonYear]);
+  }, [evals, focusCommodity, horizonYear, formatPrice, selectedCurrency]);
 
   useEffect(() => {
     return () => {
@@ -478,9 +479,9 @@ export default function RegionalEvaluation({
               </div>
               <p className="mt-2 font-display text-lg font-semibold text-white">
                 {cheapestPower.region.flag} {cheapestPower.region.name}{" "}
-                <span className="text-elec">
-                  {fmtUsd(cheapestPower.spots.electricity, 0)}/MWh
-                </span>
+               <span className="text-elec">
+                   {formatPrice(cheapestPower.spots.electricity, selectedCurrency)}/{COMM_META.electricity.unit}
+                 </span>
               </p>
             </div>
             <div className="rounded-2xl border border-line bg-panel/60 p-4">
@@ -490,7 +491,7 @@ export default function RegionalEvaluation({
               </div>
               <p className="mt-2 font-display text-lg font-semibold text-white">
                 {dearestWater.region.flag} {dearestWater.region.name}{" "}
-                <span className="text-water">{fmtUsd(dearestWater.spots.water, 2)}/m³</span>
+                <span className="text-water">{formatPrice(dearestWater.spots.water, selectedCurrency)}/{COMM_META.water.unit}</span>
               </p>
             </div>
           </div>
@@ -579,7 +580,7 @@ export default function RegionalEvaluation({
                           <Icon className="h-3.5 w-3.5" style={{ color: meta.color }} />
                           {meta.label}
                           <span className="font-normal text-slate-600">
-                            USD/{meta.unit}
+                            {selectedCurrency}/{meta.unit}
                           </span>
                         </span>
                         <DeltaBadge value={selected.deltaPct[c.id]} />
@@ -590,7 +591,7 @@ export default function RegionalEvaluation({
                             Spot
                           </p>
                           <p className="font-display text-base font-bold tabular-nums text-white">
-                            {fmtUsd(selected.spots[c.id], meta.decimals)}
+                            {formatPrice(selected.spots[c.id], selectedCurrency)}
                           </p>
                         </div>
                         <div className="text-right">
@@ -598,7 +599,7 @@ export default function RegionalEvaluation({
                             {horizonYear} avg
                           </p>
                           <p className="font-display text-base font-bold tabular-nums text-slate-200">
-                            {fmtUsd(selected.horizon[c.id].avg, meta.decimals)}
+                            {formatPrice(selected.horizon[c.id].avg, selectedCurrency)}
                           </p>
                         </div>
                         <div className="text-right">
@@ -729,22 +730,22 @@ export default function RegionalEvaluation({
                         </button>
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-200">
-                        {fmtUsd(e.spots.oil, 1)}
+                        {formatPrice(e.spots.oil, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-400">
-                        {fmtUsd(e.horizon.oil.avg, 1)}
+                        {formatPrice(e.horizon.oil.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-200">
-                        {fmtUsd(e.spots.electricity, 0)}
+                        {formatPrice(e.spots.electricity, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-400">
-                        {fmtUsd(e.horizon.electricity.avg, 0)}
+                        {formatPrice(e.horizon.electricity.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-200">
-                        {fmtUsd(e.spots.water, 2)}
+                        {formatPrice(e.spots.water, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-400">
-                        {fmtUsd(e.horizon.water.avg, 2)}
+                        {formatPrice(e.horizon.water.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center">
                         <span

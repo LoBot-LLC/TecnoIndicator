@@ -32,13 +32,13 @@ import {
 } from "lucide-react";
 import Reveal from "./Reveal";
 import { useFlash } from "../hook/useFlash";
+import { useCurrency } from "../context/CurrencyContext";
 import {
   buildCSV,
   COMMODITIES,
   downloadFile,
   EVAL_REGIONS,
   fmtTime,
-  fmtUsd,
   hexToRgba,
   regionById,
   START_YEAR,
@@ -155,10 +155,14 @@ function axisRange(points: ForecastPoint[], id: CommodityId) {
   return { min: Math.max(0, lo - pad), max: hi + pad };
 }
 
+type PriceFormatter = (value: number, currency: string) => string;
+
 function buildConfig(
   type: ChartKind,
   points: ForecastPoint[],
   bands: boolean,
+  fmt: PriceFormatter,
+  currencyCode: string,
 ): ChartConfiguration<ChartKind, number[], string> {
   const axisOpts = (id: CommodityId, title: string, color: string) => ({
     position: (id === "oil" ? "left" : "right") as "left" | "right",
@@ -221,8 +225,7 @@ function buildConfig(
               const ds = ctx.dataset as FancyDataset;
               const parsed = ctx.parsed as { y?: number } | number;
               const v = typeof parsed === "object" ? (parsed.y ?? 0) : parsed;
-              const decimals = ds.decimals ?? 2;
-              return ` ${ds.label}: ${fmtUsd(Number(v), decimals)} / ${ds.unit?.replace("USD/", "") ?? ""}`;
+              return ` ${ds.label}: ${fmt(Number(v), currencyCode)} / ${ds.unit?.replace("USD", currencyCode) ?? ""}`;
             },
           },
         },
@@ -236,9 +239,9 @@ function buildConfig(
             font: { family: "Inter", size: 11 },
           },
         },
-        yOil: axisOpts("oil", "Oil $/bbl", "#f5b840"),
-        yElec: axisOpts("electricity", "Power $/MWh", "#2dd4bf"),
-        yWater: axisOpts("water", "Water $/m³", "#38bdf8"),
+        yOil: axisOpts("oil", `Oil ${currencyCode}/bbl`, "#f5b840"),
+        yElec: axisOpts("electricity", `Power ${currencyCode}/MWh`, "#2dd4bf"),
+        yWater: axisOpts("water", `Water ${currencyCode}/m³`, "#38bdf8"),
       },
     },
   } as unknown as ChartConfiguration<ChartKind, number[], string>;
@@ -265,6 +268,7 @@ function CommodityCard({
   onFetchWater,
   regionLabel,
 }: CommodityCardProps) {
+  const { selectedCurrency, formatPrice } = useCurrency();
   const Icon = ICONS[commodity.id];
   const band = horizonBand[commodity.id];
   const todayBand = today[commodity.id];
@@ -292,7 +296,7 @@ function CommodityCard({
           <div>
             <p className="text-sm font-semibold text-slate-100">{commodity.name}</p>
             <p className="text-[11px] text-slate-500">
-              {commodity.unit} · {regionLabel}
+              {commodity.unit.replace("USD", selectedCurrency)} · {regionLabel}
             </p>
           </div>
         </div>
@@ -304,12 +308,12 @@ function CommodityCard({
       </div>
 
       <p className={`relative mt-5 font-display text-3xl font-bold tabular-nums text-white ${flashCls}`}>
-        {fmtUsd(band.avg, commodity.decimals)}
+        {formatPrice(band.avg, selectedCurrency)}
       </p>
       <p className="mt-1 text-xs text-slate-500">
         Average forecast · {horizonBand.year} · spot{" "}
         <span className={`font-semibold text-slate-300 ${spotFlash}`}>
-          {fmtUsd(todayBand.avg, commodity.decimals)}
+          {formatPrice(todayBand.avg, selectedCurrency)}
         </span>
       </p>
 
@@ -317,13 +321,13 @@ function CommodityCard({
         <div className="rounded-xl border border-line bg-base/40 px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Low</p>
           <p className="mt-0.5 font-display text-sm font-semibold text-slate-200">
-            {fmtUsd(band.min, commodity.decimals)}
+            {formatPrice(band.min, selectedCurrency)}
           </p>
         </div>
         <div className="rounded-xl border border-line bg-base/40 px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">High</p>
           <p className="mt-0.5 font-display text-sm font-semibold text-slate-200">
-            {fmtUsd(band.max, commodity.decimals)}
+            {formatPrice(band.max, selectedCurrency)}
           </p>
         </div>
       </div>
@@ -364,7 +368,7 @@ function CommodityCard({
           </button>
           {live && (
             <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-              <span className="font-semibold text-sky-300">{fmtUsd(live.price, 2)}/m³</span> ·{" "}
+              <span className="font-semibold text-sky-300">{formatPrice(live.price, selectedCurrency)}/m³</span> ·{" "}
               {live.asOf} · {live.source} · {live.range}
             </p>
           )}
@@ -409,6 +413,7 @@ export default function ForecastTool({
   region,
   onRegion,
 }: ForecastToolProps) {
+  const { selectedCurrency, formatPrice } = useCurrency();
   const [chartType, setChartType] = useState<ChartKind>("line");
   const [showBands, setShowBands] = useState(true);
   const [assumptionsOpen, setAssumptionsOpen] = useState(false);
@@ -437,13 +442,13 @@ export default function ForecastTool({
     chartRef.current = null;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    chartRef.current = new Chart(ctx, buildConfig(chartType, points, showBands));
+    chartRef.current = new Chart(ctx, buildConfig(chartType, points, showBands, formatPrice, selectedCurrency));
     return () => {
       chartRef.current?.destroy();
       chartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartType]);
+  }, [chartType, formatPrice, selectedCurrency]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -451,12 +456,12 @@ export default function ForecastTool({
     chart.data.labels = points.map((p) => p.label);
     chart.data.datasets = buildDatasets(points, chartType, showBands);
     // Refresh axis ranges
-    const cfg = buildConfig(chartType, points, showBands);
+    const cfg = buildConfig(chartType, points, showBands, formatPrice, selectedCurrency);
     if (chart.options.scales) {
       chart.options.scales = cfg.options?.scales;
     }
     chart.update();
-  }, [points, chartType, showBands]);
+  }, [points, chartType, showBands, formatPrice, selectedCurrency]);
 
   useEffect(() => {
     setAnnounce(
@@ -803,7 +808,7 @@ export default function ForecastTool({
               <div>
                 <h3 className="font-display text-lg font-semibold text-white">Forecast table</h3>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Yearly average / low / high scenarios in USD · {regionProfile.name}
+                  Yearly average / low / high scenarios in {selectedCurrency} · {regionProfile.name}
                 </p>
               </div>
               <button
@@ -827,21 +832,21 @@ export default function ForecastTool({
                       colSpan={3}
                       style={{ color: "#f5b840" }}
                     >
-                      Oil USD/bbl
+                      Oil {selectedCurrency}/bbl
                     </th>
                     <th
                       className="px-3 py-2 text-center font-semibold"
                       colSpan={3}
                       style={{ color: "#2dd4bf" }}
                     >
-                      Electricity USD/MWh
+                      Electricity {selectedCurrency}/MWh
                     </th>
                     <th
                       className="px-3 py-2 text-center font-semibold"
                       colSpan={3}
                       style={{ color: "#38bdf8" }}
                     >
-                      Water USD/m³
+                      Water {selectedCurrency}/m³
                     </th>
                   </tr>
                   <tr className="border-b border-line bg-base/20 text-[10px] uppercase tracking-wider text-slate-600">
@@ -871,31 +876,31 @@ export default function ForecastTool({
                         )}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-200">
-                        {fmtUsd(p.oil.avg, 1)}
+                        {formatPrice(p.oil.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-500">
-                        {fmtUsd(p.oil.min, 1)}
+                        {formatPrice(p.oil.min, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-500">
-                        {fmtUsd(p.oil.max, 1)}
+                        {formatPrice(p.oil.max, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-200">
-                        {fmtUsd(p.electricity.avg, 0)}
+                        {formatPrice(p.electricity.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-500">
-                        {fmtUsd(p.electricity.min, 0)}
+                        {formatPrice(p.electricity.min, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-500">
-                        {fmtUsd(p.electricity.max, 0)}
+                        {formatPrice(p.electricity.max, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-200">
-                        {fmtUsd(p.water.avg, 2)}
+                        {formatPrice(p.water.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-500">
-                        {fmtUsd(p.water.min, 2)}
+                        {formatPrice(p.water.min, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-500">
-                        {fmtUsd(p.water.max, 2)}
+                        {formatPrice(p.water.max, selectedCurrency)}
                       </td>
                     </tr>
                   ))}
@@ -974,7 +979,7 @@ export default function ForecastTool({
                         <tr key={c.id} className="border-b border-line/50 text-slate-300">
                           <td className="py-2.5 pr-4 font-medium">{c.name}</td>
                           <td className="py-2.5 pr-4 tabular-nums">
-                            {fmtUsd(prices[c.id], c.decimals)} / {c.unit.replace("USD/", "")}
+                            {formatPrice(prices[c.id], selectedCurrency)} / {c.unit.replace("USD", selectedCurrency)}
                           </td>
                           <td className="py-2.5 pr-4">+{(c.cagr * 100).toFixed(1)}%</td>
                           <td className="py-2.5 pr-4">±{(c.maxVol * 100).toFixed(0)}%</td>

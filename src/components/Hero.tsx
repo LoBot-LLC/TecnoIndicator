@@ -11,7 +11,8 @@ import {
 import Reveal from "./Reveal";
 import Ticker from "./Ticker";
 import { useFlash } from "../hook/useFlash";
-import { fmtFullDate, fmtUsd, type CommodityId } from "../lib/model";
+import { useCurrency } from "../context/CurrencyContext";
+import { fmtFullDate, type CommodityId } from "../lib/model";
 
 function sparkPath(seed: number, width = 560, height = 180): string {
   let y = height * 0.62;
@@ -26,11 +27,12 @@ function sparkPath(seed: number, width = 560, height = 180): string {
   return d;
 }
 
-function LivePrice({ value, decimals }: { value: number; decimals: number }) {
+function LivePrice({ value }: { value: number }) {
   const flash = useFlash(value);
+  const { selectedCurrency, formatPrice } = useCurrency();
   return (
     <span className={`font-display text-lg font-semibold tabular-nums text-slate-50 ${flash}`}>
-      {fmtUsd(value, decimals)}
+      {formatPrice(value, selectedCurrency)}
     </span>
   );
 }
@@ -48,6 +50,8 @@ interface HeroProps {
 }
 
 export default function Hero({ prices, deltas }: HeroProps) {
+  const { selectedCurrency } = useCurrency();
+
   const today = new Date();
   const commodityRows: Array<{
     id: CommodityId;
@@ -57,11 +61,11 @@ export default function Hero({ prices, deltas }: HeroProps) {
     color: string;
     decimals: number;
   }> = [
-    { id: "oil", name: "Brent Crude", unit: "USD/bbl", icon: Fuel, color: "#f5b840", decimals: 2 },
+    { id: "oil", name: "Brent Crude", unit: `${selectedCurrency}/bbl`, icon: Fuel, color: "#f5b840", decimals: 2 },
     {
       id: "electricity",
       name: "Electricity",
-      unit: "USD/MWh",
+      unit: `${selectedCurrency}/MWh`,
       icon: Zap,
       color: "#2dd4bf",
       decimals: 1,
@@ -69,7 +73,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
     {
       id: "water",
       name: "Water",
-      unit: "USD/m³",
+      unit: `${selectedCurrency}/m³`,
       icon: Droplets,
       color: "#38bdf8",
       decimals: 2,
@@ -120,10 +124,10 @@ export default function Hero({ prices, deltas }: HeroProps) {
                 <span suppressHydrationWarning>{fmtFullDate(today)}</span>
               </span>
               <span className="hidden h-1 w-1 rounded-full bg-slate-600 sm:inline-block" />
-              <span className="inline-flex items-center gap-2">
-                <Globe2 className="h-4 w-4 text-slate-500" />
-                All figures in USD · 5 regions
-              </span>
+               <span className="inline-flex items-center gap-2">
+                 <Globe2 className="h-4 w-4 text-slate-500" />
+                 All figures in {selectedCurrency} · 5 regions
+               </span>
             </div>
           </Reveal>
 
@@ -255,7 +259,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
                         <p className="text-[11px] text-slate-500">{r.unit}</p>
                       </div>
                     </div>
-                    <LivePrice value={prices[r.id]} decimals={r.decimals} />
+                    <LivePrice value={prices[r.id]} />
                   </div>
                 );
               })}

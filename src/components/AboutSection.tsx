@@ -1,5 +1,17 @@
 import { AlertTriangle, BarChart3, FunctionSquare, Globe2, ShieldAlert, Workflow } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import Reveal from "./Reveal";
+import { useCurrency } from "../context/CurrencyContext";
+
+/** Renders a USD amount in the selected currency, always with 2 decimals. */
+type MoneyFormatter = (usd: number) => string;
+
+interface Method {
+  icon: LucideIcon;
+  color: string;
+  title: string;
+  text: (money: MoneyFormatter) => string;
+}
 
 const SOURCES = [
   "EIA Short-Term Energy Outlook",
@@ -14,34 +26,56 @@ const SOURCES = [
   "ICE Brent / NYMEX WTI / Dubai-Oman",
 ];
 
-const METHODS = [
+const METHODS: Method[] = [
   {
     icon: BarChart3,
     color: "#f5b840",
     title: "Base trend",
-    text: "Each series starts from a realistic market price — Brent around $105/bbl, global power near $166/MWh, and global water near $2.50/m³ — then compounds at a structural CAGR of 3.8–5.0% depending on the commodity. Regional modes remap to WTI, Dubai/Oman, WAF and local retail tariffs.",
+    text: (money) =>
+      `Each series starts from a realistic market price — Brent around ${money(105)}/bbl, global power near ${money(166)}/MWh, and global water near ${money(2.5)}/m³ — then compounds at a structural CAGR of 3.8–5.0% depending on the commodity. Regional modes remap to WTI, Dubai/Oman, WAF and local retail tariffs.`,
   },
   {
     icon: Workflow,
     color: "#2dd4bf",
     title: "Volatility bands",
-    text: "Low and high scenarios widen with the square root of time, reflecting how forecast uncertainty genuinely grows. At a 10-year horizon the bands span roughly ±22–34% around the average path, with Africa and Asia carrying higher regional vol adjustments.",
+    text: () =>
+      "Low and high scenarios widen with the square root of time, reflecting how forecast uncertainty genuinely grows. At a 10-year horizon the bands span roughly ±22–34% around the average path, with Africa and Asia carrying higher regional vol adjustments.",
   },
   {
     icon: FunctionSquare,
     color: "#38bdf8",
     title: "Factor adjustments",
-    text: "Twelve researched drivers — from OPEC+ policy to water scarcity — each contribute a small drift that ramps up over the horizon, so the model stays explainable rather than being a black box.",
+    text: () =>
+      "Twelve researched drivers — from OPEC+ policy to water scarcity — each contribute a small drift that ramps up over the horizon, so the model stays explainable rather than being a black box.",
   },
   {
     icon: Globe2,
     color: "#a78bfa",
     title: "Five-region evaluation",
-    text: "Americas, Europe, Asia, Africa and Oceania are scored live using research-backed oil markers and 2026 retail electricity/water benchmarks (Europe & Oceania power ~$0.26/kWh, Asia ~$0.09/kWh, Americas mid-range).",
+    text: (money) =>
+      `Americas, Europe, Asia, Africa and Oceania are scored live using research-backed oil markers and 2026 retail electricity/water benchmarks (Europe & Oceania power ~${money(0.26)}/kWh, Asia ~${money(0.09)}/kWh, Americas mid-range).`,
   },
 ];
 
 export default function AboutSection() {
+  const { selectedCurrency, convertPrice, getCurrencyInfo } = useCurrency();
+
+  /**
+   * Prices in the prose above must not collapse to 0 for zero-decimal
+   * currencies (e.g. JPY rendering 0.09 as "¥0"), so they always keep two
+   * decimals regardless of the currency's own minor unit.
+   */
+  const money: MoneyFormatter = (usd) => {
+    const info = getCurrencyInfo(selectedCurrency);
+    const value = convertPrice(usd, selectedCurrency);
+    if (!Number.isFinite(value)) return "—";
+    const symbol = info.symbol && info.symbol.length > 0 ? info.symbol : `${info.code}\u00A0`;
+    return `${symbol}${value.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  };
+
   return (
     <section id="about" className="relative scroll-mt-20 border-t border-line py-16 sm:py-20">
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
@@ -75,7 +109,7 @@ export default function AboutSection() {
                     <Icon className="h-5 w-5" />
                   </span>
                   <h3 className="mt-4 font-display text-lg font-semibold text-white">{m.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-400">{m.text}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-400">{m.text(money)}</p>
                 </div>
               </Reveal>
             );

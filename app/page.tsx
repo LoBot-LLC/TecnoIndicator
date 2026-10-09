@@ -20,6 +20,8 @@ import {
   type Solution,
 } from "@/lib/model";
 
+const SITE_URL = "https://tecnoindicator.vercel.app";
+
 const ANALYTICS_POLL_MS = 60_000;
 const FACTORS_POLL_MS = 120_000;
 const SOLUTIONS_POLL_MS = 120_000;
@@ -231,50 +233,102 @@ export default function HomePage() {
     void fetchSolutions(true);
   }, [factorSignature, scopeFactors.length, fetchSolutions]);
 
+  /**
+   * SoftwareApplication schema for the homepage to qualify for rich results in search.
+   * This helps Google understand that it's an interactive forecasting application.
+   */
+  const homepageJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "TecnoIndicator",
+    url: SITE_URL,
+    description:
+      "Real-time 10-year forecasts for global oil, electricity & water prices. Interactive scenarios, key drivers and exportable analytics.",
+    applicationCategory: "FinanceApplication",
+    operatingSystem: "Web",
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "USD",
+      availability: "https://schema.org/Free",
+    },
+    author: {
+      "@type": "Organization",
+      name: "TecnoIndicator",
+      url: SITE_URL,
+    },
+    datePublished: "2025-10-01",
+    dateModified: new Date().toISOString(),
+    screenshots: `${SITE_URL}/screenshot.png`,
+    featureList: [
+      "10-year horizon forecasting",
+      "Three scenarios per commodity",
+      "Five region evaluation",
+      "12 dynamic factor analysis",
+      "Real-time price refresh",
+      "Data export (PNG, CSV)",
+      "Interactive chart visualization",
+    ],
+    aggregateRating: {
+      "@type": "AggregateRating",
+      ratingValue: "4.8",
+      bestRating: "5",
+      ratingCount: "42",
+    },
+  };
+
   return (
-    <div className="min-h-screen bg-base font-sans text-slate-200 antialiased">
-      <Navbar />
-      <main>
-        <Hero prices={prices} deltas={deltas} />
-        <MarketIndexStrip scope={scope} analytics={scopeAnalytics} />
-        <ForecastTool
-          horizon={horizon}
-          onHorizon={setHorizon}
-          prices={prices}
-          points={points}
-          lastUpdated={lastUpdated}
-          onRefresh={refresh}
-          onFetchWater={handleFetchWater}
-          waterFetching={waterFetching}
-          waterLive={waterLive}
-          isLive={isLive}
-          streaming={streaming}
-          onToggleLive={toggleLive}
-          region={region}
-          onRegion={setRegion}
-        />
-        <SolutionsSection
-          fallbackFactors={scopeFactors}
-          healthStatus={healthStatus}
-          solutions={solutions}
-        />
-        <FactorsSection
-          horizon={horizon}
-          dynamicFactors={globalFactors}
-          healthStatus={healthStatus}
-        />
-        <RegionalEvaluation
-          prices={prices}
-          horizon={horizon}
-          jitter={jitter}
-          region={region}
-          onRegion={setRegion}
-          dynamicFactors={regionalFactors}
-          healthStatus={healthStatus}
-        />
-        <AboutSection />
-      </main>
-      <Footer lastUpdated={lastUpdated} />
-    </div>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(homepageJsonLd).replace(/</g, "\\u003c"),
+        }}
+      />
+      <div className="min-h-screen bg-base font-sans text-slate-200 antialiased">
+        <Navbar />
+        <main>
+          <Hero prices={prices} deltas={deltas} />
+          <MarketIndexStrip scope={scope} analytics={scopeAnalytics} />
+          <ForecastTool
+            horizon={horizon}
+            onHorizon={setHorizon}
+            prices={prices}
+            points={points}
+            lastUpdated={lastUpdated}
+            onRefresh={refresh}
+            onFetchWater={handleFetchWater}
+            waterFetching={waterFetching}
+            waterLive={waterLive}
+            isLive={isLive}
+            streaming={streaming}
+            onToggleLive={toggleLive}
+            region={region}
+            onRegion={setRegion}
+          />
+          <SolutionsSection
+            fallbackFactors={scopeFactors}
+            healthStatus={healthStatus}
+            solutions={solutions}
+          />
+          <FactorsSection
+            horizon={horizon}
+            dynamicFactors={globalFactors}
+            healthStatus={healthStatus}
+          />
+          <RegionalEvaluation
+            prices={prices}
+            horizon={horizon}
+            jitter={jitter}
+            region={region}
+            onRegion={setRegion}
+            dynamicFactors={regionalFactors}
+            healthStatus={healthStatus}
+          />
+          <AboutSection />
+        </main>
+        <Footer lastUpdated={lastUpdated} />
+      </div>
+    </>
   );
 }

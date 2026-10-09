@@ -16,6 +16,29 @@ export const metadata: Metadata = {
   },
 };
 
+/** Organization structured data for rich search results (knowledge panel, logos). */
+const ORGANIZATION_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "TecnoIndicator",
+  url: "https://tecnoindicator.vercel.app",
+  logo: "https://tecnoindicator.vercel.app/favicon.ico",
+  sameAs: [
+    "https://github.com/ilovecheesez/tecnoindicator",
+  ],
+};
+
+/** Website structured data for rich search results. */
+const WEBSITE_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "Website",
+  name: "TecnoIndicator",
+  url: "https://tecnoindicator.vercel.app",
+  description:
+    "TecnoIndicator — real-time 10-year forecasts for global oil, electricity & water prices. Interactive scenarios, key drivers and exportable analytics.",
+  inLanguage: "en-US",
+};
+
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -29,6 +52,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_SCHEMA).replace(/</g, "\\u003c") }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_SCHEMA).replace(/</g, "\\u003c") }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

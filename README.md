@@ -1,4 +1,4 @@
-# TecnoIndicator
+# Lobot TecnoIndicator
 
 **Real-time 10-year forecasts for global oil, water & electricity prices.**
 

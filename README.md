@@ -155,7 +155,7 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 ## 👤 Credits
 
 **Author & Maintainer**  
-[xfst14](https://github.com/xfst14)
+[LoBot LLC](https://github.com/LoBot-LLC)
 
 Built as a demonstration project showcasing modern frontend development, data visualization, server-side AI-assisted market analytics, and forecasting techniques.
 

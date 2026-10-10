@@ -13,6 +13,7 @@ A modern, clean, professional single-page web application that delivers illustra
 ## ✨ Features
 
 - **Hero Dashboard** — Clean landing with project name, tagline, current date, and prominent “Start Forecast” CTA.
+- **Currency Selector** - Predict the prices at your country's currency, at any moment
 - **Interactive Prediction Tool**
   - Horizon slider (1–10 years)
   - Two commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Water (USD/M^3)** and **Global Electricity (USD/MWh)**

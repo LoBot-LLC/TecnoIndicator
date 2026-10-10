@@ -43,12 +43,12 @@ function SolutionCard({
       <h3 className="mt-3 font-display text-base font-semibold text-slate-900 dark:text-white">
         {solution.title}
       </h3>
-      <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400 line-clamp-3">
+      <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-500 line-clamp-3">
         {solution.summary}
       </p>
       <div className="mt-3 space-y-1.5">
         {solution.actions.map((action, i) => (
-          <div key={i} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+          <div key={i} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-500">
             <ArrowUpRight className="mt-0.5 h-3 w-3 shrink-0 text-teal-400 dark:text-teal-300" />
             <span>{action}</span>
           </div>
@@ -66,7 +66,7 @@ function SolutionCard({
       </div>
       {solution.relatedFactors.length > 0 && (
         <div className="mt-3 border-t border-line/50 pt-2">
-          <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600">
+          <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-500">
             Linked factors
           </p>
           <p className="mt-1 text-[10px] text-slate-700 dark:text-slate-500 line-clamp-2">
@@ -111,7 +111,7 @@ export default function SolutionsSection({
     <section id="solutions" className="relative scroll-mt-20 border-t border-line py-16 sm:py-20">
       <div className="pointer-events-none absolute inset-0 bg-grid opacity-40 mask-fade-y" />
       <div className="relative mx-auto max-w-7xl px-5 sm:px-8">
-        <Reveal>
+<Reveal>
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
@@ -120,13 +120,13 @@ export default function SolutionsSection({
               <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
                 3 actionable strategies
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-500">
                 AI-generated solutions adapted from current dynamic reasons to help
                 business owners and executives make better logistical and business
                 decisions. Solutions update automatically as market factors change.
               </p>
             </div>
-            <span className="text-[11px] text-slate-600">
+            <span className="text-[11px] text-slate-600 dark:text-slate-500">
               {healthStatus === "Online Model Connected"
                 ? "AI-generated"
                 : "Static fallback"}

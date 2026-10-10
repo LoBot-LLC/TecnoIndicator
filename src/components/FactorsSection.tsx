@@ -21,7 +21,7 @@ import {
 const MAG_COLOR: Record<Magnitude, string> = {
   High: "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15",
   Medium: "text-amber-300 dark:text-amber-400 border-amber-400/30 dark:border-amber-400/40 bg-amber-400/10 dark:bg-amber-400/15",
-  Low: "text-slate-600 dark:text-slate-300 border-line bg-panel/5",
+  Low: "text-slate-600 dark:text-slate-500 border-line bg-panel/5",
 };
 
 function isNewFactor(createdAt: string): boolean {
@@ -87,7 +87,7 @@ function FactorCard({
         </div>
       </div>
 
-      <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{factor.explanation}</p>
+      <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-600 dark:text-slate-500">{factor.explanation}</p>
 
       <div className="mt-4 flex flex-wrap gap-1.5">
         {factor.commodities.map((id) => {
@@ -181,7 +181,7 @@ export default function FactorsSection({
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
               {isOnline ? "AI-Curated Factors" : "Key factors & drivers"}
             </h2>
-            <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+            <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               {aiCurated
                 ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."
                 : "Twelve researched drivers shape the forecast paths. Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}

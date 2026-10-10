@@ -87,7 +87,7 @@ export default function AboutSection() {
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
               About the model
             </h2>
-            <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+            <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               TecnoIndicator is a demonstration of modern front-end data visualization: every number
               is computed in your browser from publicly known drivers, with no backend and no API
               keys. The goal is an honest, explorable illustration of how forecasters think about
@@ -109,7 +109,7 @@ export default function AboutSection() {
                     <Icon className="h-5 w-5" />
                   </span>
                   <h3 className="mt-4 font-display text-lg font-semibold text-slate-900 dark:text-white">{m.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">{m.text(money)}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-500">{m.text(money)}</p>
                 </div>
               </Reveal>
             );
@@ -132,7 +132,7 @@ export default function AboutSection() {
               {SOURCES.map((s) => (
                 <span
                   key={s}
-                  className="rounded-full border border-line bg-base/40 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400"
+                  className="rounded-full border border-line bg-base/40 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-500"
                 >
                   {s}
                 </span>

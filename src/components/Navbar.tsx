@@ -135,7 +135,7 @@ export default function Navbar() {
         {/* Theme toggle */}
         <button
           type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white/[0.03] text-slate-200 md:hidden"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white/[0.03] text-slate-200 transition-all duration-200 hover:border-teal-400/40 hover:text-white"
           onClick={() => toggleTheme()}
           aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
         >
@@ -192,17 +192,17 @@ export default function Navbar() {
              >
                <FileText className="h-4 w-4" /> CSV
              </button>
-             <button
-               type="button"
-               onClick={() => toggleTheme()}
-               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200"
-             >
-               {theme === "dark" ? (
-                 <Sun className="h-4 w-4" />
-               ) : (
-                 <Moon className="h-4 w-4" />
-               )}
-             </button>
+<button
+                type="button"
+                onClick={() => toggleTheme()}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200"
+              >
+                {theme === "dark" ? (
+                  <Moon className="h-4 w-4" />
+                ) : (
+                  <Sun className="h-4 w-4" />
+                )}
+              </button>
            </div>
         </div>
       )}

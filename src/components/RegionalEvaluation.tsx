@@ -585,7 +585,7 @@ export default function RegionalEvaluation({
                   <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">
                     Cross-region comparison
                   </h3>
-                  <p className="mt-1 text-xs text-slate-700 dark:text-slate-700">
+                  <p className="mt-1 text-xs text-slate-700 dark:text-slate-400">
                     Spot vs {horizon}-year average forecast by region
                   </p>
                 </div>

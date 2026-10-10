@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Download, FileImage, FileText, Menu, X } from "lucide-react";
+import { ChevronDown, Download, FileImage, FileText, Menu, Moon, Sun, X } from "lucide-react";
 import Logo from "./Logo";
 import { GithubIcon } from "./icons";
 import { EVENTS, emit } from "../lib/events";
 import CurrencySelector from "./CurrencySelector";
+import { useTheme } from "../context/ThemeContext";
 
 const LINKS = [
   { href: "#forecast", label: "Forecast" },
@@ -19,6 +20,7 @@ export default function Navbar() {
   const [exportOpen, setExportOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -119,16 +121,30 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* GitHub */}
-          <a
-            href={REPO_URL}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="View source on GitHub"
-            className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white/[0.03] text-slate-300 transition-all hover:border-line-strong hover:text-white"
-          >
-            <GithubIcon className="h-4.5 w-4.5" />
-          </a>
+        {/* GitHub */}
+        <a
+          href={REPO_URL}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="View source on GitHub"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white/[0.03] text-slate-300 transition-all hover:border-line-strong hover:text-white"
+        >
+          <GithubIcon className="h-4.5 w-4.5" />
+        </a>
+
+        {/* Theme toggle */}
+        <button
+          type="button"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white/[0.03] text-slate-200 md:hidden"
+          onClick={() => toggleTheme()}
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {theme === "dark" ? (
+            <Moon className="h-4.5 w-4.5" />
+          ) : (
+            <Sun className="h-4.5 w-4.5" />
+          )}
+        </button>
         </div>
 
         {/* Mobile toggle */}
@@ -161,22 +177,33 @@ export default function Navbar() {
           <div className="mt-3 flex justify-end">
             <CurrencySelector />
           </div>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={() => doExport("png")}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200"
-            >
-              <FileImage className="h-4 w-4" /> PNG
-            </button>
-            <button
-              type="button"
-              onClick={() => doExport("csv")}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200"
-            >
-              <FileText className="h-4 w-4" /> CSV
-            </button>
-          </div>
+           <div className="mt-2 flex gap-2">
+             <button
+               type="button"
+               onClick={() => doExport("png")}
+               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200"
+             >
+               <FileImage className="h-4 w-4" /> PNG
+             </button>
+             <button
+               type="button"
+               onClick={() => doExport("csv")}
+               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200"
+             >
+               <FileText className="h-4 w-4" /> CSV
+             </button>
+             <button
+               type="button"
+               onClick={() => toggleTheme()}
+               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200"
+             >
+               {theme === "dark" ? (
+                 <Sun className="h-4 w-4" />
+               ) : (
+                 <Moon className="h-4 w-4" />
+               )}
+             </button>
+           </div>
         </div>
       )}
     </header>

@@ -60,7 +60,7 @@ export default function Navbar() {
       id="top"
       className={`sticky top-0 z-50 border-b transition-all duration-300 ${
         scrolled
-          ? "border-line bg-base/85 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.35)]"
+          ? "border-line bg-base/85 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.35)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.5)]"
           : "border-transparent bg-base/40 backdrop-blur-md"
       }`}
     >
@@ -73,7 +73,7 @@ export default function Navbar() {
             <a
               key={l.href}
               href={l.href}
-              className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-teal-200"
+              className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100/50 hover:text-teal-600 dark:text-slate-600 dark:text-slate-400 dark:hover:bg-slate-100/5 dark:bg-white/5 dark:hover:text-teal-200"
             >
               {l.label}
             </a>
@@ -91,20 +91,20 @@ export default function Navbar() {
               onClick={() => setExportOpen((v) => !v)}
               aria-expanded={exportOpen}
               aria-haspopup="true"
-              className="flex items-center gap-2 rounded-lg border border-line bg-white/[0.03] px-4 py-2 text-sm font-medium text-slate-200 transition-all duration-200 hover:border-teal-400/40 hover:text-white"
+              className="flex items-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] px-4 py-2 text-sm font-medium text-slate-800 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200 dark:hover:text-slate-900 dark:text-white"
             >
-              <Download className="h-4 w-4 text-teal-300" />
+              <Download className="h-4 w-4 text-teal-600 dark:text-teal-400 dark:text-teal-300" />
               Export
               <ChevronDown
-                className={`h-3.5 w-3.5 text-slate-500 transition-transform ${exportOpen ? "rotate-180" : ""}`}
+                className={`h-3.5 w-3.5 text-slate-700 dark:text-slate-500 transition-transform ${exportOpen ? "rotate-180" : ""}`}
               />
             </button>
             {exportOpen && (
-              <div className="absolute right-0 mt-2 w-52 overflow-hidden rounded-xl border border-line bg-panel shadow-2xl shadow-black/50">
+              <div className="absolute right-0 mt-2 w-52 overflow-hidden rounded-xl border border-line bg-panel shadow-2xl shadow-slate-900/50 dark:shadow-slate-900/50 dark:shadow-slate-900/5 dark:shadow-black/50">
                 <button
                   type="button"
                   onClick={() => doExport("png")}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-200 transition-colors hover:bg-teal-400/10 hover:text-teal-200"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-800 transition-colors hover:bg-teal-400/10 hover:text-teal-600 dark:text-slate-800 dark:text-slate-200 dark:hover:bg-teal-400/10 dark:hover:text-teal-200"
                 >
                   <FileImage className="h-4 w-4 text-oil" />
                   Chart as PNG
@@ -112,7 +112,7 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={() => doExport("csv")}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-200 transition-colors hover:bg-teal-400/10 hover:text-teal-200"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-800 transition-colors hover:bg-teal-400/10 hover:text-teal-600 dark:text-slate-800 dark:text-slate-200 dark:hover:bg-teal-400/10 dark:hover:text-teal-200"
                 >
                   <FileText className="h-4 w-4 text-water" />
                   Data as CSV
@@ -127,7 +127,7 @@ export default function Navbar() {
           target="_blank"
           rel="noreferrer"
           aria-label="View source on GitHub"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white/[0.03] text-slate-300 transition-all hover:border-line-strong hover:text-white"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-slate-100/[0.03] text-slate-700 transition-all hover:border-line-strong hover:text-teal-600 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-600 dark:text-slate-300 dark:hover:text-slate-900 dark:text-white"
         >
           <GithubIcon className="h-4.5 w-4.5" />
         </a>
@@ -135,7 +135,7 @@ export default function Navbar() {
         {/* Theme toggle */}
         <button
           type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white/[0.03] text-slate-200 transition-all duration-200 hover:border-teal-400/40 hover:text-white"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-slate-100/[0.03] text-slate-800 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200 dark:hover:text-slate-900 dark:text-white"
           onClick={() => toggleTheme()}
           aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
         >
@@ -150,7 +150,7 @@ export default function Navbar() {
         {/* Mobile toggle */}
         <button
           type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white/[0.03] text-slate-200 md:hidden"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-slate-100/[0.03] text-slate-800 md:hidden dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200"
           onClick={() => setMobileOpen((v) => !v)}
           aria-expanded={mobileOpen}
           aria-label={mobileOpen ? "Close menu" : "Open menu"}
@@ -168,7 +168,7 @@ export default function Navbar() {
                 key={l.href}
                 href={l.href}
                 onClick={() => setMobileOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-teal-200"
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100/50 hover:text-teal-600 dark:text-slate-800 dark:text-slate-200 dark:hover:bg-slate-100/5 dark:bg-white/5 dark:hover:text-teal-200"
               >
                 {l.label}
               </a>
@@ -178,35 +178,34 @@ export default function Navbar() {
             <CurrencySelector />
           </div>
            <div className="mt-2 flex gap-2">
-             <button
-               type="button"
-               onClick={() => doExport("png")}
-               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200"
-             >
-               <FileImage className="h-4 w-4" /> PNG
-             </button>
-             <button
-               type="button"
-               onClick={() => doExport("csv")}
-               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200"
-             >
-               <FileText className="h-4 w-4" /> CSV
-             </button>
-<button
-                type="button"
-                onClick={() => toggleTheme()}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200"
-              >
-                {theme === "dark" ? (
-                  <Moon className="h-4 w-4" />
-                ) : (
-                  <Sun className="h-4 w-4" />
-                )}
-              </button>
-           </div>
+            <button
+              type="button"
+              onClick={() => doExport("png")}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] px-3 py-2.5 text-sm text-slate-800 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200"
+            >
+              <FileImage className="h-4 w-4" /> PNG
+            </button>
+            <button
+              type="button"
+              onClick={() => doExport("csv")}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] px-3 py-2.5 text-sm text-slate-800 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200"
+            >
+              <FileText className="h-4 w-4" /> CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleTheme()}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] px-3 py-2.5 text-sm text-slate-800 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200"
+            >
+              {theme === "dark" ? (
+                <Moon className="h-4 w-4" />
+              ) : (
+                <Sun className="h-4 w-4" />
+              )}
+            </button>
+          </div>
         </div>
       )}
     </header>
   );
 }
-

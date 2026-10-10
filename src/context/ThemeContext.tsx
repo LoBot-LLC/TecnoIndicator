@@ -32,11 +32,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // The .light class on the html element triggers light-mode CSS variable overrides.
-    if (theme === "light") {
-      document.documentElement.classList.add("light");
+    // The .dark class on the html element triggers dark-mode CSS variable overrides
+    // and enables Tailwind's dark: variant utilities.
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
     } else {
-      document.documentElement.classList.remove("light");
+      document.documentElement.classList.remove("dark");
     }
 
     // Store preference

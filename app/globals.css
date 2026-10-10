@@ -1,11 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  --color-base: #060a13;
-  --color-panel: #0a1122;
-  --color-panel-2: #0d1628;
-  --color-line: #1b2740;
-  --color-line-strong: #2a3b5f;
+  /* Light mode defaults (no class) */
+  --color-base: #f8fafc;
+  --color-panel: #ffffff;
+  --color-panel-2: #f1f5f9;
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
   --color-oil: #f5b840;
   --color-elec: #2dd4bf;
   --color-water: #38bdf8;
@@ -22,13 +23,13 @@
   --font-display: "Space Grotesk", "Inter", ui-sans-serif, sans-serif;
 }
 
-/* Light mode theme overrides - applied when .light class is on html */
-.light {
-  --color-base: #f8fafc;
-  --color-panel: #ffffff;
-  --color-panel-2: #f1f5f9;
-  --color-line: #e2e8f0;
-  --color-line-strong: #cbd5e1;
+/* Dark mode theme overrides - applied when .dark class is on html */
+.dark {
+  --color-base: #060a13;
+  --color-panel: #0a1122;
+  --color-panel-2: #0d1628;
+  --color-line: #1b2740;
+  --color-line-strong: #2a3b5f;
   --color-slate-50: #0f172a;
   --color-slate-200: #1e293b;
   --color-slate-300: #334155;
@@ -46,7 +47,7 @@ html {
 
 body {
   background-color: var(--color-base);
-  color: var(--color-slate-200);
+  color: var(--color-slate-900);
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;

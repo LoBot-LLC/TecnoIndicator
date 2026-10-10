@@ -288,14 +288,14 @@ function CommodityCard({
       <div className="relative flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/5"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/5 dark:border-white/5"
             style={{ background: `${commodity.color}18`, color: commodity.color }}
           >
             <Icon className="h-5 w-5" />
           </span>
           <div>
-            <p className="text-sm font-semibold text-slate-100">{commodity.name}</p>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{commodity.name}</p>
+            <p className="text-[11px] text-slate-700 dark:text-slate-500">
               {commodity.unit.replace("USD", selectedCurrency)} · {regionLabel}
             </p>
           </div>
@@ -307,26 +307,26 @@ function CommodityCard({
         )}
       </div>
 
-      <p className={`relative mt-5 font-display text-3xl font-bold tabular-nums text-white ${flashCls}`}>
+      <p className={`relative mt-5 font-display text-3xl font-bold tabular-nums text-slate-900 dark:text-white ${flashCls}`}>
         {formatPrice(band.avg, selectedCurrency)}
       </p>
-      <p className="mt-1 text-xs text-slate-500">
+      <p className="mt-1 text-xs text-slate-700 dark:text-slate-500">
         Average forecast · {horizonBand.year} · spot{" "}
-        <span className={`font-semibold text-slate-300 ${spotFlash}`}>
+        <span className={`font-semibold text-slate-600 dark:text-slate-300 ${spotFlash}`}>
           {formatPrice(todayBand.avg, selectedCurrency)}
         </span>
       </p>
 
       <div className="relative mt-4 grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-line bg-base/40 px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Low</p>
-          <p className="mt-0.5 font-display text-sm font-semibold text-slate-200">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-500">Low</p>
+          <p className="mt-0.5 font-display text-sm font-semibold text-slate-800 dark:text-slate-200">
             {formatPrice(band.min, selectedCurrency)}
           </p>
         </div>
         <div className="rounded-xl border border-line bg-base/40 px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">High</p>
-          <p className="mt-0.5 font-display text-sm font-semibold text-slate-200">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-500">High</p>
+          <p className="mt-0.5 font-display text-sm font-semibold text-slate-800 dark:text-slate-200">
             {formatPrice(band.max, selectedCurrency)}
           </p>
         </div>
@@ -367,7 +367,7 @@ function CommodityCard({
                 : "Fetch Live Water Price"}
           </button>
           {live && (
-            <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-700 dark:text-slate-500">
               <span className="font-semibold text-sky-300">{formatPrice(live.price, selectedCurrency)}/m³</span> ·{" "}
               {live.asOf} · {live.source} · {live.range}
             </p>
@@ -542,10 +542,10 @@ export default function ForecastTool({
         <Reveal>
           <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-300/80">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
                 Forecast studio
               </p>
-              <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
                 Interactive price forecasts
               </h2>
             </div>
@@ -560,7 +560,7 @@ export default function ForecastTool({
                 className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
                   streaming
                     ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                    : "border-line bg-white/[0.03] text-slate-400"
+                    : "border-line bg-slate-100/[0.03] dark:bg-white/[0.03] text-slate-600 dark:text-slate-400"
                 }`}
               >
                 {streaming && (
@@ -571,7 +571,7 @@ export default function ForecastTool({
                 )}
                 {streaming ? "Live" : "Paused"}
               </span>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-700 dark:text-slate-500">
                 <span suppressHydrationWarning>{fmtTime(now)}</span> · upd{" "}
                 <span suppressHydrationWarning>{fmtTime(lastUpdated)}</span>
               </span>
@@ -580,7 +580,7 @@ export default function ForecastTool({
               <button
                 type="button"
                 onClick={onToggleLive}
-                className="inline-flex items-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-line-strong"
+                className="inline-flex items-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors hover:border-line-strong"
               >
                 {isLive ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
                 {isLive ? "Pause feed" : "Resume feed"}
@@ -588,7 +588,7 @@ export default function ForecastTool({
               <button
                 type="button"
                 onClick={handleRefresh}
-                className="inline-flex items-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-line-strong"
+                className="inline-flex items-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors hover:border-line-strong"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spin ? "spin-once" : ""}`} />
                 Refresh data
@@ -615,8 +615,8 @@ export default function ForecastTool({
           <div className="mb-6 rounded-2xl border border-line bg-panel/60 p-5 sm:p-6">
             <div className="mb-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-slate-200">Evaluation region</p>
-                <p className="text-xs text-slate-500">{regionProfile.blurb}</p>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Evaluation region</p>
+                <p className="text-xs text-slate-700 dark:text-slate-500">{regionProfile.blurb}</p>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
@@ -626,7 +626,7 @@ export default function ForecastTool({
                   className={`rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all ${
                     region === "global"
                       ? "border-teal-400/50 bg-teal-400/15 text-teal-200"
-                      : "border-line bg-white/[0.02] text-slate-400 hover:border-line-strong hover:text-slate-200"
+                      : "border-line bg-slate-100/[0.02] dark:bg-white/[0.02] text-slate-600 dark:text-slate-400 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
                   }`}
                 >
                   🌐 Global
@@ -640,7 +640,7 @@ export default function ForecastTool({
                     className={`rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all ${
                       region === r.id
                         ? "border-teal-400/50 bg-teal-400/15 text-teal-200"
-                        : "border-line bg-white/[0.02] text-slate-400 hover:border-line-strong hover:text-slate-200"
+                        : "border-line bg-slate-100/[0.02] dark:bg-white/[0.02] text-slate-600 dark:text-slate-400 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
                     }`}
                   >
                     {r.flag} {r.short}
@@ -651,14 +651,14 @@ export default function ForecastTool({
 
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-slate-200">Forecast horizon</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  <span className="font-display text-2xl font-bold text-teal-300">{horizon}</span>{" "}
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Forecast horizon</p>
+                <p className="mt-1 text-xs text-slate-700 dark:text-slate-500">
+                  <span className="font-display text-2xl font-bold text-teal-400 dark:text-teal-300">{horizon}</span>{" "}
                   {horizon === 1 ? "year" : "years"} · {START_YEAR} → {START_YEAR + horizon}
                 </p>
               </div>
               <p className="text-[11px] text-slate-600">
-                Press <kbd className="rounded border border-line bg-base px-1.5 py-0.5 font-mono text-slate-400">/</kbd>{" "}
+                Press <kbd className="rounded border border-line bg-base px-1.5 py-0.5 font-mono text-slate-600 dark:text-slate-400">/</kbd>{" "}
                 to focus the slider
               </p>
             </div>
@@ -685,7 +685,7 @@ export default function ForecastTool({
                   onClick={() => onHorizon(y)}
                   aria-label={`Set horizon to ${y} years`}
                   className={`transition-colors ${
-                    y === horizon ? "text-teal-300" : "hover:text-slate-300"
+                    y === horizon ? "text-teal-400 dark:text-teal-300" : "hover:text-slate-600 dark:text-slate-300"
                   }`}
                 >
                   {y}
@@ -703,7 +703,7 @@ export default function ForecastTool({
                   className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition-all duration-200 ${
                     horizon === y
                       ? "border-teal-400/50 bg-teal-400/15 text-teal-200"
-                      : "border-line bg-white/[0.02] text-slate-400 hover:border-line-strong hover:text-slate-200"
+                      : "border-line bg-slate-100/[0.02] dark:bg-white/[0.02] text-slate-600 dark:text-slate-400 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
                   }`}
                 >
                   {y}y
@@ -745,10 +745,10 @@ export default function ForecastTool({
           >
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h3 className="font-display text-lg font-semibold text-white">
+                <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">
                   Price trajectories · {regionProfile.flag} {regionProfile.name}
                 </h3>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-700 dark:text-slate-500">
                   {chartType === "line" && showBands
                     ? "Solid lines = average · dashed = low/high scenario bands"
                     : chartType === "line"
@@ -767,7 +767,7 @@ export default function ForecastTool({
                       className={`rounded-md px-3.5 py-1.5 text-xs font-semibold capitalize transition-all duration-200 ${
                         chartType === t
                           ? "bg-teal-400 text-slate-950 shadow-[0_0_16px_rgba(45,212,191,0.35)]"
-                          : "text-slate-400 hover:text-slate-200"
+                          : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"
                       }`}
                     >
                       {t}
@@ -778,7 +778,7 @@ export default function ForecastTool({
                   type="button"
                   onClick={() => setShowBands((v) => !v)}
                   disabled={chartType === "bar"}
-                  className="flex items-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:border-line-strong disabled:opacity-40"
+                  className="flex items-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:border-line-strong disabled:opacity-40"
                 >
                   <span
                     className={`h-2 w-2 rounded-full ${showBands ? "bg-teal-400" : "bg-slate-600"}`}
@@ -788,7 +788,7 @@ export default function ForecastTool({
                 <button
                   type="button"
                   onClick={exportPng}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:border-oil/40 hover:text-oil"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:border-oil/40 hover:text-oil"
                 >
                   <ImageIcon className="h-3.5 w-3.5" />
                   PNG
@@ -806,15 +806,15 @@ export default function ForecastTool({
           <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel/60">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4 sm:px-6">
               <div>
-                <h3 className="font-display text-lg font-semibold text-white">Forecast table</h3>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">Forecast table</h3>
+                <p className="mt-0.5 text-xs text-slate-700 dark:text-slate-500">
                   Yearly average / low / high scenarios in {selectedCurrency} · {regionProfile.name}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={exportCsv}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:border-water/40 hover:text-water"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:border-water/40 hover:text-water"
               >
                 <FileText className="h-3.5 w-3.5" />
                 CSV
@@ -823,7 +823,7 @@ export default function ForecastTool({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-line bg-base/40 text-[11px] uppercase tracking-wider text-slate-500">
+                  <tr className="border-b border-line bg-base/40 text-[11px] uppercase tracking-wider text-slate-700 dark:text-slate-500">
                     <th className="px-5 py-3 font-semibold sm:px-6" rowSpan={2}>
                       Year
                     </th>
@@ -863,43 +863,43 @@ export default function ForecastTool({
                   {points.map((p, idx) => (
                     <tr
                       key={p.year}
-                      className={`border-b border-line/60 transition-colors hover:bg-white/[0.02] ${
+                      className={`border-b border-line/60 transition-colors hover:bg-slate-100/[0.02] dark:bg-white/[0.02] ${
                         idx === 0 ? "bg-teal-400/[0.04]" : ""
                       }`}
                     >
-                      <td className="px-5 py-3 font-display font-semibold text-slate-100 sm:px-6">
+                      <td className="px-5 py-3 font-display font-semibold text-slate-900 dark:text-slate-100 sm:px-6">
                         {p.year}
                         {idx === 0 && (
-                          <span className="ml-2 rounded-full border border-teal-400/30 bg-teal-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-300">
+                          <span className="ml-2 rounded-full border border-teal-400/30 bg-teal-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-400 dark:text-teal-300">
                             Today
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-200">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-200">
                         {formatPrice(p.oil.avg, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-500">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-700 dark:text-slate-500">
                         {formatPrice(p.oil.min, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-500">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-700 dark:text-slate-500">
                         {formatPrice(p.oil.max, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-200">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-200">
                         {formatPrice(p.electricity.avg, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-500">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-700 dark:text-slate-500">
                         {formatPrice(p.electricity.min, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-500">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-700 dark:text-slate-500">
                         {formatPrice(p.electricity.max, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-200">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-200">
                         {formatPrice(p.water.avg, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-500">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-700 dark:text-slate-500">
                         {formatPrice(p.water.min, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-500">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-700 dark:text-slate-500">
                         {formatPrice(p.water.max, selectedCurrency)}
                       </td>
                     </tr>
@@ -917,20 +917,20 @@ export default function ForecastTool({
               type="button"
               onClick={() => setAssumptionsOpen((v) => !v)}
               aria-expanded={assumptionsOpen}
-              className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left transition-colors hover:bg-white/[0.02] sm:px-7"
+              className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left transition-colors hover:bg-slate-100/[0.02] dark:bg-white/[0.02] sm:px-7"
             >
               <span className="flex items-center gap-3">
-                <Info className="h-4 w-4 text-teal-300" />
-                <span className="text-sm font-semibold text-slate-200">
+                <Info className="h-4 w-4 text-teal-400 dark:text-teal-300" />
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                   Show underlying assumptions
                 </span>
               </span>
               <ChevronRight
-                className={`h-4 w-4 text-slate-500 transition-transform ${assumptionsOpen ? "rotate-90" : ""}`}
+                className={`h-4 w-4 text-slate-700 dark:text-slate-500 transition-transform ${assumptionsOpen ? "rotate-90" : ""}`}
               />
             </button>
             {assumptionsOpen && (
-              <div className="border-t border-line px-6 py-6 text-sm leading-relaxed text-slate-400 sm:px-7">
+              <div className="border-t border-line px-6 py-6 text-sm leading-relaxed text-slate-600 dark:text-slate-400 sm:px-7">
                 <p>
                   Every forecast is generated entirely in your browser using a transparent three-part
                   model — a compounding base trend, horizon-scaled volatility bands, and small drift
@@ -957,16 +957,16 @@ export default function ForecastTool({
                     },
                   ].map((b) => (
                     <div key={b.t} className="rounded-xl border border-line bg-base/40 p-4">
-                      <p className="text-xs font-semibold text-teal-300">{b.t}</p>
-                      <p className="mt-2 font-mono text-[11px] text-slate-300">{b.f}</p>
-                      <p className="mt-2 text-xs text-slate-500">{b.d}</p>
+                      <p className="text-xs font-semibold text-teal-400 dark:text-teal-300">{b.t}</p>
+                      <p className="mt-2 font-mono text-[11px] text-slate-600 dark:text-slate-300">{b.f}</p>
+                      <p className="mt-2 text-xs text-slate-700 dark:text-slate-500">{b.d}</p>
                     </div>
                   ))}
                 </div>
                 <div className="mt-5 overflow-x-auto">
                   <table className="w-full min-w-[520px] text-left text-xs">
                     <thead>
-                      <tr className="border-b border-line text-slate-500">
+                      <tr className="border-b border-line text-slate-700 dark:text-slate-500">
                         <th className="py-2 pr-4 font-semibold">Commodity</th>
                         <th className="py-2 pr-4 font-semibold">Base (today)</th>
                         <th className="py-2 pr-4 font-semibold">CAGR</th>
@@ -976,14 +976,14 @@ export default function ForecastTool({
                     </thead>
                     <tbody>
                       {COMMODITIES.map((c) => (
-                        <tr key={c.id} className="border-b border-line/50 text-slate-300">
+                        <tr key={c.id} className="border-b border-line/50 text-slate-600 dark:text-slate-300">
                           <td className="py-2.5 pr-4 font-medium">{c.name}</td>
                           <td className="py-2.5 pr-4 tabular-nums">
                             {formatPrice(prices[c.id], selectedCurrency)} / {c.unit.replace("USD", selectedCurrency)}
                           </td>
                           <td className="py-2.5 pr-4">+{(c.cagr * 100).toFixed(1)}%</td>
                           <td className="py-2.5 pr-4">±{(c.maxVol * 100).toFixed(0)}%</td>
-                          <td className="py-2.5 text-slate-500">
+                          <td className="py-2.5 text-slate-700 dark:text-slate-500">
                             {c.id === "oil"
                               ? "EIA · ICE Brent"
                               : c.id === "electricity"
@@ -995,7 +995,7 @@ export default function ForecastTool({
                     </tbody>
                   </table>
                 </div>
-                  <p className="mt-5 text-xs text-slate-500">
+                  <p className="mt-5 text-xs text-slate-700 dark:text-slate-500">
                    The live feed polls /api/prices every 60 seconds, so spot prices,
                    cards, chart, table and regional evaluation update automatically —
                    no clicking required. It auto-pauses when the browser tab is hidden
@@ -1008,7 +1008,7 @@ export default function ForecastTool({
         </Reveal>
 
         {/* disclaimer */}
-        <div className="mt-6 flex gap-3 rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 text-xs leading-relaxed text-amber-100/80">
+        <div className="mt-6 flex gap-3 rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 text-xs leading-relaxed text-amber-900/80 dark:text-amber-100/80">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
           <p>
             <span className="font-semibold text-amber-200">Disclaimer.</span>

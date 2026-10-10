@@ -160,15 +160,15 @@ type PriceFormatter = (value: number, currency: string) => string;
 function getChartColors(isDark: boolean) {
   if (isDark) {
     return {
-      legendLabel: "rgba(219,228,240,0.75)",
+      legendLabel: "rgba(226,232,240,0.95)",
       tooltipBg: "rgba(10,17,34,0.95)",
       tooltipBorder: "#1b2740",
       tooltipTitle: "#f1f5f9",
-      tooltipBody: "#dbe4f0",
-      xGrid: "rgba(148,163,184,0.06)",
+      tooltipBody: "#e2e8f0",
+      xGrid: "rgba(148,163,184,0.12)",
       xBorder: "#1b2740",
-      xTicks: "rgba(219,228,240,0.6)",
-      yGrid: "rgba(148,163,184,0.07)",
+      xTicks: "rgba(226,232,240,0.95)",
+      yGrid: "rgba(148,163,184,0.12)",
     };
   }
   return {
@@ -839,7 +839,7 @@ export default function ForecastTool({
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4 sm:px-6">
               <div>
                 <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">Forecast table</h3>
-                <p className="mt-0.5 text-xs text-slate-700 dark:text-slate-500">
+                <p className="mt-0.5 text-xs text-slate-700 dark:text-slate-600">
                   Yearly average / low / high scenarios in {selectedCurrency} · {regionProfile.name}
                 </p>
               </div>

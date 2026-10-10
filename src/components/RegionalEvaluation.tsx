@@ -12,6 +12,8 @@ import type { ChartConfiguration, ChartOptions, TooltipItem } from "chart.js";
 import {
   ArrowDownRight,
   ArrowUpRight,
+  ChevronDown,
+  ChevronUp,
   Download,
   Droplets,
   Fuel,
@@ -147,7 +149,7 @@ const outlookColor =
       ? "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15"
       : ev.outlook === "bearish"
       ? "text-emerald-300 dark:text-emerald-400 border-emerald-400/30 dark:border-emerald-400/40 bg-emerald-400/10 dark:bg-emerald-400/15"
-      : "text-slate-600 dark:text-slate-600 border-line bg-panel/5";
+      : "text-slate-600 dark:text-slate-400 border-line bg-panel/5";
 
   return (
     <button
@@ -170,17 +172,17 @@ const outlookColor =
               <h3 className="font-display text-base font-semibold text-slate-900 dark:text-white">
                 {ev.region.name}
               </h3>
-              <span className="rounded-full border border-line bg-base/40 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-600">
+              <span className="rounded-full border border-line bg-base/40 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-400">
                 #{rank}
               </span>
             </div>
-            <p className="mt-0.5 text-[11px] text-slate-700 dark:text-slate-600">{ev.region.oilMarker}</p>
+            <p className="mt-0.5 text-[11px] text-slate-700 dark:text-slate-400">{ev.region.oilMarker}</p>
           </div>
         </div>
         <ScoreRing score={ev.score} color={ev.region.accent} />
       </div>
 
-      <p className="mt-3 text-xs leading-relaxed text-slate-700 dark:text-slate-600 line-clamp-2">{ev.region.blurb}</p>
+      <p className="mt-3 text-xs leading-relaxed text-slate-700 dark:text-slate-400 line-clamp-2">{ev.region.blurb}</p>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
         {COMMODITIES.map((c) => {
@@ -190,7 +192,7 @@ const outlookColor =
               key={c.id}
               className="rounded-xl border border-line bg-base/40 px-2.5 py-2.5"
             >
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-600">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
                 {meta.label}
               </p>
               <p
@@ -212,9 +214,9 @@ const outlookColor =
         >
           {ev.outlook} outlook
         </span>
-<span className="text-[11px] text-slate-600 dark:text-slate-600">
+        <span className="text-[11px] text-slate-600 dark:text-slate-400">
           vs global power{" "}
-          <span className="font-semibold text-slate-600 dark:text-slate-600">
+          <span className="font-semibold text-slate-600 dark:text-slate-400">
             {ev.vsGlobalPct.electricity >= 0 ? "+" : ""}
             {ev.vsGlobalPct.electricity.toFixed(0)}%
           </span>
@@ -239,13 +241,19 @@ function RegionalFactorCard({
   index: number;
 }) {
   const isNew = isNewFactor(factor.createdAt);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const MAX_CHARS = 140;
+  const shouldTruncate = factor.explanation.length > MAX_CHARS;
+  const displayText = isExpanded || !shouldTruncate
+    ? factor.explanation
+    : factor.explanation.slice(0, MAX_CHARS) + "…";
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-4 transition-all duration-300 hover:border-line-strong hover:bg-panel">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-full border border-line bg-base/50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-600">
+            <span className="rounded-full border border-line bg-base/50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
               {factor.category}
             </span>
             <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold text-amber-300 border-amber-400/30 bg-amber-400/10">
@@ -261,14 +269,38 @@ function RegionalFactorCard({
             )}
           </h4>
         </div>
-        <span className="shrink-0 font-display text-[11px] font-bold text-slate-600 dark:text-slate-600">
+        <span className="shrink-0 font-display text-[11px] font-bold text-slate-600 dark:text-slate-400">
           {String(index + 1).padStart(2, "0")}
         </span>
       </div>
 
-      <p className="mt-2 text-[11px] leading-relaxed text-slate-600 dark:text-slate-600 line-clamp-3">
-        {factor.explanation}
+      <p
+        id={`factor-explanation-${factor.id}`}
+        className="mt-2 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400"
+      >
+        {displayText}
       </p>
+      {shouldTruncate && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-teal-400 dark:text-teal-300 hover:text-teal-300 dark:hover:text-teal-200 transition-colors"
+          aria-expanded={isExpanded}
+          aria-controls={`factor-explanation-${factor.id}`}
+        >
+          {isExpanded ? (
+            <>
+              <ChevronUp className="h-3 w-3" />
+              Show less
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3 w-3" />
+              Show more
+            </>
+          )}
+        </button>
+      )}
 
       <div className="mt-2 flex flex-wrap gap-1">
         {factor.commodities.map((id) => {
@@ -289,7 +321,7 @@ function RegionalFactorCard({
           .map((r) => (
             <span
               key={r}
-              className="rounded-full border border-line bg-base/40 px-1.5 py-0.5 text-[9px] font-medium capitalize text-slate-700 dark:text-slate-600"
+              className="rounded-full border border-line bg-base/40 px-1.5 py-0.5 text-[9px] font-medium capitalize text-slate-700 dark:text-slate-400"
             >
               {r}
             </span>
@@ -298,12 +330,12 @@ function RegionalFactorCard({
 
       <div className="mt-2 flex items-center justify-between text-[10px]">
         <span className="font-semibold text-teal-400 dark:text-teal-300">Impact: {factor.importanceScore}/100</span>
-        <span className="font-semibold text-slate-700 dark:text-slate-600 capitalize">
+        <span className="font-semibold text-slate-700 dark:text-slate-400 capitalize">
           {factor.direction} · {factor.bias}
         </span>
       </div>
 
-      <p className="mt-1 text-[9px] text-slate-600 dark:text-slate-600 line-clamp-1">Source: {factor.source}</p>
+      <p className="mt-1 text-[9px] text-slate-600 dark:text-slate-400 line-clamp-1">Source: {factor.source}</p>
     </article>
   );
 }
@@ -474,7 +506,7 @@ export default function RegionalEvaluation({
               <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
                 Evaluate 5 world regions
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-600">
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
                 Live oil, electricity and water prices mapped to Americas, Europe, Asia, Africa and
                 Oceania using research-backed regional markers — WTI, Dated Brent, Dubai/Oman, West
                 African sweet and import-parity crude, plus retail power and municipal water
@@ -496,7 +528,7 @@ export default function RegionalEvaluation({
         <Reveal delay={60}>
           <div className="mb-6 grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-line bg-panel/60 p-4">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-600">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
                 <Gauge className="h-3.5 w-3.5 text-teal-400 dark:text-teal-300" />
                 Best composite score
               </div>
@@ -506,7 +538,7 @@ export default function RegionalEvaluation({
               </p>
             </div>
             <div className="rounded-2xl border border-line bg-panel/60 p-4">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-600">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
                 <Zap className="h-3.5 w-3.5 text-elec" />
                 Lowest power tariff
               </div>
@@ -518,7 +550,7 @@ export default function RegionalEvaluation({
               </p>
             </div>
             <div className="rounded-2xl border border-line bg-panel/60 p-4">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-600">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
                 <Droplets className="h-3.5 w-3.5 text-water" />
                 Highest water tariff
               </div>
@@ -588,7 +620,7 @@ export default function RegionalEvaluation({
                   {selected.region.flag}
                 </span>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-600">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
                     Deep dive
                   </p>
                   <h3 className="font-display text-xl font-semibold text-slate-900 dark:text-white">
@@ -597,7 +629,7 @@ export default function RegionalEvaluation({
                 </div>
               </div>
 
-              <p className="mt-4 text-sm leading-relaxed text-slate-600 dark:text-slate-600">{selected.region.blurb}</p>
+              <p className="mt-4 text-sm leading-relaxed text-slate-600 dark:text-slate-400">{selected.region.blurb}</p>
 
               <div className="mt-5 space-y-3">
                 {COMMODITIES.map((c) => {
@@ -609,10 +641,10 @@ export default function RegionalEvaluation({
                       className="rounded-xl border border-line bg-base/40 px-3.5 py-3"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-600">
+                        <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
                           <Icon className="h-3.5 w-3.5" style={{ color: meta.color }} />
                           {meta.label}
-                          <span className="font-normal text-slate-600 dark:text-slate-600">
+                          <span className="font-normal text-slate-600 dark:text-slate-400">
                             {selectedCurrency}/{meta.unit}
                           </span>
                         </span>
@@ -620,7 +652,7 @@ export default function RegionalEvaluation({
                       </div>
                       <div className="mt-2 flex items-end justify-between gap-2">
                         <div>
-                          <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-600">
+                          <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Spot
                           </p>
                           <p className="font-display text-base font-bold tabular-nums text-slate-900 dark:text-white">
@@ -628,7 +660,7 @@ export default function RegionalEvaluation({
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-600">
+                          <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             {horizonYear} avg
                           </p>
                           <p className="font-display text-base font-bold tabular-nums text-slate-800 dark:text-slate-100">
@@ -636,10 +668,10 @@ export default function RegionalEvaluation({
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-600">
+                          <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             vs world
                           </p>
-                          <p className="font-display text-sm font-semibold tabular-nums text-slate-600 dark:text-slate-600">
+                          <p className="font-display text-sm font-semibold tabular-nums text-slate-600 dark:text-slate-400">
                             {selected.vsGlobalPct[c.id] >= 0 ? "+" : ""}
                             {selected.vsGlobalPct[c.id].toFixed(1)}%
                           </p>
@@ -651,14 +683,14 @@ export default function RegionalEvaluation({
               </div>
 
               <div className="mt-5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-600">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
                   Key regional drivers
                 </p>
                 <ul className="mt-2 space-y-1.5">
                   {selected.region.drivers.map((d) => (
                     <li
                       key={d}
-                      className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-600"
+                      className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400"
                     >
                       <TrendingUp
                         className="mt-0.5 h-3 w-3 shrink-0"
@@ -673,12 +705,12 @@ export default function RegionalEvaluation({
 {/* AI-curated regional factors */}
                <div id="regional-factors" className="mt-5">
                 <div className="mb-3 flex items-center justify-between">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-600">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
                     {healthStatus === "Online Model Connected"
                       ? "AI Factors"
                       : "Regional factors"}
                   </p>
-<span className="text-[11px] text-slate-600 dark:text-slate-600">
+                  <span className="text-[11px] text-slate-600 dark:text-slate-400">
                     8 factors per region
                   </span>
                 </div>
@@ -711,7 +743,7 @@ export default function RegionalEvaluation({
               <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">
                 Regional scoreboard
               </h3>
-              <p className="mt-0.5 text-xs text-slate-700 dark:text-slate-600">
+              <p className="mt-0.5 text-xs text-slate-700 dark:text-slate-400">
                 Live spots, {horizon}-year averages and premium/discount vs global · ranked by
                 composite affordability score
               </p>
@@ -719,7 +751,7 @@ export default function RegionalEvaluation({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-line bg-base/40 text-[11px] uppercase tracking-wider text-slate-700 dark:text-slate-600">
+                  <tr className="border-b border-line bg-base/40 text-[11px] uppercase tracking-wider text-slate-700 dark:text-slate-400">
                     <th className="px-5 py-3 font-semibold sm:px-6">Region</th>
                     <th className="px-3 py-3 text-center font-semibold text-oil">Oil spot</th>
                     <th className="px-3 py-3 text-center font-semibold text-oil">
@@ -752,11 +784,11 @@ export default function RegionalEvaluation({
                           className="flex items-center gap-2.5 text-left"
                         >
                           <span className="text-lg">{e.region.flag}</span>
-<span>
+                          <span>
                              <span className="block font-display font-semibold text-slate-900 dark:text-slate-100">
                                {e.region.name}
                              </span>
-<span className="text-[11px] text-slate-600 dark:text-slate-600">
+                             <span className="text-[11px] text-slate-600 dark:text-slate-400">
                                #{idx + 1} · {e.region.oilMarker}
                              </span>
                            </span>
@@ -765,19 +797,19 @@ export default function RegionalEvaluation({
                       <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-100">
                         {formatPrice(e.spots.oil, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-600">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-400">
                         {formatPrice(e.horizon.oil.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-100">
                         {formatPrice(e.spots.electricity, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-600">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-400">
                         {formatPrice(e.horizon.electricity.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-100">
                         {formatPrice(e.spots.water, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-600">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-400">
                         {formatPrice(e.horizon.water.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center">
@@ -791,7 +823,7 @@ export default function RegionalEvaluation({
                           {e.score}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-center capitalize text-xs font-semibold text-slate-600 dark:text-slate-600 sm:px-6">
+                      <td className="px-5 py-3 text-center capitalize text-xs font-semibold text-slate-600 dark:text-slate-400 sm:px-6">
                         {e.outlook}
                       </td>
                     </tr>

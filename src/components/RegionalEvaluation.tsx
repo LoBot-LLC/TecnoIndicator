@@ -41,6 +41,33 @@ if (typeof window !== "undefined") {
   Chart.register(BarController, BarElement, CategoryScale, Legend, LinearScale, Tooltip);
 }
 
+function getChartColors(isDark: boolean) {
+  if (isDark) {
+    return {
+      legendLabel: "rgba(219,228,240,0.75)",
+      tooltipBg: "rgba(10,17,34,0.95)",
+      tooltipBorder: "#1b2740",
+      tooltipTitle: "#f1f5f9",
+      tooltipBody: "#dbe4f0",
+      xBorder: "#1b2740",
+      xTicks: "rgba(219,228,240,0.65)",
+      yGrid: "rgba(148,163,184,0.07)",
+      yTicks: "rgba(219,228,240,0.55)",
+    };
+  }
+  return {
+    legendLabel: "rgba(30,41,59,0.75)",
+    tooltipBg: "rgba(255,255,255,0.95)",
+    tooltipBorder: "#e2e8f0",
+    tooltipTitle: "#0f172a",
+    tooltipBody: "#334155",
+    xBorder: "#e2e8f0",
+    xTicks: "rgba(30,41,59,0.65)",
+    yGrid: "rgba(148,163,184,0.1)",
+    yTicks: "rgba(30,41,59,0.55)",
+  };
+}
+
 const COMM_META: Record<
   CommodityId,
   { label: string; icon: typeof Fuel; color: string; decimals: number; unit: string }
@@ -57,7 +84,7 @@ function ScoreRing({ score, color }: { score: number; color: string }) {
   return (
     <div className="relative h-16 w-16 shrink-0">
       <svg viewBox="0 0 72 72" className="h-full w-full -rotate-90">
-        <circle cx="36" cy="36" r={r} fill="none" stroke="rgba(27,39,64,1)" strokeWidth="6" />
+        <circle cx="36" cy="36" r={r} fill="none" stroke="var(--color-line)" strokeWidth="6" />
         <circle
           cx="36"
           cy="36"
@@ -83,7 +110,7 @@ function DeltaBadge({ value }: { value: number }) {
   return (
     <span
       className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${
-        up ? "text-rose-300" : "text-emerald-300"
+        up ? "text-rose-300 dark:text-rose-400" : "text-emerald-300 dark:text-emerald-400"
       }`}
     >
       {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
@@ -116,10 +143,10 @@ function RegionCard({
 
   const outlookColor =
     ev.outlook === "bullish"
-      ? "text-rose-300 border-rose-400/30 bg-rose-400/10"
+      ? "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15"
       : ev.outlook === "bearish"
-        ? "text-emerald-300 border-emerald-400/30 bg-emerald-400/10"
-        : "text-slate-600 dark:text-slate-300 border-line bg-slate-100/[0.03] dark:bg-white/[0.03]";
+        ? "text-emerald-300 dark:text-emerald-400 border-emerald-400/30 dark:border-emerald-400/40 bg-emerald-400/10 dark:bg-emerald-400/15"
+        : "text-slate-600 dark:text-slate-300 border-line bg-panel/5";
 
   return (
     <button
@@ -184,7 +211,7 @@ function RegionCard({
         >
           {ev.outlook} outlook
         </span>
-        <span className="text-[11px] text-slate-600">
+        <span className="text-[11px] text-slate-600 dark:text-slate-400">
           vs global power{" "}
           <span className="font-semibold text-slate-600 dark:text-slate-400">
             {ev.vsGlobalPct.electricity >= 0 ? "+" : ""}
@@ -319,6 +346,8 @@ export default function RegionalEvaluation({
     const spotData = evals.map((e) => e.spots[focusCommodity]);
     const horizonData = evals.map((e) => e.horizon[focusCommodity].avg);
     const color = COMM_META[focusCommodity].color;
+    const isDark = document.documentElement.classList.contains("dark");
+    const colors = getChartColors(isDark);
 
     const config: ChartConfiguration<"bar", number[], string> = {
       type: "bar",
@@ -351,7 +380,7 @@ export default function RegionalEvaluation({
           legend: {
             position: "bottom",
             labels: {
-              color: "rgba(219,228,240,0.75)",
+              color: colors.legendLabel,
               boxWidth: 12,
               usePointStyle: true,
               pointStyle: "rectRounded",
@@ -360,11 +389,11 @@ export default function RegionalEvaluation({
             },
           },
           tooltip: {
-            backgroundColor: "rgba(10,17,34,0.95)",
-            borderColor: "#1b2740",
+            backgroundColor: colors.tooltipBg,
+            borderColor: colors.tooltipBorder,
             borderWidth: 1,
-            titleColor: "#f1f5f9",
-            bodyColor: "#dbe4f0",
+            titleColor: colors.tooltipTitle,
+            bodyColor: colors.tooltipBody,
             padding: 12,
             cornerRadius: 10,
             callbacks: {
@@ -377,17 +406,17 @@ export default function RegionalEvaluation({
         scales: {
           x: {
             grid: { display: false },
-            border: { color: "#1b2740" },
+            border: { color: colors.xBorder },
             ticks: {
-              color: "rgba(219,228,240,0.65)",
+              color: colors.xTicks,
               font: { family: "Inter", size: 11 },
             },
           },
           y: {
-            grid: { color: "rgba(148,163,184,0.07)" },
+            grid: { color: colors.yGrid },
             border: { display: false },
             ticks: {
-              color: "rgba(219,228,240,0.55)",
+              color: colors.yTicks,
               font: { family: "Inter", size: 10 },
             },
           },
@@ -451,7 +480,7 @@ export default function RegionalEvaluation({
             <button
               type="button"
               onClick={exportRegional}
-              className="inline-flex items-center gap-2 self-start rounded-xl border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-all hover:border-teal-400/40 hover:text-slate-900 dark:text-white"
+              className="inline-flex items-center gap-2 self-start rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-all hover:border-teal-400/40 hover:text-slate-900 dark:text-white"
             >
               <Download className="h-3.5 w-3.5 text-teal-400 dark:text-teal-300" />
               Export region CSV
@@ -579,7 +608,7 @@ export default function RegionalEvaluation({
                         <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
                           <Icon className="h-3.5 w-3.5" style={{ color: meta.color }} />
                           {meta.label}
-                          <span className="font-normal text-slate-600">
+                          <span className="font-normal text-slate-600 dark:text-slate-400">
                             {selectedCurrency}/{meta.unit}
                           </span>
                         </span>
@@ -587,7 +616,7 @@ export default function RegionalEvaluation({
                       </div>
                       <div className="mt-2 flex items-end justify-between gap-2">
                         <div>
-                          <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                          <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Spot
                           </p>
                           <p className="font-display text-base font-bold tabular-nums text-slate-900 dark:text-white">
@@ -595,7 +624,7 @@ export default function RegionalEvaluation({
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                          <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             {horizonYear} avg
                           </p>
                           <p className="font-display text-base font-bold tabular-nums text-slate-800 dark:text-slate-200">
@@ -603,7 +632,7 @@ export default function RegionalEvaluation({
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                          <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             vs world
                           </p>
                           <p className="font-display text-sm font-semibold tabular-nums text-slate-600 dark:text-slate-400">
@@ -708,8 +737,8 @@ export default function RegionalEvaluation({
                   {evals.map((e, idx) => (
                     <tr
                       key={e.region.id}
-                      className={`border-b border-line/60 transition-colors hover:bg-slate-100/[0.02] dark:bg-white/[0.02] ${
-                        region === e.region.id ? "bg-teal-400/[0.05]" : ""
+                      className={`border-b border-line/60 transition-colors hover:bg-panel/3 ${
+                        region === e.region.id ? "bg-teal-400/10" : ""
                       }`}
                     >
                       <td className="px-5 py-3 sm:px-6">
@@ -723,7 +752,7 @@ export default function RegionalEvaluation({
                             <span className="block font-display font-semibold text-slate-900 dark:text-slate-100">
                               {e.region.name}
                             </span>
-                            <span className="text-[11px] text-slate-600">
+<span className="text-[11px] text-slate-600 dark:text-slate-400">
                               #{idx + 1} · {e.region.oilMarker}
                             </span>
                           </span>

@@ -73,7 +73,7 @@ export default function Navbar() {
             <a
               key={l.href}
               href={l.href}
-              className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100/50 hover:text-teal-600 dark:text-slate-600 dark:text-slate-400 dark:hover:bg-slate-100/5 dark:bg-white/5 dark:hover:text-teal-200"
+              className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100/50 hover:text-teal-600 dark:text-slate-400 dark:hover:bg-panel/10 dark:hover:text-teal-200"
             >
               {l.label}
             </a>
@@ -91,7 +91,7 @@ export default function Navbar() {
               onClick={() => setExportOpen((v) => !v)}
               aria-expanded={exportOpen}
               aria-haspopup="true"
-              className="flex items-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] px-4 py-2 text-sm font-medium text-slate-800 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200 dark:hover:text-slate-900 dark:text-white"
+              className="flex items-center gap-2 rounded-lg border border-line bg-panel/5 px-4 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
             >
               <Download className="h-4 w-4 text-teal-600 dark:text-teal-400 dark:text-teal-300" />
               Export
@@ -127,7 +127,7 @@ export default function Navbar() {
           target="_blank"
           rel="noreferrer"
           aria-label="View source on GitHub"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-slate-100/[0.03] text-slate-700 transition-all hover:border-line-strong hover:text-teal-600 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-600 dark:text-slate-300 dark:hover:text-slate-900 dark:text-white"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-panel/5 text-slate-700 dark:text-slate-300 transition-all hover:border-line-strong hover:text-teal-600 dark:hover:text-teal-200"
         >
           <GithubIcon className="h-4.5 w-4.5" />
         </a>
@@ -135,7 +135,7 @@ export default function Navbar() {
         {/* Theme toggle */}
         <button
           type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-slate-100/[0.03] text-slate-800 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200 dark:hover:text-slate-900 dark:text-white"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-panel/5 text-slate-800 dark:text-slate-200 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
           onClick={() => toggleTheme()}
           aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
         >
@@ -150,7 +150,7 @@ export default function Navbar() {
         {/* Mobile toggle */}
         <button
           type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-slate-100/[0.03] text-slate-800 md:hidden dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-panel/5 text-slate-800 dark:text-slate-200 md:hidden"
           onClick={() => setMobileOpen((v) => !v)}
           aria-expanded={mobileOpen}
           aria-label={mobileOpen ? "Close menu" : "Open menu"}
@@ -168,7 +168,7 @@ export default function Navbar() {
                 key={l.href}
                 href={l.href}
                 onClick={() => setMobileOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100/50 hover:text-teal-600 dark:text-slate-800 dark:text-slate-200 dark:hover:bg-slate-100/5 dark:bg-white/5 dark:hover:text-teal-200"
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100/50 hover:text-teal-600 dark:text-slate-200 dark:hover:bg-panel/10 dark:hover:text-teal-200"
               >
                 {l.label}
               </a>
@@ -177,25 +177,25 @@ export default function Navbar() {
           <div className="mt-3 flex justify-end">
             <CurrencySelector />
           </div>
-           <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={() => doExport("png")}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] px-3 py-2.5 text-sm text-slate-800 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200"
-            >
+<div className="mt-2 flex gap-2">
+             <button
+               type="button"
+               onClick={() => doExport("png")}
+               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200"
+             >
               <FileImage className="h-4 w-4" /> PNG
             </button>
             <button
               type="button"
               onClick={() => doExport("csv")}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] px-3 py-2.5 text-sm text-slate-800 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200"
             >
               <FileText className="h-4 w-4" /> CSV
             </button>
             <button
               type="button"
               onClick={() => toggleTheme()}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] px-3 py-2.5 text-sm text-slate-800 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200"
             >
               {theme === "dark" ? (
                 <Moon className="h-4 w-4" />

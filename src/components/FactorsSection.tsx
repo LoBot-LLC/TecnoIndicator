@@ -19,9 +19,9 @@ import {
 } from "../lib/model";
 
 const MAG_COLOR: Record<Magnitude, string> = {
-  High: "text-rose-300 border-rose-400/30 bg-rose-400/10",
-  Medium: "text-amber-300 border-amber-400/30 bg-amber-400/10",
-  Low: "text-slate-600 dark:text-slate-300 border-line bg-slate-100/[0.03] dark:bg-white/[0.03]",
+  High: "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15",
+  Medium: "text-amber-300 dark:text-amber-400 border-amber-400/30 dark:border-amber-400/40 bg-amber-400/10 dark:bg-amber-400/15",
+  Low: "text-slate-600 dark:text-slate-300 border-line bg-panel/5",
 };
 
 function isNewFactor(createdAt: string): boolean {

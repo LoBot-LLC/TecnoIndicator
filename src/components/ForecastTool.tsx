@@ -157,19 +157,49 @@ function axisRange(points: ForecastPoint[], id: CommodityId) {
 
 type PriceFormatter = (value: number, currency: string) => string;
 
+function getChartColors(isDark: boolean) {
+  if (isDark) {
+    return {
+      legendLabel: "rgba(219,228,240,0.75)",
+      tooltipBg: "rgba(10,17,34,0.95)",
+      tooltipBorder: "#1b2740",
+      tooltipTitle: "#f1f5f9",
+      tooltipBody: "#dbe4f0",
+      xGrid: "rgba(148,163,184,0.06)",
+      xBorder: "#1b2740",
+      xTicks: "rgba(219,228,240,0.6)",
+      yGrid: "rgba(148,163,184,0.07)",
+    };
+  }
+  return {
+    legendLabel: "rgba(30,41,59,0.75)",
+    tooltipBg: "rgba(255,255,255,0.95)",
+    tooltipBorder: "#e2e8f0",
+    tooltipTitle: "#0f172a",
+    tooltipBody: "#334155",
+    xGrid: "rgba(148,163,184,0.1)",
+    xBorder: "#e2e8f0",
+    xTicks: "rgba(30,41,59,0.6)",
+    yGrid: "rgba(148,163,184,0.1)",
+  };
+}
+
 function buildConfig(
   type: ChartKind,
   points: ForecastPoint[],
   bands: boolean,
   fmt: PriceFormatter,
   currencyCode: string,
+  isDark?: boolean,
 ): ChartConfiguration<ChartKind, number[], string> {
+  const theme = isDark ?? (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+  const colors = getChartColors(theme);
   const axisOpts = (id: CommodityId, title: string, color: string) => ({
     position: (id === "oil" ? "left" : "right") as "left" | "right",
     weight: id === "water" ? 2 : 1,
     border: { display: false },
     grid: {
-      color: id === "oil" ? "rgba(148,163,184,0.07)" : "transparent",
+      color: id === "oil" ? colors.yGrid : "transparent",
       drawOnChartArea: id === "oil",
     },
     ticks: {
@@ -201,7 +231,7 @@ function buildConfig(
         legend: {
           position: "bottom",
           labels: {
-            color: "rgba(219,228,240,0.75)",
+            color: colors.legendLabel,
             boxWidth: 12,
             boxHeight: 12,
             usePointStyle: true,
@@ -211,11 +241,11 @@ function buildConfig(
           },
         },
         tooltip: {
-          backgroundColor: "rgba(10,17,34,0.95)",
-          borderColor: "#1b2740",
+          backgroundColor: colors.tooltipBg,
+          borderColor: colors.tooltipBorder,
           borderWidth: 1,
-          titleColor: "#f1f5f9",
-          bodyColor: "#dbe4f0",
+          titleColor: colors.tooltipTitle,
+          bodyColor: colors.tooltipBody,
           padding: 12,
           cornerRadius: 10,
           titleFont: { family: "Space Grotesk", size: 13, weight: 600 as const },
@@ -232,10 +262,10 @@ function buildConfig(
       },
       scales: {
         x: {
-          grid: { color: "rgba(148,163,184,0.06)" },
-          border: { color: "#1b2740" },
+          grid: { color: colors.xGrid },
+          border: { color: colors.xBorder },
           ticks: {
-            color: "rgba(219,228,240,0.6)",
+            color: colors.xTicks,
             font: { family: "Inter", size: 11 },
           },
         },
@@ -442,7 +472,8 @@ export default function ForecastTool({
     chartRef.current = null;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    chartRef.current = new Chart(ctx, buildConfig(chartType, points, showBands, formatPrice, selectedCurrency));
+    const isDark = document.documentElement.classList.contains("dark");
+    chartRef.current = new Chart(ctx, buildConfig(chartType, points, showBands, formatPrice, selectedCurrency, isDark));
     return () => {
       chartRef.current?.destroy();
       chartRef.current = null;
@@ -456,7 +487,8 @@ export default function ForecastTool({
     chart.data.labels = points.map((p) => p.label);
     chart.data.datasets = buildDatasets(points, chartType, showBands);
     // Refresh axis ranges
-    const cfg = buildConfig(chartType, points, showBands, formatPrice, selectedCurrency);
+    const isDark = document.documentElement.classList.contains("dark");
+    const cfg = buildConfig(chartType, points, showBands, formatPrice, selectedCurrency, isDark);
     if (chart.options.scales) {
       chart.options.scales = cfg.options?.scales;
     }
@@ -560,7 +592,7 @@ export default function ForecastTool({
                 className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
                   streaming
                     ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                    : "border-line bg-slate-100/[0.03] dark:bg-white/[0.03] text-slate-600 dark:text-slate-400"
+                    : "border-line bg-panel/5 text-slate-600 dark:text-slate-400"
                 }`}
               >
                 {streaming && (
@@ -580,7 +612,7 @@ export default function ForecastTool({
               <button
                 type="button"
                 onClick={onToggleLive}
-                className="inline-flex items-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors hover:border-line-strong"
+                className="inline-flex items-center gap-2 rounded-lg border border-line bg-panel/5 px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors hover:border-line-strong"
               >
                 {isLive ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
                 {isLive ? "Pause feed" : "Resume feed"}
@@ -588,7 +620,7 @@ export default function ForecastTool({
               <button
                 type="button"
                 onClick={handleRefresh}
-                className="inline-flex items-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors hover:border-line-strong"
+                className="inline-flex items-center gap-2 rounded-lg border border-line bg-panel/5 px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors hover:border-line-strong"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${spin ? "spin-once" : ""}`} />
                 Refresh data
@@ -626,7 +658,7 @@ export default function ForecastTool({
                   className={`rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all ${
                     region === "global"
                       ? "border-teal-400/50 bg-teal-400/15 text-teal-200"
-                      : "border-line bg-slate-100/[0.02] dark:bg-white/[0.02] text-slate-600 dark:text-slate-400 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
+                      : "border-line bg-panel/3 text-slate-600 dark:text-slate-400 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
                   }`}
                 >
                   🌐 Global
@@ -640,7 +672,7 @@ export default function ForecastTool({
                     className={`rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all ${
                       region === r.id
                         ? "border-teal-400/50 bg-teal-400/15 text-teal-200"
-                        : "border-line bg-slate-100/[0.02] dark:bg-white/[0.02] text-slate-600 dark:text-slate-400 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
+                        : "border-line bg-panel/3 text-slate-600 dark:text-slate-400 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
                     }`}
                   >
                     {r.flag} {r.short}
@@ -703,7 +735,7 @@ export default function ForecastTool({
                   className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition-all duration-200 ${
                     horizon === y
                       ? "border-teal-400/50 bg-teal-400/15 text-teal-200"
-                      : "border-line bg-slate-100/[0.02] dark:bg-white/[0.02] text-slate-600 dark:text-slate-400 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
+                      : "border-line bg-panel/3 text-slate-600 dark:text-slate-400 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
                   }`}
                 >
                   {y}y
@@ -778,7 +810,7 @@ export default function ForecastTool({
                   type="button"
                   onClick={() => setShowBands((v) => !v)}
                   disabled={chartType === "bar"}
-                  className="flex items-center gap-2 rounded-lg border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:border-line-strong disabled:opacity-40"
+                  className="flex items-center gap-2 rounded-lg border border-line bg-panel/5 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:border-line-strong disabled:opacity-40"
                 >
                   <span
                     className={`h-2 w-2 rounded-full ${showBands ? "bg-teal-400" : "bg-slate-600"}`}
@@ -788,7 +820,7 @@ export default function ForecastTool({
                 <button
                   type="button"
                   onClick={exportPng}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:border-oil/40 hover:text-oil"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel/5 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:border-oil/40 hover:text-oil"
                 >
                   <ImageIcon className="h-3.5 w-3.5" />
                   PNG
@@ -814,7 +846,7 @@ export default function ForecastTool({
               <button
                 type="button"
                 onClick={exportCsv}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-slate-100/[0.03] dark:bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:border-water/40 hover:text-water"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel/5 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:border-water/40 hover:text-water"
               >
                 <FileText className="h-3.5 w-3.5" />
                 CSV
@@ -863,8 +895,8 @@ export default function ForecastTool({
                   {points.map((p, idx) => (
                     <tr
                       key={p.year}
-                      className={`border-b border-line/60 transition-colors hover:bg-slate-100/[0.02] dark:bg-white/[0.02] ${
-                        idx === 0 ? "bg-teal-400/[0.04]" : ""
+                      className={`border-b border-line/60 transition-colors hover:bg-panel/3 ${
+                        idx === 0 ? "bg-teal-400/10" : ""
                       }`}
                     >
                       <td className="px-5 py-3 font-display font-semibold text-slate-900 dark:text-slate-100 sm:px-6">
@@ -917,7 +949,7 @@ export default function ForecastTool({
               type="button"
               onClick={() => setAssumptionsOpen((v) => !v)}
               aria-expanded={assumptionsOpen}
-              className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left transition-colors hover:bg-slate-100/[0.02] dark:bg-white/[0.02] sm:px-7"
+              className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left transition-colors hover:bg-panel/3 sm:px-7"
             >
               <span className="flex items-center gap-3">
                 <Info className="h-4 w-4 text-teal-400 dark:text-teal-300" />

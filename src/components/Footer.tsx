@@ -33,7 +33,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
               href={REPO_URL}
               target="_blank"
               rel="noreferrer"
-              className="mt-5 inline-flex items-center gap-2.5 rounded-xl border border-line bg-slate-100/[0.03] px-4 py-2.5 text-sm font-semibold text-slate-800 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:bg-slate-100/[0.03] dark:bg-white/[0.03] dark:text-slate-800 dark:text-slate-200 dark:hover:text-slate-900 dark:text-white"
+              className="mt-5 inline-flex items-center gap-2.5 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-200 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
             >
               <GithubIcon className="h-4 w-4" />
               View source on GitHub

@@ -244,10 +244,10 @@ input[type="range"].slider::-webkit-slider-runnable-track {
   border-radius: 999px;
   background: linear-gradient(
     to right,
-    #2dd4bf 0%,
-    #2dd4bf var(--fill, 50%),
-    #1b2740 var(--fill, 50%),
-    #1b2740 100%
+    var(--color-elec) 0%,
+    var(--color-elec) var(--fill, 50%),
+    var(--color-line) var(--fill, 50%),
+    var(--color-line) 100%
   );
 }
 input[type="range"].slider::-webkit-slider-thumb {
@@ -257,8 +257,8 @@ input[type="range"].slider::-webkit-slider-thumb {
   height: 20px;
   margin-top: -7px;
   border-radius: 50%;
-  background: #0a1122;
-  border: 3px solid #2dd4bf;
+  background: var(--color-panel);
+  border: 3px solid var(--color-elec);
   box-shadow: 0 0 0 5px rgba(45, 212, 191, 0.14), 0 4px 14px rgba(0, 0, 0, 0.55);
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
@@ -269,19 +269,19 @@ input[type="range"].slider::-webkit-slider-thumb:hover {
 input[type="range"].slider::-moz-range-track {
   height: 6px;
   border-radius: 999px;
-  background: #1b2740;
+  background: var(--color-line);
 }
 input[type="range"].slider::-moz-range-progress {
   height: 6px;
   border-radius: 999px;
-  background: #2dd4bf;
+  background: var(--color-elec);
 }
 input[type="range"].slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #0a1122;
-  border: 3px solid #2dd4bf;
+  background: var(--color-panel);
+  border: 3px solid var(--color-elec);
   box-shadow: 0 0 0 5px rgba(45, 212, 191, 0.14);
 }
 input[type="range"].slider:focus-visible {
@@ -296,15 +296,15 @@ input[type="range"].slider:focus-visible {
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #060a13;
+  background: var(--color-base);
 }
 ::-webkit-scrollbar-thumb {
-  background: #1b2740;
-  border: 2px solid #060a13;
+  background: var(--color-line);
+  border: 2px solid var(--color-base);
   border-radius: 8px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a3b5f;
+  background: var(--color-line-strong);
 }
 
 /* ---------- focus ---------- */

@@ -23,7 +23,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
       <div className="mx-auto max-w-7xl px-5 py-14 sm:px-8">
         <div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr]">
           <div>
-            <Logo />
+            <Logo variant="lobot" />
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               LoBot LLC is an AI-native startup that creates business solutions enabling large
               enterprises to make future-ready strategic decisions.

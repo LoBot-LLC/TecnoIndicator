@@ -34,7 +34,7 @@ function isNewFactor(createdAt: string): boolean {
 function DirectionIcon({ direction }: { direction: Direction }) {
   if (direction === "up") return <ArrowUpRight className="h-3.5 w-3.5 text-rose-300" />;
   if (direction === "down") return <ArrowDownRight className="h-3.5 w-3.5 text-emerald-300" />;
-  return <Minus className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400" />;
+  return <Minus className="h-3.5 w-3.5 text-slate-600 dark:text-slate-500" />;
 }
 
 function FactorCard({
@@ -118,13 +118,13 @@ function FactorCard({
       <div className="mt-4">
         <div className="mb-1.5 flex items-center justify-between text-[11px]">
           <span className="font-semibold text-slate-700 dark:text-slate-500">Relevance @ {horizon}y</span>
-          <span
+<span
             className={`inline-flex items-center gap-1 font-semibold ${
               trend === "rising"
                 ? "text-rose-300"
                 : trend === "fading"
-                  ? "text-emerald-300"
-                  : "text-slate-600 dark:text-slate-400"
+                ? "text-emerald-300"
+                : "text-slate-600 dark:text-slate-500"
             }`}
           >
             {trend === "rising" && <TrendingUp className="h-3 w-3" />}

@@ -563,7 +563,7 @@ export default function RegionalEvaluation({
                       className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
                         focusCommodity === id
                           ? "bg-teal-400 text-slate-950 shadow-[0_0_16px_rgba(45,212,191,0.35)]"
-                          : "text-slate-600 dark:text-slate-500 hover:text-slate-800 dark:text-slate-200"
+                          : "text-slate-600 dark:text-slate-100 hover:text-slate-800 dark:text-slate-100"
                       }`}
                     >
                       {COMM_META[id].label}
@@ -748,32 +748,32 @@ export default function RegionalEvaluation({
                           className="flex items-center gap-2.5 text-left"
                         >
                           <span className="text-lg">{e.region.flag}</span>
-                          <span>
-                            <span className="block font-display font-semibold text-slate-900 dark:text-slate-100">
-                              {e.region.name}
-                            </span>
-<span className="text-[11px] text-slate-600 dark:text-slate-400">
-                              #{idx + 1} · {e.region.oilMarker}
-                            </span>
-                          </span>
+<span>
+                             <span className="block font-display font-semibold text-slate-900 dark:text-slate-100">
+                               {e.region.name}
+                             </span>
+<span className="text-[11px] text-slate-600 dark:text-slate-500">
+                               #{idx + 1} · {e.region.oilMarker}
+                             </span>
+                           </span>
                         </button>
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-200">
                         {formatPrice(e.spots.oil, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-400">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-500">
                         {formatPrice(e.horizon.oil.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-200">
                         {formatPrice(e.spots.electricity, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-400">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-500">
                         {formatPrice(e.horizon.electricity.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-200">
                         {formatPrice(e.spots.water, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-400">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-500">
                         {formatPrice(e.horizon.water.avg, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center">
@@ -787,7 +787,7 @@ export default function RegionalEvaluation({
                           {e.score}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-center capitalize text-xs font-semibold text-slate-600 dark:text-slate-400 sm:px-6">
+                      <td className="px-5 py-3 text-center capitalize text-xs font-semibold text-slate-600 dark:text-slate-500 sm:px-6">
                         {e.outlook}
                       </td>
                     </tr>

@@ -124,7 +124,7 @@ export default function AboutSection() {
                 Public data & reasoning sources
               </h3>
             </div>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-500">
               Base prices, growth rates, regional differentials and driver narratives are grounded
               in publicly available research.
             </p>

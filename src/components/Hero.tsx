@@ -108,7 +108,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
               Tecno
               <span className="text-teal-600 dark:text-teal-300">Indicator</span>
             </h1>
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-600 dark:text-slate-400 sm:text-lg">
+            <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-600 dark:text-slate-500 sm:text-lg">
               Real-time 10-year forecasts for global{" "}
               <span className="font-medium text-oil">oil</span>,{" "}
               <span className="font-medium text-elec">electricity</span> &{" "}
@@ -118,14 +118,14 @@ export default function Hero({ prices, deltas }: HeroProps) {
           </Reveal>
 
 <Reveal delay={140}>
-            <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
+            <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-500">
               <span className="inline-flex items-center gap-2">
-                <CalendarDays className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+                <CalendarDays className="h-4 w-4 text-slate-600 dark:text-slate-500" />
                 <span suppressHydrationWarning>{fmtFullDate(today)}</span>
               </span>
               <span className="hidden h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600 sm:inline-block" />
                 <span className="inline-flex items-center gap-2">
-                  <Globe2 className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+                  <Globe2 className="h-4 w-4 text-slate-600 dark:text-slate-500" />
                   All figures in {selectedCurrency} · 5 regions
                 </span>
             </div>
@@ -142,13 +142,13 @@ export default function Hero({ prices, deltas }: HeroProps) {
               </a>
               <a
                 href="#regions"
-                className="inline-flex items-center gap-2 rounded-xl border border-line bg-panel/5 px-5 py-3 text-sm font-semibold text-slate-800 dark:text-slate-200 transition-all hover:border-line-strong hover:bg-panel/10"
+                className="inline-flex items-center gap-2 rounded-xl border border-line bg-panel/5 px-5 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 transition-all hover:border-line-strong hover:bg-panel/10"
               >
                 Evaluate Regions
               </a>
               <a
                 href="#factors"
-                className="inline-flex items-center gap-2 rounded-xl border border-transparent px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:text-teal-600 dark:text-slate-400 dark:hover:text-teal-200"
+                className="inline-flex items-center gap-2 rounded-xl border border-transparent px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:text-teal-600 dark:text-slate-500 dark:hover:text-teal-200"
               >
                 Explore Drivers
                 <ChevronDown className="h-4 w-4" />
@@ -164,7 +164,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
                   className="rounded-2xl border border-line bg-panel/50 px-4 py-4"
                 >
                   <p className="font-display text-2xl font-bold text-slate-900 dark:text-white">{s.value}</p>
-                  <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-600 dark:text-slate-400">
+                  <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-600 dark:text-slate-500">
                     {s.label}
                   </p>
                 </div>
@@ -178,7 +178,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
           <div className="relative float-y rounded-3xl border border-line bg-panel/80 p-5 shadow-2xl shadow-slate-900/40 dark:shadow-slate-900/40 dark:shadow-black/40 backdrop-blur sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600 dark:text-slate-500">
                   Market snapshot
                 </p>
                 <p className="mt-1 font-display text-lg font-semibold text-slate-900 dark:text-white">
@@ -232,7 +232,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
                   opacity="0.85"
                 />
               </svg>
-              <div className="mt-1 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-400">
+              <div className="mt-1 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-500">
                 <span suppressHydrationWarning>{new Date().getFullYear()}</span>
                 <span>10-year trajectory</span>
                 <span suppressHydrationWarning>{new Date().getFullYear() + 10}</span>
@@ -257,7 +257,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
                       </span>
                       <div>
                         <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{r.name}</p>
-                        <p className="text-[11px] text-slate-600 dark:text-slate-400">{r.unit}</p>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-500">{r.unit}</p>
                       </div>
                     </div>
                     <LivePrice value={prices[r.id]} />
@@ -267,7 +267,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
             </div>
 
             {/* floating badge */}
-            <div className="absolute -bottom-3 left-6 rounded-full border border-line bg-panel px-3 py-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-400 shadow-lg">
+            <div className="absolute -bottom-3 left-6 rounded-full border border-line bg-panel px-3 py-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-500 shadow-lg">
               Model runs 100% in-browser · Americas → Oceania
             </div>
           </div>

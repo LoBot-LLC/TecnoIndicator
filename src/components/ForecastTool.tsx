@@ -342,7 +342,7 @@ function CommodityCard({
       </p>
       <p className="mt-1 text-xs text-slate-700 dark:text-slate-500">
         Average forecast · {horizonBand.year} · spot{" "}
-        <span className={`font-semibold text-slate-600 dark:text-slate-300 ${spotFlash}`}>
+        <span className={`font-semibold text-slate-600 dark:text-slate-700 ${spotFlash}`}>
           {formatPrice(todayBand.avg, selectedCurrency)}
         </span>
       </p>
@@ -350,13 +350,13 @@ function CommodityCard({
       <div className="relative mt-4 grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-line bg-base/40 px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-500">Low</p>
-          <p className="mt-0.5 font-display text-sm font-semibold text-slate-800 dark:text-slate-200">
+          <p className="mt-0.5 font-display text-sm font-semibold text-slate-800 dark:text-slate-100">
             {formatPrice(band.min, selectedCurrency)}
           </p>
         </div>
         <div className="rounded-xl border border-line bg-base/40 px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-500">High</p>
-          <p className="mt-0.5 font-display text-sm font-semibold text-slate-800 dark:text-slate-200">
+          <p className="mt-0.5 font-display text-sm font-semibold text-slate-800 dark:text-slate-100">
             {formatPrice(band.max, selectedCurrency)}
           </p>
         </div>
@@ -647,7 +647,7 @@ export default function ForecastTool({
           <div className="mb-6 rounded-2xl border border-line bg-panel/60 p-5 sm:p-6">
             <div className="mb-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Evaluation region</p>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Evaluation region</p>
                 <p className="text-xs text-slate-700 dark:text-slate-500">{regionProfile.blurb}</p>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -658,7 +658,7 @@ export default function ForecastTool({
                   className={`rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all ${
                     region === "global"
                       ? "border-teal-400/50 bg-teal-400/15 text-teal-200"
-                      : "border-line bg-panel/3 text-slate-600 dark:text-slate-500 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
+                      : "border-line bg-panel/3 text-slate-600 dark:text-slate-100 hover:border-line-strong hover:text-slate-800 dark:text-slate-100"
                   }`}
                 >
                   🌐 Global
@@ -672,7 +672,7 @@ export default function ForecastTool({
                     className={`rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all ${
                       region === r.id
                         ? "border-teal-400/50 bg-teal-400/15 text-teal-200"
-                        : "border-line bg-panel/3 text-slate-600 dark:text-slate-500 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
+                        : "border-line bg-panel/3 text-slate-600 dark:text-slate-100 hover:border-line-strong hover:text-slate-800 dark:text-slate-100"
                     }`}
                   >
                     {r.flag} {r.short}
@@ -735,7 +735,7 @@ export default function ForecastTool({
                   className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition-all duration-200 ${
                     horizon === y
                       ? "border-teal-400/50 bg-teal-400/15 text-teal-200"
-                      : "border-line bg-panel/3 text-slate-600 dark:text-slate-500 hover:border-line-strong hover:text-slate-800 dark:text-slate-200"
+                      : "border-line bg-panel/3 text-slate-600 dark:text-slate-100 hover:border-line-strong hover:text-slate-800 dark:text-slate-100"
                   }`}
                 >
                   {y}y
@@ -799,7 +799,7 @@ export default function ForecastTool({
                       className={`rounded-md px-3.5 py-1.5 text-xs font-semibold capitalize transition-all duration-200 ${
                         chartType === t
                           ? "bg-teal-400 text-slate-950 shadow-[0_0_16px_rgba(45,212,191,0.35)]"
-                          : "text-slate-600 dark:text-slate-500 hover:text-slate-800 dark:text-slate-200"
+                          : "text-slate-600 dark:text-slate-100 hover:text-slate-800 dark:text-slate-100"
                       }`}
                     >
                       {t}
@@ -958,7 +958,7 @@ export default function ForecastTool({
                 </span>
               </span>
               <ChevronRight
-                className={`h-4 w-4 text-slate-700 dark:text-slate-500 transition-transform ${assumptionsOpen ? "rotate-90" : ""}`}
+                className={`h-4 w-4 text-slate-700 dark:text-slate-200 transition-transform ${assumptionsOpen ? "rotate-90" : ""}`}
               />
             </button>
             {assumptionsOpen && (

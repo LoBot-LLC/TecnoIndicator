@@ -74,12 +74,12 @@ export default function CurrencySelector({ className = "" }: CurrencySelectorPro
         aria-label="Select currency"
         className="flex items-center gap-1.5 rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
       >
-        <span className="text-base" title={current.name}>
+        <span className="text-base font-medium text-slate-800 dark:text-slate-100" title={current.name}>
           {current.symbol || current.code}
         </span>
         <span className="hidden sm:inline text-xs text-slate-600 dark:text-slate-500">{current.code}</span>
         <ChevronDown
-          className={`h-3.5 w-3.5 text-slate-700 dark:text-slate-200 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`h-3.5 w-3.5 text-slate-700 dark:text-slate-100 transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
 
@@ -90,7 +90,7 @@ export default function CurrencySelector({ className = "" }: CurrencySelectorPro
               Select Currency
             </p>
             <div className="relative mt-2.5">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-700 dark:text-slate-200" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-700 dark:text-slate-100" />
               <input
                 type="text"
                 value={query}
@@ -133,10 +133,10 @@ export default function CurrencySelector({ className = "" }: CurrencySelectorPro
                     }}
                     className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
                       noRate
-                        ? "cursor-not-allowed text-slate-700 dark:text-slate-200 opacity-50"
+                        ? "cursor-not-allowed text-slate-700 dark:text-slate-100 opacity-50"
                         : isActive
                         ? "bg-teal-400/15 text-teal-600 dark:text-teal-200"
-                        : "text-slate-700 hover:bg-slate-100/50 hover:text-teal-600 dark:text-slate-200 dark:hover:bg-panel/10 dark:hover:text-teal-200"
+                        : "text-slate-700 hover:bg-slate-100/50 hover:text-teal-600 dark:text-slate-100 dark:hover:bg-panel/10 dark:hover:text-teal-200"
                     }`}
                   >
                     <span className="w-9 shrink-0 rounded-md border border-line bg-panel/5 px-1 py-0.5 text-center font-mono text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-500">
@@ -146,7 +146,7 @@ export default function CurrencySelector({ className = "" }: CurrencySelectorPro
                       {c.name}
                     </span>
                     {noRate ? (
-                      <span className="shrink-0 rounded-full border border-slate-300/60 dark:border-slate-600/60 bg-slate-100/5 dark:bg-panel/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-slate-700 dark:text-slate-200">
+                      <span className="shrink-0 rounded-full border border-slate-300/60 dark:border-slate-600/60 bg-slate-100/5 dark:bg-panel/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-slate-700 dark:text-slate-100">
                         No rate
                       </span>
                     ) : (

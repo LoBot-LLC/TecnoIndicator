@@ -958,7 +958,7 @@ export default function ForecastTool({
                 </span>
               </span>
               <ChevronRight
-                className={`h-4 w-4 text-slate-700 dark:text-slate-200 transition-transform ${assumptionsOpen ? "rotate-90" : ""}`}
+                className={`h-4 w-4 text-slate-700 dark:text-slate-100 transition-transform ${assumptionsOpen ? "rotate-90" : ""}`}
               />
             </button>
             {assumptionsOpen && (

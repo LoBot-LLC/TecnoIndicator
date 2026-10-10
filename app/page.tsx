@@ -285,7 +285,7 @@ export default function HomePage() {
           __html: JSON.stringify(homepageJsonLd).replace(/</g, "\\u003c"),
         }}
       />
-      <div className="min-h-screen bg-base font-sans text-slate-200 antialiased">
+      <div className="min-h-screen bg-base font-sans text-slate-900 dark:text-white antialiased">
         <Navbar />
         <main>
           <Hero prices={prices} deltas={deltas} />

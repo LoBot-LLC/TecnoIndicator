@@ -250,7 +250,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
                   >
                     <div className="flex items-center gap-3">
                       <span
-                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/5 dark:border-white/5"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/5 dark:border-slate-600/5"
                         style={{ background: `${r.color}18`, color: r.color }}
                       >
                         <Icon className="h-4 w-4" />

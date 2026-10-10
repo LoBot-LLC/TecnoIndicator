@@ -758,19 +758,19 @@ export default function RegionalEvaluation({
                            </span>
                         </button>
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-200">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-100">
                         {formatPrice(e.spots.oil, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-500">
                         {formatPrice(e.horizon.oil.avg, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-200">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-100">
                         {formatPrice(e.spots.electricity, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-500">
                         {formatPrice(e.horizon.electricity.avg, selectedCurrency)}
                       </td>
-                      <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-200">
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-100">
                         {formatPrice(e.spots.water, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-600 dark:text-slate-500">

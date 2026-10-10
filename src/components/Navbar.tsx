@@ -13,7 +13,7 @@ const LINKS = [
   { href: "#about", label: "About" },
 ];
 
-const REPO_URL = "https://github.com/LoBot-LLC/TecnoIndicator";
+const REPO_URL = "https://github.com/LoBot-LLC";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);

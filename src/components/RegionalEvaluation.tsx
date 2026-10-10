@@ -8,7 +8,7 @@ import {
   LinearScale,
   Tooltip,
 } from "chart.js";
-import type { ChartConfiguration, TooltipItem } from "chart.js";
+import type { ChartConfiguration, ChartOptions, TooltipItem } from "chart.js";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -23,6 +23,7 @@ import {
 import Reveal from "./Reveal";
 import { useFlash } from "../hook/useFlash";
 import { useCurrency } from "../context/CurrencyContext";
+import { useTheme } from "../context/ThemeContext";
 import {
   buildRegionalCSV,
   COMMODITIES,
@@ -327,6 +328,7 @@ export default function RegionalEvaluation({
   healthStatus,
 }: RegionalEvaluationProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
+  const { theme } = useTheme();
   const evals = useMemo(
     () => evaluateRegions(prices, horizon, jitter),
     [prices, horizon, jitter],
@@ -346,7 +348,7 @@ export default function RegionalEvaluation({
     const spotData = evals.map((e) => e.spots[focusCommodity]);
     const horizonData = evals.map((e) => e.horizon[focusCommodity].avg);
     const color = COMM_META[focusCommodity].color;
-    const isDark = document.documentElement.classList.contains("dark");
+    const isDark = theme === "dark";
     const colors = getChartColors(isDark);
 
     const config: ChartConfiguration<"bar", number[], string> = {
@@ -427,14 +429,16 @@ export default function RegionalEvaluation({
     if (!chartRef.current) {
       chartRef.current = new Chart(canvas, config);
     } else {
+      // Update both data and options (colors) when theme or other deps change
       chartRef.current.data = config.data;
+      chartRef.current.options = config.options as ChartOptions<"bar">;
       chartRef.current.update();
     }
 
     return () => {
       // keep chart instance across commodity toggles; destroy on unmount only
     };
-  }, [evals, focusCommodity, horizonYear, formatPrice, selectedCurrency]);
+  }, [evals, focusCommodity, horizonYear, formatPrice, selectedCurrency, theme]);
 
   useEffect(() => {
     return () => {
@@ -549,7 +553,7 @@ export default function RegionalEvaluation({
                   <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">
                     Cross-region comparison
                   </h3>
-                  <p className="mt-1 text-xs text-slate-700 dark:text-slate-600">
+                  <p className="mt-1 text-xs text-slate-700 dark:text-slate-700">
                     Spot vs {horizon}-year average forecast by region
                   </p>
                 </div>

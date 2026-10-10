@@ -88,7 +88,7 @@ export default function AboutSection() {
               About the model
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-              LoBot LLC is a demonstration of modern front-end data visualization: every number
+              LoBot is a demonstration of modern front-end data visualization: every number
               is computed in your browser from publicly known drivers, with no backend and no API
               keys. The goal is an honest, explorable illustration of how forecasters think about
               uncertainty — not a crystal ball.

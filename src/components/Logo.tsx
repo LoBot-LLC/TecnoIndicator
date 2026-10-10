@@ -7,52 +7,58 @@ export default function Logo({ onClick }: LogoProps) {
     <a
       href="#top"
       onClick={onClick}
-      className="group inline-flex items-center gap-2.5"
-      aria-label="LoBot LLC home"
+      className="group inline-flex flex-col items-center gap-2"
+      aria-label="LoBot home"
     >
-      <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-teal-400/30 bg-teal-400/10 text-teal-400 dark:text-teal-300 shadow-[0_0_24px_rgba(45,212,191,0.18)] transition-transform duration-300 group-hover:scale-105">
+      <span className="flex h-20 w-20 items-center justify-center rounded-2xl border border-teal-400/30 bg-teal-400/10 text-teal-400 dark:text-teal-300 shadow-[0_0_24px_rgba(45,212,191,0.18)] transition-transform duration-300 group-hover:scale-105">
         <svg
-          viewBox="0 0 48 48"
+          viewBox="0 0 120 120"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
-          className="h-4.5 w-4.5"
+          className="h-14 w-14"
           aria-hidden="true"
         >
-          {/* Robot head outline */}
+          {/* Robot head outline - rounded helmet shape */}
           <path
-            d="M24 4C15.16 4 8 11.16 8 20V28C8 32.4 10.4 36.4 14 38.4V42H34V38.4C37.6 36.4 40 32.4 40 28V20C40 11.16 32.84 4 24 4Z"
+            d="M60 10C38 10 20 28 20 50V62C20 73 26 83 35 88V98H85V88C94 83 100 73 100 62V50C100 28 82 10 60 10Z"
             stroke="currentColor"
-            strokeWidth="2.5"
+            strokeWidth="4"
             strokeLinejoin="round"
           />
-          {/* Left ear/antenna */}
-          <path d="M8 16H6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          <circle cx="6" cy="16" r="1.5" fill="currentColor" />
-          {/* Right ear/antenna */}
-          <path d="M40 16H42" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          <circle cx="42" cy="16" r="1.5" fill="currentColor" />
-          {/* Circuit nodes inside head */}
-          <circle cx="18" cy="14" r="2" fill="currentColor" />
-          <circle cx="30" cy="14" r="2" fill="currentColor" />
-          <circle cx="24" cy="20" r="2" fill="currentColor" />
-          <circle cx="18" cy="26" r="2" fill="currentColor" />
-          <circle cx="30" cy="26" r="2" fill="currentColor" />
-          {/* Circuit connections */}
-          <path d="M18 14L24 20L30 14" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-          <path d="M18 14L18 26" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M30 14L30 26" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M18 26L24 20" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M30 26L24 20" stroke="currentColor" strokeWidth="1.5" />
+          {/* Left ear/antenna protrusion */}
+          <path d="M20 42H14" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="14" cy="42" r="3" fill="currentColor" />
+          {/* Right ear/antenna protrusion */}
+          <path d="M100 42H106" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="106" cy="42" r="3" fill="currentColor" />
+          {/* Neck/collar at bottom */}
+          <path
+            d="M44 88H76V98H44Z"
+            fill="currentColor"
+            fillOpacity="0.3"
+          />
+          <path d="M44 88H76" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
           {/* Arrow pointing into head from left */}
-          <path d="M4 30L12 30" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-          <path d="M10 27L14 30L10 33" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" fill="none" />
+          <path d="M8 68L30 68" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+          <path d="M24 62L32 68L24 74" stroke="currentColor" strokeWidth="4" strokeLinejoin="round" fill="none" />
+          {/* Circuit nodes inside head */}
+          <circle cx="48" cy="36" r="4" fill="currentColor" />
+          <circle cx="72" cy="36" r="4" fill="currentColor" />
+          <circle cx="60" cy="52" r="4" fill="currentColor" />
+          <circle cx="48" cy="68" r="4" fill="currentColor" />
+          <circle cx="72" cy="68" r="4" fill="currentColor" />
+          {/* Circuit connections - branching pattern */}
+          <path d="M48 36L60 52L72 36" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
+          <path d="M48 36L48 68" stroke="currentColor" strokeWidth="2.5" />
+          <path d="M72 36L72 68" stroke="currentColor" strokeWidth="2.5" />
+          <path d="M48 68L60 52" stroke="currentColor" strokeWidth="2.5" />
+          <path d="M72 68L60 52" stroke="currentColor" strokeWidth="2.5" />
           {/* Mouth/face line */}
-          <path d="M18 32H30" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M48 80H72" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
         </svg>
       </span>
       <span className="font-display text-[15px] font-semibold tracking-tight text-slate-900 dark:text-slate-100">
         LoBot
-        <span className="text-teal-400 dark:text-teal-300">LLC</span>
       </span>
     </a>
   );

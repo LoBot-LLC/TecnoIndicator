@@ -44,15 +44,15 @@ if (typeof window !== "undefined") {
 function getChartColors(isDark: boolean) {
   if (isDark) {
     return {
-      legendLabel: "rgba(219,228,240,0.75)",
+      legendLabel: "rgba(226,232,240,0.95)",
       tooltipBg: "rgba(10,17,34,0.95)",
       tooltipBorder: "#1b2740",
       tooltipTitle: "#f1f5f9",
-      tooltipBody: "#dbe4f0",
+      tooltipBody: "#e2e8f0",
       xBorder: "#1b2740",
-      xTicks: "rgba(219,228,240,0.65)",
-      yGrid: "rgba(148,163,184,0.07)",
-      yTicks: "rgba(219,228,240,0.55)",
+      xTicks: "rgba(226,232,240,0.95)",
+      yGrid: "rgba(148,163,184,0.12)",
+      yTicks: "rgba(226,232,240,0.9)",
     };
   }
   return {
@@ -549,7 +549,7 @@ export default function RegionalEvaluation({
                   <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">
                     Cross-region comparison
                   </h3>
-                  <p className="mt-1 text-xs text-slate-700 dark:text-slate-500">
+                  <p className="mt-1 text-xs text-slate-700 dark:text-slate-400">
                     Spot vs {horizon}-year average forecast by region
                   </p>
                 </div>

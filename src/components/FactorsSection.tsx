@@ -1,7 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
+  ChevronDown,
+  ChevronUp,
   GitBranch,
   Minus,
   TrendingDown,
@@ -50,6 +52,12 @@ function FactorCard({
   const trend = relevanceTrend(factor.bias, horizon);
   const width = Math.min(100, Math.round((relevance / 2.0) * 100));
   const isNew = isNewFactor(factor.createdAt);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const MAX_CHARS = 200;
+  const shouldTruncate = factor.explanation.length > MAX_CHARS;
+  const displayText = isExpanded || !shouldTruncate
+    ? factor.explanation
+    : factor.explanation.slice(0, MAX_CHARS) + "…";
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -87,7 +95,28 @@ function FactorCard({
         </div>
       </div>
 
-      <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-600 dark:text-slate-500">{factor.explanation}</p>
+      <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-600 dark:text-slate-500">{displayText}</p>
+      {shouldTruncate && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-teal-400 dark:text-teal-300 hover:text-teal-300 dark:hover:text-teal-200 transition-colors"
+          aria-expanded={isExpanded}
+          aria-controls={`factor-explanation-${factor.id}`}
+        >
+          {isExpanded ? (
+            <>
+              <ChevronUp className="h-3.5 w-3.5" />
+              Show less
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3.5 w-3.5" />
+              Show more
+            </>
+          )}
+        </button>
+      )}
 
       <div className="mt-4 flex flex-wrap gap-1.5">
         {factor.commodities.map((id) => {

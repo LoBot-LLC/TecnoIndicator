@@ -839,7 +839,7 @@ export default function ForecastTool({
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4 sm:px-6">
               <div>
                 <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">Forecast table</h3>
-                <p className="mt-0.5 text-xs text-slate-700 dark:text-slate-400">
+                <p className="mt-0.5 text-xs text-slate-700 dark:text-slate-600">
                   Yearly average / low / high scenarios in {selectedCurrency} · {regionProfile.name}
                 </p>
               </div>

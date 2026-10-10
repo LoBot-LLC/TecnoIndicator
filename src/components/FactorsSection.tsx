@@ -19,9 +19,9 @@ import {
 } from "../lib/model";
 
 const MAG_COLOR: Record<Magnitude, string> = {
-  High: "text-rose-300 border-rose-400/30 bg-rose-400/10",
-  Medium: "text-amber-300 border-amber-400/30 bg-amber-400/10",
-  Low: "text-slate-300 border-line bg-white/[0.03]",
+  High: "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15",
+  Medium: "text-amber-300 dark:text-amber-400 border-amber-400/30 dark:border-amber-400/40 bg-amber-400/10 dark:bg-amber-400/15",
+  Low: "text-slate-600 dark:text-slate-500 border-line bg-panel/5",
 };
 
 function isNewFactor(createdAt: string): boolean {
@@ -34,7 +34,7 @@ function isNewFactor(createdAt: string): boolean {
 function DirectionIcon({ direction }: { direction: Direction }) {
   if (direction === "up") return <ArrowUpRight className="h-3.5 w-3.5 text-rose-300" />;
   if (direction === "down") return <ArrowDownRight className="h-3.5 w-3.5 text-emerald-300" />;
-  return <Minus className="h-3.5 w-3.5 text-slate-400" />;
+  return <Minus className="h-3.5 w-3.5 text-slate-600 dark:text-slate-500" />;
 }
 
 function FactorCard({
@@ -56,7 +56,7 @@ function FactorCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-line bg-base/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            <span className="rounded-full border border-line bg-base/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-500">
               {factor.category}
             </span>
             <span
@@ -66,10 +66,10 @@ function FactorCard({
               {factor.magnitude}
             </span>
           </div>
-          <h3 className="mt-3 font-display text-base font-semibold text-white">
+          <h3 className="mt-3 font-display text-base font-semibold text-slate-900 dark:text-white">
             {factor.name}
             {isNew && (
-              <span className="ml-2 inline-flex items-center rounded-full bg-teal-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+              <span className="ml-2 inline-flex items-center rounded-full bg-teal-500 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900 dark:text-white">
                 New
               </span>
             )}
@@ -80,14 +80,14 @@ function FactorCard({
             {String(index + 1).padStart(2, "0")}
           </span>
           {factor.importanceScore >= 0 && (
-            <span className="text-[11px] font-semibold text-teal-300">
+            <span className="text-[11px] font-semibold text-teal-400 dark:text-teal-300">
               Impact: {factor.importanceScore}/100
             </span>
           )}
         </div>
       </div>
 
-      <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-400">{factor.explanation}</p>
+      <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-600 dark:text-slate-500">{factor.explanation}</p>
 
       <div className="mt-4 flex flex-wrap gap-1.5">
         {factor.commodities.map((id) => {
@@ -108,7 +108,7 @@ function FactorCard({
           .map((r) => (
             <span
               key={r}
-              className="rounded-full border border-line bg-base/40 px-2 py-0.5 text-[10px] font-medium capitalize text-slate-500"
+              className="rounded-full border border-line bg-base/40 px-2 py-0.5 text-[10px] font-medium capitalize text-slate-700 dark:text-slate-500"
             >
               {r}
             </span>
@@ -117,14 +117,14 @@ function FactorCard({
 
       <div className="mt-4">
         <div className="mb-1.5 flex items-center justify-between text-[11px]">
-          <span className="font-semibold text-slate-500">Relevance @ {horizon}y</span>
-          <span
+          <span className="font-semibold text-slate-700 dark:text-slate-500">Relevance @ {horizon}y</span>
+<span
             className={`inline-flex items-center gap-1 font-semibold ${
               trend === "rising"
                 ? "text-rose-300"
                 : trend === "fading"
-                  ? "text-emerald-300"
-                  : "text-slate-400"
+                ? "text-emerald-300"
+                : "text-slate-600 dark:text-slate-500"
             }`}
           >
             {trend === "rising" && <TrendingUp className="h-3 w-3" />}
@@ -175,19 +175,19 @@ export default function FactorsSection({
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
         <Reveal>
           <div className="mb-10 max-w-2xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-300/80">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
               Key factors & drivers
             </p>
-            <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
               {isOnline ? "AI-Curated Factors" : "Key factors & drivers"}
             </h2>
-            <p className="mt-3 text-sm leading-relaxed text-slate-400">
+            <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               {aiCurated
                 ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."
                 : "Twelve researched drivers shape the forecast paths. Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
             </p>
             {isOnline && (
-              <p className="mt-2 text-xs text-teal-300/80">
+              <p className="mt-2 text-xs text-teal-400 dark:text-teal-300/80">
                 Status: {healthStatus}
               </p>
             )}

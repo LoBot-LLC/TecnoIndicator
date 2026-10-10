@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { CurrencyProvider } from "../src/context/CurrencyContext";
+import { ThemeProvider } from "../src/context/ThemeContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -50,7 +51,7 @@ const FAVICON =
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script
           type="application/ld+json"
@@ -69,7 +70,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link rel="icon" href={FAVICON} />
       </head>
       <body>
-        <CurrencyProvider>{children}</CurrencyProvider>
+        <ThemeProvider>
+          <CurrencyProvider>{children}</CurrencyProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

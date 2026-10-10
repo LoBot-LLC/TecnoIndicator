@@ -25,7 +25,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
           <div>
             <Logo />
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-              LoBot is an AI-native startup that creates business solutions enabling large
+              LoBot LLC is an AI-native startup that creates business solutions enabling large
               enterprises to make future-ready strategic decisions.
             </p>
             <a
@@ -101,7 +101,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-line pt-6 sm:flex-row sm:items-center">
           <p className="text-xs text-slate-600 dark:text-slate-500">
-            <span suppressHydrationWarning>© {new Date().getFullYear()}</span> LoBot{" "}
+            <span suppressHydrationWarning>© {new Date().getFullYear()}</span> LoBot LLC{" "}
           </p>
           <p className="text-xs text-slate-600 dark:text-slate-500">
             Last updated:{" "}

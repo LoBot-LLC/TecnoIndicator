@@ -24,7 +24,7 @@ export default function Logo({ onClick, variant = "tecnoindicator" }: LogoProps)
             className="h-10 w-10 object-contain"
           />
         </span>
-        <span className="font-display text-lg font-semibold tracking-tight text-blue-600 dark:text-blue-400">
+        <span className="font-display text-lg font-semibold tracking-tight text-white">
           LoBot
         </span>
       </a>

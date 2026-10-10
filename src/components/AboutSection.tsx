@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, FunctionSquare, Globe2, ShieldAlert, Workflow } from "lucide-react";
+import { BarChart3, FunctionSquare, Globe2, ShieldAlert, Workflow } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Reveal from "./Reveal";
 import { useCurrency } from "../context/CurrencyContext";
@@ -88,7 +88,7 @@ export default function AboutSection() {
               About the model
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-              TecnoIndicator is a demonstration of modern front-end data visualization: every number
+              LoBot LLC is a demonstration of modern front-end data visualization: every number
               is computed in your browser from publicly known drivers, with no backend and no API
               keys. The goal is an honest, explorable illustration of how forecasters think about
               uncertainty — not a crystal ball.
@@ -138,17 +138,6 @@ export default function AboutSection() {
                 </span>
               ))}
             </div>
-          </div>
-        </Reveal>
-
-        <Reveal delay={240}>
-          <div className="mt-6 flex gap-3 rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3.5 text-xs leading-relaxed text-amber-900/80 dark:text-amber-100/80">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-            <p>
-              <span className="font-semibold text-amber-200">Important.</span>
-              The live water quote is a simulated client-side feed within a realistic global price
-              band — always verify against licensed data providers before making decisions.
-            </p>
           </div>
         </Reveal>
 

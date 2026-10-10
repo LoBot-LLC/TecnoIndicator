@@ -101,7 +101,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-line pt-6 sm:flex-row sm:items-center">
           <p className="text-xs text-slate-600 dark:text-slate-500">
-            <span suppressHydrationWarning>© {new Date().getFullYear()}</span> LoBot LLC{" "}
+            <span suppressHydrationWarning>© {new Date().getFullYear()}</span> LoBot, LLC - All rights reserved{" "}
           </p>
           <p className="text-xs text-slate-600 dark:text-slate-500">
             Last updated:{" "}

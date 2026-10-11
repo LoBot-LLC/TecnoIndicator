@@ -388,77 +388,87 @@ export async function runFactorAnalysis(
   const analytics =
     scope === "global" ? await getGlobalAnalytics() : await getRegionalAnalytics(scope as Region);
 
-  const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
-  const searches = await Promise.all(
-    queries.map((q) =>
-      tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
-    ),
-  );
-  const candidates = searches
-    .flatMap((r) => r.results)
-    .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
-    .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
-    .slice(0, 15);
+  const now = new Date().toISOString();
+  const returnExisting = () => ({ factors: existing, aiCurated: carriedAiCurated, updatedAt: now });
 
-  if (candidates.length === 0) {
-    return { factors: existing, aiCurated: carriedAiCurated, updatedAt: new Date().toISOString() };
+  try {
+    const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
+    const searches = await Promise.all(
+      queries.map((q) =>
+        tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
+      ),
+    );
+    const candidates = searches
+      .flatMap((r) => r.results)
+      .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+      .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
+      .slice(0, 15);
+
+    if (candidates.length === 0) {
+      return returnExisting();
+    }
+
+    const excerpts = await Promise.all(
+      candidates.map(async (r) => {
+        try {
+          const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal);
+          return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
+        } catch {
+          return r;
+        }
+      }),
+    );
+
+    const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
+    const payload = {
+      messages: [
+        { role: "system", content: prompt },
+        {
+          role: "user",
+          content: JSON.stringify({
+            analytics,
+            existingFactors: existing,
+            candidates: excerpts.map((c) => ({
+              title: c.title,
+              source: c.url,
+              snippet: c.snippet?.slice(0, 2500),
+              text: (c as { text?: string }).text?.slice(0, 8000),
+            })),
+            region,
+            month: RECENT_MONTH(),
+          }),
+        },
+      ],
+      max_tokens: 4096,
+      temperature: 0.2,
+    };
+
+    const response = await kiloRouter.kiloInfer(payload, signal);
+    const content = response.choices?.[0]?.message?.content ?? "";
+    const parsed = safeParseJson<{ factors?: unknown[] }>(content);
+    if (!parsed?.factors || !Array.isArray(parsed.factors)) {
+      return returnExisting();
+    }
+
+    const normalized = parsed.factors
+      .map((f) => normalizeFactor(f, scope))
+      .filter((f): f is Factor => f !== null)
+      .filter((f) => f.scope === scope)
+      .slice(0, FACTOR_COUNT);
+
+    if (normalized.length === 0) {
+      return returnExisting();
+    }
+
+    return {
+      factors: mergeRollingWindow(existing, normalized),
+      aiCurated: true,
+      updatedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    // Never throw: the callers (route handlers, cron) must always be able to
+    // write a window so the health endpoint can report a real `lastRun`.
+    console.error(`Factor analysis failed for scope "${scope}":`, error);
+    return returnExisting();
   }
-
-  const excerpts = await Promise.all(
-    candidates.map(async (r) => {
-      try {
-        const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal);
-        return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
-      } catch {
-        return r;
-      }
-    }),
-  );
-
-  const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
-  const payload = {
-    messages: [
-      { role: "system", content: prompt },
-      {
-        role: "user",
-        content: JSON.stringify({
-          analytics,
-          existingFactors: existing,
-          candidates: excerpts.map((c) => ({
-            title: c.title,
-            source: c.url,
-            snippet: c.snippet?.slice(0, 2500),
-            text: (c as { text?: string }).text?.slice(0, 8000),
-          })),
-          region,
-          month: RECENT_MONTH(),
-        }),
-      },
-    ],
-    max_tokens: 4096,
-    temperature: 0.2,
-  };
-
-  const response = await kiloRouter.kiloInfer(payload, signal);
-  const content = response.choices?.[0]?.message?.content ?? "";
-  const parsed = safeParseJson<{ factors?: unknown[] }>(content);
-  if (!parsed?.factors || !Array.isArray(parsed.factors)) {
-    return { factors: existing, aiCurated: carriedAiCurated, updatedAt: new Date().toISOString() };
-  }
-
-  const normalized = parsed.factors
-    .map((f) => normalizeFactor(f, scope))
-    .filter((f): f is Factor => f !== null)
-    .filter((f) => f.scope === scope)
-    .slice(0, FACTOR_COUNT);
-
-  if (normalized.length === 0) {
-    return { factors: existing, aiCurated: carriedAiCurated, updatedAt: new Date().toISOString() };
-  }
-
-  return {
-    factors: mergeRollingWindow(existing, normalized),
-    aiCurated: true,
-    updatedAt: new Date().toISOString(),
-  };
 }

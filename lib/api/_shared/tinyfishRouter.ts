@@ -7,6 +7,7 @@ import {
 } from "./http";
 import { getCache, setCache } from "./cache";
 import type { Region } from "./regions";
+import { playwrightMcpClient, PLAYWRIGHT_MCP_KEY_INDEX } from "./playwrightMcp";
 
 export interface TinyFishKeyState {
   keyIndex: number;
@@ -191,6 +192,50 @@ export class TinyFishRouter {
     return this.selectKey();
   }
 
+  /**
+   * Returns true when every configured TinyFish key is unavailable — i.e.
+   * there are no keys that are both `available` and not `rateLimited`
+   * (after accounting for expired rate-limit windows).
+   *
+   * This check powers the automatic Playwright MCP fallback: when it returns
+   * `true`, the caller falls back to the headless Playwright MCP browser
+   * for web search / scraping until at least one TinyFish key recovers.
+   */
+  areAllKeysDown(): boolean {
+    if (this.keyStates.length === 0) return true;
+
+    const now = Date.now();
+    // First, auto-recover any rate-limited keys whose windows have elapsed.
+    // Do this for ALL keys before checking usability so that downstream
+    // counts (e.g. usableKeys in getTinyfishStatus) reflect the recovered state.
+    for (const k of this.keyStates) {
+      if (k.rateLimited && k.rateLimitResetAt) {
+        const resetTime = new Date(k.rateLimitResetAt).getTime();
+        if (!Number.isNaN(resetTime) && now >= resetTime) {
+          // Auto-recover: treat the key as usable again.
+          k.rateLimited = false;
+        }
+      }
+    }
+
+    // Then check if any key is usable (available and not rate-limited).
+    for (const k of this.keyStates) {
+      if (k.available && !k.rateLimited) return false;
+    }
+
+    return true;
+  }
+
+  /** True when at least one TinyFish key is usable (non-rate-limited & available). */
+  hasUsableKeys(): boolean {
+    return !this.areAllKeysDown();
+  }
+
+  /** True when at least one TinyFish key is configured (regardless of availability). */
+  hasConfiguredKeys(): boolean {
+    return this.keyStates.length > 0;
+  }
+
   async tinyfishSearch(
     query: string,
     options: { limit?: number; region?: Region } = {},
@@ -288,6 +333,31 @@ export class TinyFishRouter {
       }
 
       keyState = this.selectKey();
+    }
+
+    // ── Playwright MCP fallback ──────────────────────────────────────────
+    // When ALL TinyFish keys are down, automatically take over web search
+    // via the headless Playwright MCP. This is the "fallback" behaviour:
+    // the MCP is always enabled and running in headless mode, and it
+    // handles the web search roles previously conducted by the TinyFish keys.
+    if (this.areAllKeysDown()) {
+      try {
+        const mcpResult = await playwrightMcpClient.search(
+          query,
+          options.limit ?? 10,
+        );
+        if (mcpResult.results.length > 0) {
+          const fallbackResult: TinyFishSearchResponse = {
+            results: mcpResult.results,
+            total: mcpResult.total,
+            keyIndex: PLAYWRIGHT_MCP_KEY_INDEX,
+          };
+          await setCache(cacheKey, fallbackResult, SEARCH_CACHE_MS);
+          return fallbackResult;
+        }
+      } catch (error) {
+        console.error("Playwright MCP search fallback failed:", error);
+      }
     }
 
     const cachedFallback = await getCache<TinyFishSearchResponse>(
@@ -392,6 +462,28 @@ export class TinyFishRouter {
       keyState = this.selectKey();
     }
 
+    // ── Playwright MCP fallback ──────────────────────────────────────────
+    // When ALL TinyFish keys are down, automatically take over scraping via
+    // the headless Playwright MCP browser. Mirrors the search fallback above:
+    // immediate takeover, automatic restore when a TinyFish key comes back.
+    if (this.areAllKeysDown()) {
+      try {
+        const mcpResult = await playwrightMcpClient.scrape(safeUrl);
+        if (mcpResult) {
+          const fallbackResult: ScrapedContent = {
+            url: mcpResult.url,
+            title: mcpResult.title,
+            text: mcpResult.text,
+            keyIndex: PLAYWRIGHT_MCP_KEY_INDEX,
+          };
+          await setCache(cacheKey, fallbackResult, SCRAPE_CACHE_MS);
+          return fallbackResult;
+        }
+      } catch (error) {
+        console.error("Playwright MCP scrape fallback failed:", error);
+      }
+    }
+
     console.error("TinyFish scrape failed:", lastError?.message);
     return null;
   }
@@ -401,6 +493,7 @@ export class TinyFishRouter {
     configuredKeys: number;
     usableKeys: number;
     rateLimitedKeys: number[];
+    fallbackToMcp: boolean;
   }> {
     if (!quick && !this.initialized) {
       await this.refreshTinyfishStatus(true, abortSignal);
@@ -421,6 +514,12 @@ export class TinyFishRouter {
       }));
     }
 
+    const allKeysDown = this.areAllKeysDown();
+    // MCP can always initialise on demand, so the fallback is active whenever
+    // all TinyFish keys are down (regardless of whether the MCP client is
+    // currently connected — it will lazy-spawn on first use).
+    const fallbackToMcp = allKeysDown;
+
     if (!this.initialized) {
       // Quick mode: return basic status even if not initialized
       const usableKeys = this.keyStates.filter(k => k.available && !k.rateLimited).length;
@@ -433,6 +532,7 @@ export class TinyFishRouter {
         configuredKeys: this.keyStates.length,
         usableKeys,
         rateLimitedKeys,
+        fallbackToMcp: allKeysDown, // MCP may init on demand
       };
     }
 
@@ -443,6 +543,7 @@ export class TinyFishRouter {
       rateLimitedKeys: this.keyStates
         .map((k, i) => (k.rateLimited ? i : -1))
         .filter(i => i >= 0),
+      fallbackToMcp,
     };
   }
 

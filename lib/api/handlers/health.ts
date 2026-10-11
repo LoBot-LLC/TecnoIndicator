@@ -19,10 +19,11 @@ interface HealthResponse {
     configuredKeys: number;
     keyFormats?: { jwt: number; opaque: number; unrecognized: number };
   };
-  tinyfish: {
+   tinyfish: {
     available: boolean;
     usableKeys: number;
     configuredKeys: number;
+    fallbackToMcp: boolean;
   };
   onlineModelConnected: boolean;
   analytics: {
@@ -133,12 +134,17 @@ export async function handleHealth(_req: Request): Promise<Response> {
         Promise.all(REGIONS.map((region) => readFactorStatus(region))),
       ]);
 
+    // onlineModelConnected is true when the live web-search pipeline is
+    // functional — either via at least one working TinyFish key, or via the
+    // automatic Playwright MCP fallback when all TinyFish keys are down.
+    const tinyfishWorking = tinyfishStatus.available && tinyfishStatus.usableKeys > 0;
+    const mcpFallbackActive = tinyfishStatus.fallbackToMcp && tinyfishStatus.configuredKeys > 0;
+
     const onlineModelConnected =
       kiloStatus.available &&
       kiloStatus.usableKeys > 0 &&
       kiloStatus.zeroCostModels.length > 0 &&
-      tinyfishStatus.available &&
-      tinyfishStatus.usableKeys > 0;
+      (tinyfishWorking || mcpFallbackActive);
 
     const response: HealthResponse = {
       kiloGateway: {
@@ -151,6 +157,7 @@ export async function handleHealth(_req: Request): Promise<Response> {
         available: tinyfishStatus.available,
         usableKeys: tinyfishStatus.usableKeys,
         configuredKeys: tinyfishStatus.configuredKeys,
+        fallbackToMcp: tinyfishStatus.fallbackToMcp,
       },
       onlineModelConnected,
       analytics: {
@@ -175,7 +182,7 @@ export async function handleHealth(_req: Request): Promise<Response> {
         error: "Health check temporarily unavailable",
         onlineModelConnected: false,
         kiloGateway: { available: false, usableKeys: 0, configuredKeys: 0, keyFormats: { jwt: 0, opaque: 0, unrecognized: 0 } },
-        tinyfish: { available: false, usableKeys: 0, configuredKeys: 0 },
+        tinyfish: { available: false, usableKeys: 0, configuredKeys: 0, fallbackToMcp: false },
       },
       { status: 200 },
     );

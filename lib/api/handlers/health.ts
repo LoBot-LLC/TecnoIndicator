@@ -4,6 +4,7 @@ import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { analyticsCacheKey } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
+import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
 import type { AnalyticsSnapshot, RegionalAnalyticsSnapshot } from "../_shared/types";
 
 /** Matches the schedule in vercel.json (`0 2 * * *`, UTC). */
@@ -74,9 +75,20 @@ async function readAnalyticsStatus(scope: "global" | Region): Promise<AnalyticsS
     analyticsCacheKey(scope),
   );
   if (!snapshot) {
-    // Nothing cached yet: this scope's analytics has not been requested since
-    // the last cold start. That is "not yet fetched", not "successful".
-    return { lastFetch: null, success: false };
+    // Cache is empty (never fetched or TTL expired). The analytics data is
+    // deterministic and cheap to compute, so populate the cache on the fly
+    // rather than reporting a false "not fetched" to callers. This keeps the
+    // health endpoint informative without requiring a separate warmup cron.
+    try {
+      const analytics =
+        scope === "global"
+          ? await getGlobalAnalytics()
+          : await getRegionalAnalytics(scope as Region);
+      const lastFetch = typeof analytics.timestamp === "string" ? analytics.timestamp : null;
+      return { lastFetch, success: lastFetch !== null };
+    } catch {
+      return { lastFetch: null, success: false };
+    }
   }
   const lastFetch = typeof snapshot.timestamp === "string" ? snapshot.timestamp : null;
   return { lastFetch, success: lastFetch !== null };

@@ -753,6 +753,25 @@ const result: KiloResponse = {
     };
   }
 
+  /**
+   * Quick, non-throwing check whether Kilo Gateway inference is available.
+   * Returns true when at least one configured Kilo key is available and not
+   * rate-limited AND at least one model candidate is available and not
+   * rate-limited. Does NOT throw when keys are missing — callers can use this
+   * to decide whether to attempt `kiloInfer` or fall back to evidence-based
+   * processing of web results already fetched via TinyFish/Playwright MCP.
+   */
+  isInferAvailable(quick: boolean = true): boolean {
+    if (quick && !this.initialized && this.keyStates.length === 0) {
+      const keys = readConfiguredKeys(KILO_KEY_ENV_NAMES);
+      if (keys.length === 0) return false;
+    }
+    return (
+      this.keyStates.some((k) => k.available && !k.rateLimited) &&
+      this.modelCandidates.some((m) => m.available && !m.rateLimited)
+    );
+  }
+
   private shuffle<T>(array: T[]): T[] {
     const result = [...array];
     for (let i = result.length - 1; i > 0; i--) {

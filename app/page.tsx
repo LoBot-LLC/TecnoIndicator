@@ -50,7 +50,9 @@ export default function HomePage() {
 
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("Initializing AI");
   const [globalFactors, setGlobalFactors] = useState<Factor[]>([]);
+  const [globalAiCurated, setGlobalAiCurated] = useState<boolean>(false);
   const [regionalFactors, setRegionalFactors] = useState<Record<string, Factor[]>>({});
+  const [regionalAiCurated, setRegionalAiCurated] = useState<Record<string, boolean>>({});
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [analytics, setAnalytics] = useState<Record<string, AnalyticsSnapshot>>({});
 
@@ -153,6 +155,7 @@ export default function HomePage() {
           const data = await res.json();
           if (active && Array.isArray(data.factors) && data.factors.length > 0) {
             setGlobalFactors(data.factors);
+            setGlobalAiCurated(data.aiCurated === true);
           }
         }
       } catch { /* ignore */ }
@@ -163,6 +166,7 @@ export default function HomePage() {
             const data = await res.json();
             if (active && Array.isArray(data.factors) && data.factors.length > 0) {
               setRegionalFactors((prev) => ({ ...prev, [r.id]: data.factors }));
+              setRegionalAiCurated((prev) => ({ ...prev, [r.id]: data.aiCurated === true }));
             }
           }
         } catch { /* ignore */ }
@@ -315,6 +319,7 @@ export default function HomePage() {
             horizon={horizon}
             dynamicFactors={globalFactors}
             healthStatus={healthStatus}
+            aiCurated={scope === "global" ? globalAiCurated : (regionalAiCurated[scope] ?? false)}
           />
           <RegionalEvaluation
             prices={prices}

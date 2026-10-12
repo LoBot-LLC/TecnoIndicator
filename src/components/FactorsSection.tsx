@@ -213,7 +213,7 @@ export default function FactorsSection({
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               {aiCurated
-                ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."
+                ? "Live AI curation via Kilo Gateway. Factors update automatically every 30 seconds."
                 : "Twelve researched drivers shape the forecast paths. Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
             </p>
             {isOnline && (

@@ -23,8 +23,8 @@ import {
 const SITE_URL = "https://tecnoindicator.vercel.app";
 
 const ANALYTICS_POLL_MS = 60_000;
-const FACTORS_POLL_MS = 120_000;
-const SOLUTIONS_POLL_MS = 120_000;
+const FACTORS_POLL_MS = 30_000;
+const SOLUTIONS_POLL_MS = 30_000;
 const HEALTH_POLL_MS = 5 * 60_000;
 const REGION_STAGGER_MS = 8_000;
 

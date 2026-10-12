@@ -29,7 +29,7 @@ export const TINYFISH_KEY_ENV_NAMES = [
 export const FACTOR_COUNT = 8;
 export const ANALYTICS_CACHE_MS = 60_000;
 /** How long a freshly curated factor window counts as "fresh" for request-level short-circuiting. */
-export const FACTORS_CACHE_MS = 60_000;
+export const FACTORS_CACHE_MS = 30_000;
 /**
  * How long the curated factor window itself is retained. The window has to
  * outlive `FACTORS_CACHE_MS`, otherwise the rolling "newest 8 reasons" would be

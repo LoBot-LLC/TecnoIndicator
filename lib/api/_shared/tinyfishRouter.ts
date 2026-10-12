@@ -342,6 +342,8 @@ export class TinyFishRouter {
     // handles the web search roles previously conducted by the TinyFish keys.
     if (this.areAllKeysDown()) {
       try {
+        // Ensure MCP is initialized before attempting search
+        await playwrightMcpClient.waitForReady();
         const mcpResult = await playwrightMcpClient.search(
           query,
           options.limit ?? 10,
@@ -468,6 +470,8 @@ export class TinyFishRouter {
     // immediate takeover, automatic restore when a TinyFish key comes back.
     if (this.areAllKeysDown()) {
       try {
+        // Ensure MCP is initialized before attempting scrape
+        await playwrightMcpClient.waitForReady();
         const mcpResult = await playwrightMcpClient.scrape(safeUrl);
         if (mcpResult) {
           const fallbackResult: ScrapedContent = {

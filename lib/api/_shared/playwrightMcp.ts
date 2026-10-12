@@ -151,6 +151,14 @@ class PlaywrightMcpClient {
     return this.initialized && this.client !== null;
   }
 
+  /** Wait for the MCP client to be ready, initializing if necessary. */
+  async waitForReady(): Promise<boolean> {
+    if (this.initPromise) {
+      await this.initPromise;
+    }
+    return this.isAvailable();
+  }
+
   /** Returns true if we can at least attempt to initialise the client. */
   canInit(): boolean {
     return !this.initPromise;
@@ -161,11 +169,18 @@ class PlaywrightMcpClient {
    * Returns results in the same shape TinyFish returns.
    */
   async search(query: string, limit: number = 10): Promise<PlaywrightSearchResponse> {
+    // Wait for initialization to complete if it's in progress
+    if (this.initPromise) {
+      await this.initPromise;
+    }
+    if (!this.initialized || !this.client) {
+      throw new Error("Playwright MCP client not available - initialization failed or not complete");
+    }
+
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
     try {
-      if (!this.client) throw new Error("MCP client not initialised");
 
       const client = this.client;
 
@@ -281,11 +296,19 @@ class PlaywrightMcpClient {
    * Returns content in the same shape TinyFish's `tinyfishScrape` returns.
    */
   async scrape(url: string): Promise<PlaywrightScrapedContent | null> {
+    // Wait for initialization to complete if it's in progress
+    if (this.initPromise) {
+      await this.initPromise;
+    }
+    if (!this.initialized || !this.client) {
+      console.error("[PlaywrightMcpClient] scrape called but client not available");
+      return null;
+    }
+
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
     try {
-      if (!this.client) throw new Error("MCP client not initialised");
 
       const client = this.client;
 

@@ -69,6 +69,8 @@ const SOLUTION_PROMPT = `You are a Senior Business Strategy Advisor for commodit
 
 5. **Cite sources.** When referencing a specific data point, include the source URL in the summary.
 
+6. **IGNORE fallback/evidence factors.** Any factor with an ID starting with "fallback-" or "evidence-" is a static placeholder — do NOT base solutions on these. Use ONLY the real dynamic factors (typically 8) that have detailed explanations, direction, magnitude, and importance scores.
+
 ## FEW-SHOT EXAMPLE (learn the format)
 
 Input factors:
@@ -614,28 +616,30 @@ export async function handleSolutions(req: Request): Promise<Response> {
 
     // If Kilo Gateway AI is not available, use evidence-based fallback
     // solutions from the freshly fetched web data instead of static fallbacks.
-    const kiloAvailable = kiloRouter.isInferAvailable(false);
-    
-    let aiSolutions: Solution[] = [];
-    if (kiloAvailable) {
-      try {
-        const payload = {
-          messages: [
-            { role: "system", content: SOLUTION_PROMPT },
-            {
-              role: "user",
-              content: JSON.stringify({
-                analytics,
-                factors,
-                scope,
-                region: isGlobal ? null : scope,
-                evidence: freshEvidence,
-              }),
-            },
-          ],
-          max_tokens: 2048,
-          temperature: 0.25,
-        };
+const kiloAvailable = kiloRouter.isInferAvailable(false);
+     
+     let aiSolutions: Solution[] = [];
+     if (kiloAvailable) {
+       try {
+         // Filter out fallback factors (static placeholders) — only pass real dynamic factors to the AI
+         const dynamicFactors = factors.filter((f) => !f.id.startsWith("fallback-") && !f.id.startsWith("evidence-"));
+         const payload = {
+           messages: [
+             { role: "system", content: SOLUTION_PROMPT },
+             {
+               role: "user",
+               content: JSON.stringify({
+                 analytics,
+                 factors: dynamicFactors,
+                 scope,
+                 region: isGlobal ? null : scope,
+                 evidence: freshEvidence,
+               }),
+             },
+           ],
+           max_tokens: 2048,
+           temperature: 0.2,
+         };
 
         const response = await kiloRouter.kiloInfer(payload, abortController.signal);
         const content = response.choices?.[0]?.message?.content ?? "";

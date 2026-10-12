@@ -3,6 +3,9 @@
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
+  "git": {
+    "deploymentEnabled": false
+  },
   "functions": {
     "app/api/prices/route.ts": { "maxDuration": 60 },
     "app/api/analytics/route.ts": { "maxDuration": 60 },

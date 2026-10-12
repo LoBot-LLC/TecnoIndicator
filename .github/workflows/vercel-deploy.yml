@@ -1,0 +1,266 @@
+name: Vercel Deploy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        type: choice
+        options:
+          - preview
+          - production
+        required: true
+        default: 'preview'
+      pr_number:
+        description: 'PR number (for preview deployments)'
+        required: false
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  NODE_VERSION: '22'
+
+permissions:
+  contents: read
+  pull-requests: write
+  deployments: write
+  statuses: write
+
+jobs:
+  deploy-preview:
+    name: Deploy Preview
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    environment:
+      name: preview
+      url: ${{ steps.deploy.outputs.preview-url }}
+    outputs:
+      preview-url: ${{ steps.deploy.outputs.preview-url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type-check
+        run: npm run typecheck --if-present
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel Preview
+        id: deploy
+        run: |
+          PREVIEW_URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "preview-url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+          echo "Deployed to: $PREVIEW_URL"
+
+      - name: Comment PR with Preview URL
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const previewUrl = '${{ steps.deploy.outputs.preview-url }}';
+            const prNumber = ${{ github.event.number }};
+            const comment = `## Preview Deployment
+
+Your preview deployment is ready!
+
+**Preview URL:** ${previewUrl}
+
+**Environment:** Preview
+**Commit:** ${context.sha.substring(0, 7)}
+**Branch:** ${context.ref.replace('refs/heads/', '')}
+
+---
+
+*Deployed by Vercel via GitHub Actions*`;
+
+            // Find existing comment from this workflow to update instead of spam
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+
+            const existingComment = comments.find(c => 
+              c.user.type === 'Bot' && c.body.includes('Deployed by Vercel via GitHub Actions')
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: comment
+              });
+            }
+
+  deploy-production:
+    name: Deploy Production
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.production-url }}
+    outputs:
+      production-url: ${{ steps.deploy.outputs.production-url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type-check
+        run: npm run typecheck --if-present
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel Production
+        id: deploy
+        run: |
+          PRODUCTION_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "production-url=$PRODUCTION_URL" >> $GITHUB_OUTPUT
+          echo "Deployed to: $PRODUCTION_URL"
+
+  teardown-preview:
+    name: Teardown Preview
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Remove Preview Deployment
+        run: |
+          # Find and remove the preview deployment for this PR
+          PR_NUMBER=${{ github.event.number }}
+          vercel ls --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} | grep "pr-${PR_NUMBER}" | awk '{print $2}' | xargs -I {} vercel rm {} --yes --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} || true
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+
+      - name: Comment PR Closed
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = ${{ github.event.number }};
+            const comment = `## Preview Deployment Removed
+
+The preview deployment for this PR has been cleaned up.
+
+*Cleaned up by Vercel via GitHub Actions*`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: comment
+            });
+
+  manual-deploy:
+    name: Manual Deploy
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment }}
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.pr_number && format('refs/pull/{0}/merge', github.event.inputs.pr_number) || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type-check
+        run: npm run typecheck --if-present
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=${{ github.event.inputs.environment }} --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          else
+            vercel build --token=${{ secrets.VERCEL_TOKEN }}
+          fi
+
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          else
+            DEPLOYMENT_URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          fi
+          echo "deployment-url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "Deployed to: $DEPLOYMENT_URL"

@@ -352,6 +352,17 @@ export async function handleSolutions(req: Request): Promise<Response> {
       freshEvidence = [];
     }
 
+    // Ensure the Kilo Gateway router has been initialized (probed keys and models)
+    // before checking availability. On a cold start without this call,
+    // isInferAvailable would see an empty keyStates array and always return
+    // false — meaning AI inference is never attempted even when valid keys
+    // are configured.
+    try {
+      await kiloRouter.initKiloRouter(abortController.signal);
+    } catch (initError) {
+      console.warn("Kilo Gateway router init failed; proceeding with availability check:", initError);
+    }
+
     // If Kilo Gateway AI is not available, use evidence-based fallback
     // solutions from the freshly fetched web data instead of static fallbacks.
     const kiloAvailable = kiloRouter.isInferAvailable(false);

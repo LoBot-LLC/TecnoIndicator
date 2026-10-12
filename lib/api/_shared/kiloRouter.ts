@@ -762,9 +762,27 @@ const result: KiloResponse = {
    * processing of web results already fetched via TinyFish/Playwright MCP.
    */
   isInferAvailable(quick: boolean = true): boolean {
+    // In quick mode, ensure keyStates is populated at least with configured keys
+    // so the availability check below works even before full init completes.
     if (quick && !this.initialized && this.keyStates.length === 0) {
       const keys = readConfiguredKeys(KILO_KEY_ENV_NAMES);
       if (keys.length === 0) return false;
+      this.keyStates = keys.map((key, index) => ({
+        keyIndex: index,
+        envName: key.envName,
+        keyValue: key.value,
+        endpointUrl: KILO_GATEWAY_CHAT_URL,
+        inputPrice: null,
+        outputPrice: null,
+        zeroCostVerified: false,
+        available: false,
+        rateLimited: false,
+        rateLimitScope: null,
+        rateLimitRemaining: null,
+        rateLimitResetAt: null,
+        lastCheckedAt: new Date().toISOString(),
+        lastSuccessAt: null,
+      }));
     }
     return (
       this.keyStates.some((k) => k.available && !k.rateLimited) &&

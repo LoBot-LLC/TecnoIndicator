@@ -16,6 +16,6 @@
     "app/api/cron/curate-factors/route.ts": { "maxDuration": 300 }
   },
   "crons": [
-    { "path": "/api/cron/curate-factors", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/curate-factors", "schedule": "0 2 * * *" }
   ]
 }

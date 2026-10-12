@@ -42,8 +42,12 @@ interface ScrapedContent {
   keyIndex: number;
 }
 
+// Sentinel keyIndex for direct DuckDuckGo HTTP fallback
+const DIRECT_DUCKDUCKGO_KEY_INDEX = -3;
+
 const SEARCH_URL = "https://api.search.tinyfish.ai";
 const FETCH_URL = "https://api.fetch.tinyfish.ai";
+const DUCKDUCKGO_HTML_URL = "https://html.duckduckgo.com/html/";
 
 function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   const controller = new AbortController();
@@ -62,6 +66,180 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
 function buildSearchUrl(query: string, limit: number): string {
   const params = new URLSearchParams({ query, limit: String(limit) });
   return `${SEARCH_URL}?${params.toString()}`;
+}
+
+/**
+ * Direct DuckDuckGo HTML scraping fallback for serverless environments
+ * where Playwright MCP subprocess is not available.
+ * Fetches the HTML page and extracts results using regex parsing.
+ */
+async function directDuckDuckGoSearch(
+  query: string,
+  limit: number,
+  abortSignal?: AbortSignal
+): Promise<TinyFishSearchResponse> {
+  const controller = new AbortController();
+  if (abortSignal) {
+    abortSignal.addEventListener("abort", () => controller.abort(abortSignal.reason), { once: true });
+  }
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const params = new URLSearchParams({ q: query });
+    const response = await fetch(`${DUCKDUCKGO_HTML_URL}?${params.toString()}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; TecnoIndicator/1.0)",
+        "Accept": "text/html,application/xhtml+xml",
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`DuckDuckGo HTTP error: ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    // Parse DuckDuckGo HTML results using regex
+    // DuckDuckGo HTML structure: <div class="result"> with <a class="result__a"> for title/link
+    const results: SearchResult[] = [];
+    let position = 0;
+
+    // More robust parsing: look for result__a links and associated snippets
+    const linkRegex = /<a class="result__a" href="([^"]+)">([^<]+)<\/a>/g;
+    const snippetRegex = /<a class="result__snippet" href="[^"]*">([^<]*)<\/a>|<div class="result__snippet">([^<]*)<\/div>/g;
+
+    const links: Array<{ url: string; title: string }> = [];
+    let linkMatch;
+    while ((linkMatch = linkRegex.exec(html)) !== null && links.length < limit) {
+      links.push({ url: linkMatch[1], title: linkMatch[2].trim() });
+    }
+
+    const snippets: string[] = [];
+    let snippetMatch;
+    while ((snippetMatch = snippetRegex.exec(html)) !== null && snippets.length < limit) {
+      const snippet = (snippetMatch[1] || snippetMatch[2] || "").trim();
+      if (snippet) snippets.push(snippet);
+    }
+
+    // Combine links and snippets
+    for (let i = 0; i < Math.min(links.length, limit); i++) {
+      const link = links[i];
+      const snippet = snippets[i] || link.title;
+      try {
+        const siteName = new URL(link.url).hostname.replace(/^www\./, "");
+        results.push({
+          position: position++,
+          site_name: siteName,
+          title: link.title,
+          snippet: snippet.slice(0, 300),
+          url: link.url,
+          publishedAt: undefined,
+        });
+      } catch {
+        // Skip invalid URLs
+      }
+    }
+
+    // Fallback: generic link extraction if structured parsing failed
+    if (results.length === 0) {
+      const genericLinkRegex = /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([^<]{10,})<\/a>/g;
+      const seenUrls = new Set<string>();
+      let genericMatch;
+      while ((genericMatch = genericLinkRegex.exec(html)) !== null && results.length < limit) {
+        const url = genericMatch[1];
+        const title = genericMatch[2].trim();
+        if (seenUrls.has(url)) continue;
+        if (url.includes("duckduckgo") || url.includes("google") || url.includes("bing")) continue;
+        seenUrls.add(url);
+        try {
+          const siteName = new URL(url).hostname.replace(/^www\./, "");
+          results.push({
+            position: position++,
+            site_name: siteName,
+            title: title,
+            snippet: title,
+            url: url,
+            publishedAt: undefined,
+          });
+        } catch {
+          // Skip invalid URLs
+        }
+      }
+    }
+
+    return {
+      results,
+      total: results.length,
+      keyIndex: DIRECT_DUCKDUCKGO_KEY_INDEX,
+    };
+  } catch (error) {
+    console.error("[DirectDuckDuckGo] search failed:", error);
+    return { results: [], total: 0, keyIndex: DIRECT_DUCKDUCKGO_KEY_INDEX };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Direct HTTP scraping fallback for serverless environments.
+ * Fetches the page HTML and extracts title + text content.
+ */
+async function directHttpScrape(
+  url: string,
+  abortSignal?: AbortSignal
+): Promise<ScrapedContent | null> {
+  const controller = new AbortController();
+  if (abortSignal) {
+    abortSignal.addEventListener("abort", () => controller.abort(abortSignal.reason), { once: true });
+  }
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; TecnoIndicator/1.0)",
+        "Accept": "text/html,application/xhtml+xml",
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP scrape error: ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    // Extract title
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const title = titleMatch ? titleMatch[1].trim() : "";
+
+    // Extract main text content (simplified)
+    // Remove scripts, styles, and get text from body
+    let text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 10000);
+
+    if (!text && !title) {
+      return null;
+    }
+
+    return {
+      url,
+      title,
+      text,
+      keyIndex: DIRECT_DUCKDUCKGO_KEY_INDEX,
+    };
+  } catch (error) {
+    console.error("[DirectHTTP] scrape failed:", error);
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export class TinyFishRouter {
@@ -365,6 +543,24 @@ export class TinyFishRouter {
       }
     }
 
+    // ── Direct DuckDuckGo HTTP fallback (serverless-compatible) ─────────────
+    // When both TinyFish and Playwright MCP fail, use direct HTTP scraping
+    // of DuckDuckGo HTML. This works in any environment with fetch().
+    try {
+      const regionPrefix = options.region && (options.region as string) !== "global" ? `[${options.region}] ` : "";
+      const directResult = await directDuckDuckGoSearch(
+        `${regionPrefix}${query}`,
+        options.limit ?? 10,
+        abortSignal,
+      );
+      if (directResult.results.length > 0) {
+        await setCache(cacheKey, directResult, SEARCH_CACHE_MS);
+        return directResult;
+      }
+    } catch (error) {
+      console.error("Direct DuckDuckGo HTTP fallback failed:", error);
+    }
+
     const cachedFallback = await getCache<TinyFishSearchResponse>(
       cacheKey,
       60 * 60 * 1000
@@ -489,6 +685,19 @@ export class TinyFishRouter {
       } catch (error) {
         console.error("Playwright MCP scrape fallback failed:", error);
       }
+    }
+
+    // ── Direct HTTP scraping fallback (serverless-compatible) ───────────────
+    // When both TinyFish and Playwright MCP fail, use direct HTTP fetch +
+    // HTML parsing. This works in any environment with fetch().
+    try {
+      const directResult = await directHttpScrape(safeUrl, abortSignal);
+      if (directResult) {
+        await setCache(cacheKey, directResult, SCRAPE_CACHE_MS);
+        return directResult;
+      }
+    } catch (error) {
+      console.error("Direct HTTP scrape fallback failed:", error);
     }
 
     console.error("TinyFish scrape failed:", lastError?.message);

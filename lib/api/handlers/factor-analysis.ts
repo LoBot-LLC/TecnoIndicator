@@ -508,27 +508,34 @@ export async function runFactorAnalysis(
         tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
       ),
     );
-    const candidates = searches
-      .flatMap((r) => r.results)
+    const allResults = searches.flatMap((r) => r.results);
+    console.log(`[FactorAnalysis] ${scope}: ${allResults.length} raw search results from ${searches.length} queries`);
+    const candidates = allResults
       .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
       .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
       .slice(0, 15);
+    console.log(`[FactorAnalysis] ${scope}: ${candidates.length} candidates after reputation/recency filtering`);
 
     // Scrape article bodies for whatever web evidence we have. This is a no-op
-    // when there are no candidates, but the AI path can still curate factors from
-    // analytics + previously stored factors when web search is unavailable.
-    const excerpts = candidates.length > 0
+    // ScrapedCandidate is defined above with optional text property
+    const excerpts: ScrapedCandidate[] = candidates.length > 0
       ? await Promise.all(
           candidates.map(async (r) => {
             try {
               const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal);
-              return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
-            } catch {
+              if (scraped) {
+                return { ...r, text: scraped.text, title: scraped.title || r.title };
+              }
+              console.warn(`[FactorAnalysis] ${scope}: scrape returned null for ${r.url}`);
+              return r;
+            } catch (scrapeError) {
+              console.warn(`[FactorAnalysis] ${scope}: scrape failed for ${r.url}:`, scrapeError);
               return r;
             }
           }),
         )
       : [];
+    console.log(`[FactorAnalysis] ${scope}: ${excerpts.length} excerpts ready (${excerpts.filter((e): e is ScrapedCandidate & { text: string } => !!e.text).length} with full text)`);
 
     // Ensure the Kilo Gateway router has been initialized (probed keys and models)
     // before checking availability. On a cold start without this call,
@@ -542,6 +549,7 @@ export async function runFactorAnalysis(
     }
 
     const aiAvailable = kiloRouter.isInferAvailable(false);
+    console.log(`[FactorAnalysis] ${scope}: aiAvailable=${aiAvailable}, excerpts=${excerpts.length}, existing=${existing.length}`);
 
     // If Kilo Gateway AI is not available, use evidence-based factor generation
     // from the web search results instead of falling back to static factors.

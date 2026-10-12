@@ -168,7 +168,7 @@ class PlaywrightMcpClient {
    * Searches the web using DuckDuckGo HTML and extracts result snippets.
    * Returns results in the same shape TinyFish returns.
    */
-  async search(query: string, limit: number = 10): Promise<PlaywrightSearchResponse> {
+  async search(query: string, limit: number = 10, abortSignal?: AbortSignal): Promise<PlaywrightSearchResponse> {
     // Wait for initialization to complete if it's in progress
     if (this.initPromise) {
       await this.initPromise;
@@ -178,6 +178,9 @@ class PlaywrightMcpClient {
     }
 
     const abortController = new AbortController();
+    if (abortSignal) {
+      abortSignal.addEventListener("abort", () => abortController.abort(abortSignal.reason), { once: true });
+    }
     const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
     try {
@@ -295,7 +298,7 @@ class PlaywrightMcpClient {
    * Scrapes a URL and extracts the page title + body text.
    * Returns content in the same shape TinyFish's `tinyfishScrape` returns.
    */
-  async scrape(url: string): Promise<PlaywrightScrapedContent | null> {
+  async scrape(url: string, abortSignal?: AbortSignal): Promise<PlaywrightScrapedContent | null> {
     // Wait for initialization to complete if it's in progress
     if (this.initPromise) {
       await this.initPromise;
@@ -306,6 +309,9 @@ class PlaywrightMcpClient {
     }
 
     const abortController = new AbortController();
+    if (abortSignal) {
+      abortSignal.addEventListener("abort", () => abortController.abort(abortSignal.reason), { once: true });
+    }
     const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
     try {

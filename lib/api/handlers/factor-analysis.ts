@@ -543,21 +543,6 @@ export async function runFactorAnalysis(
 
     const aiAvailable = kiloRouter.isInferAvailable(false);
 
-    // Only short-circuit when there is no web evidence AND the Kilo Gateway AI is
-    // also unavailable. Previously this returned whenever `candidates.length === 0`
-    // — which silently bypassed a healthy Kilo Gateway (5 usable keys) whenever the
-    // TinyFish API keys were down and the Playwright MCP subprocess could not
-    // initialize (e.g. on Vercel, where `npx @playwright/mcp` is not installed).
-    // The result was `aiCurated: false` and static fallback factors even though AI
-    // curation was possible. Now, when AI is available we still curate (grounded in
-    // analytics + the previously curated factors + any web evidence that exists).
-    if (candidates.length === 0 && !aiAvailable) {
-      console.warn(
-        `No web candidates and Kilo Gateway AI unavailable for scope "${scope}"; keeping existing factors`,
-      );
-      return returnExisting();
-    }
-
     // If Kilo Gateway AI is not available, use evidence-based factor generation
     // from the web search results instead of falling back to static factors.
     // This ensures the system always tries to surface live web data from

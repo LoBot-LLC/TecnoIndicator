@@ -344,9 +344,12 @@ export class TinyFishRouter {
       try {
         // Ensure MCP is initialized before attempting search
         await playwrightMcpClient.waitForReady();
+        // Include region prefix in the MCP search query to maintain regional context
+        const regionPrefix = options.region && (options.region as string) !== "global" ? `[${options.region}] ` : "";
         const mcpResult = await playwrightMcpClient.search(
-          query,
+          `${regionPrefix}${query}`,
           options.limit ?? 10,
+          abortSignal,
         );
         if (mcpResult.results.length > 0) {
           const fallbackResult: TinyFishSearchResponse = {
@@ -472,7 +475,7 @@ export class TinyFishRouter {
       try {
         // Ensure MCP is initialized before attempting scrape
         await playwrightMcpClient.waitForReady();
-        const mcpResult = await playwrightMcpClient.scrape(safeUrl);
+        const mcpResult = await playwrightMcpClient.scrape(safeUrl, abortSignal);
         if (mcpResult) {
           const fallbackResult: ScrapedContent = {
             url: mcpResult.url,

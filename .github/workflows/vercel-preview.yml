@@ -2,7 +2,7 @@ name: Vercel Preview Build
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -67,23 +67,25 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Label PR with preview
+      - name: Comment on PR (same-repo only)
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const { data: existingLabels } = await github.rest.issues.listLabelsOnIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number
-            });
-            const hasLabel = existingLabels.some(l => l.name === 'preview');
-            if (!hasLabel) {
-              await github.rest.issues.addLabels({
+            // Only comment on same-repository PRs to avoid fork issues
+            if (context.repo.repo === context.payload?.pull_request?.head?.repo?.full_name || context.repo.repo === '${{ github.repository }}') {
+              await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                labels: ['preview']
-              });
+                body: `## 📋 Vercel Preview Build
+
+A Vercel preview deployment has been built for this PR.
+
+To deploy to Vercel, add the **preview** label to this pull request, or use the manual deployment trigger.
+
+**Commit:** \${{ github.sha.substring(0, 7) }}
+**Branch:** \${{ github.head_ref }}
+              `});
             }

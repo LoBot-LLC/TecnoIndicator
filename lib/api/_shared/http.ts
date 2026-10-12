@@ -30,6 +30,10 @@ export const FACTOR_COUNT = 8;
 export const ANALYTICS_CACHE_MS = 60_000;
 /** How long a freshly curated factor window counts as "fresh" for request-level short-circuiting. */
 export const FACTORS_CACHE_MS = 30_000;
+/** Client-facing poll interval (page.tsx) and reported poll interval (health.ts) for dynamic factors. Kept in sync here so the two never drift. */
+export const FACTORS_POLL_MS = 30_000;
+/** Client-facing poll interval (page.tsx) for the solutions regeneration backstop. */
+export const SOLUTIONS_POLL_MS = 30_000;
 /**
  * How long the curated factor window itself is retained. The window has to
  * outlive `FACTORS_CACHE_MS`, otherwise the rolling "newest 8 reasons" would be

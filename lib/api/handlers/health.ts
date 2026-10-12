@@ -1,7 +1,7 @@
 import { REGIONS, type Region } from "../_shared/regions";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
-import { analyticsCacheKey } from "../_shared/http";
+import { analyticsCacheKey, FACTORS_POLL_MS } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
@@ -10,7 +10,6 @@ import type { AnalyticsSnapshot, RegionalAnalyticsSnapshot } from "../_shared/ty
 /** Matches the schedule in vercel.json (`0 2 * * *`, UTC). */
 const CRON_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const CRON_HOUR_UTC = 2;
-const FACTOR_POLL_INTERVAL_MS = 120_000;
 
 interface HealthResponse {
   kiloGateway: {
@@ -98,13 +97,13 @@ async function readAnalyticsStatus(scope: "global" | Region): Promise<AnalyticsS
 async function readFactorStatus(scope: "global" | Region): Promise<FactorStatus> {
   const window = await readFactorWindow(scope);
   if (!window) {
-    return { lastRun: null, nextRun: nextCronRun(), aiCurated: false, pollIntervalMs: FACTOR_POLL_INTERVAL_MS };
+    return { lastRun: null, nextRun: nextCronRun(), aiCurated: false, pollIntervalMs: FACTORS_POLL_MS };
   }
   return {
     lastRun: window.updatedAt,
     nextRun: nextCronRun(),
     aiCurated: window.aiCurated,
-    pollIntervalMs: FACTOR_POLL_INTERVAL_MS,
+    pollIntervalMs: FACTORS_POLL_MS,
   };
 }
 

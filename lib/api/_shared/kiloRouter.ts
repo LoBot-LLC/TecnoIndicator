@@ -83,12 +83,34 @@ interface KiloModelCatalogEntry {
   [key: string]: unknown;
 }
 
+export interface Tool {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export type ToolChoice = "none" | "auto" | "required" | { type: "function"; function: { name: string } };
+
 export interface KiloInferPayload {
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{
+    role: string;
+    content?: string;
+    tool_calls?: Array<{
+      id: string;
+      type: string;
+      function: { name: string; arguments: string };
+    }>;
+    tool_call_id?: string;
+  }>;
   model?: string;
   max_tokens?: number;
   temperature?: number;
   response_format?: unknown;
+  tools?: Tool[];
+  tool_choice?: ToolChoice;
 }
 
 export class KiloRouter {
@@ -523,7 +545,7 @@ await this.refreshKiloModels(true, abortSignal);
       for (const modelIndex of shuffledModels) {
         const modelCandidate = this.modelCandidates[modelIndex];
 
-        try {
+try {
           const response = await fetch(KILO_GATEWAY_CHAT_URL, {
             method: "POST",
             headers: {
@@ -536,6 +558,8 @@ await this.refreshKiloModels(true, abortSignal);
               max_tokens: payload.max_tokens ?? 2048,
               temperature: payload.temperature ?? 0.7,
               response_format: payload.response_format ?? undefined,
+              tools: payload.tools ?? undefined,
+              tool_choice: payload.tool_choice ?? undefined,
             }),
             signal: abortSignal ?? AbortSignal.timeout(10000),
           });
@@ -544,9 +568,9 @@ await this.refreshKiloModels(true, abortSignal);
 
           if (status === 200) {
             const data = await response.json();
-const result: KiloResponse = {
-               id: data.id ?? makeId(),
-               object: data.object ?? "chat.completion",
+            const result: KiloResponse = {
+              id: data.id ?? makeId(),
+              object: data.object ?? "chat.completion",
               created: data.created ?? Math.floor(Date.now() / 1000),
               model: data.model ?? modelCandidate.modelId,
               choices: Array.isArray(data.choices) && data.choices.length > 0
@@ -555,6 +579,7 @@ const result: KiloResponse = {
                     message: {
                       role: choice.message?.role ?? "assistant",
                       content: choice.message?.content ?? "",
+                      tool_calls: choice.message?.tool_calls ?? undefined,
                     },
                     logprobs: choice.logprobs ?? null,
                     finish_reason: choice.finish_reason ?? "stop",

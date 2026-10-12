@@ -1,4 +1,4 @@
-import { kiloRouter } from "../_shared/kiloRouter";
+import { kiloRouter, type KiloInferPayload } from "../_shared/kiloRouter";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { REGION_NAMES, type Region } from "../_shared/regions";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
@@ -410,6 +410,10 @@ function buildEvidenceFactors(
   const now = new Date().toISOString();
   const scopedRegions: RegionId[] = scope === "global" ? ["global"] : [scope];
 
+  // Infer default commodities from the scope's queries
+  // Each region has 3 queries: oil, electricity, water
+  const defaultCommodities: Factor["commodities"] = ["oil", "electricity", "water"];
+
   const factorCandidates: Factor[] = [];
 
   for (const excerpt of excerpts.slice(0, FACTOR_COUNT)) {
@@ -422,11 +426,15 @@ function buildEvidenceFactors(
       }
     }
 
-    if (matchedCommodities.length === 0) continue;
+    // If no commodity keywords matched, use default commodities for this scope
+    // This ensures we still create factors from relevant regional news
+    const effectiveCommodities = matchedCommodities.length > 0
+      ? matchedCommodities
+      : defaultCommodities;
 
     const importanceScore = Math.min(
       85,
-      30 + matchedCommodities.length * 15 + (excerpt.text?.length ?? 0) / 200,
+      30 + effectiveCommodities.length * 15 + (excerpt.text?.length ?? 0) / 200,
     );
 
     // Determine direction and magnitude from text sentiment
@@ -450,14 +458,14 @@ function buildEvidenceFactors(
       }
     })();
 
-    const primaryCommodity = matchedCommodities[0];
+    const primaryCommodity = effectiveCommodities[0];
     const primaryPattern = primaryCommodity ? COMMODITY_PATTERN[primaryCommodity] : undefined;
 
     factorCandidates.push({
       id: `evidence-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: summarizeFactorName(excerpt.title, excerpt.snippet, primaryCommodity),
       category: inferCategory(combinedText),
-      commodities: Array.from(new Set(matchedCommodities)) as Factor["commodities"],
+      commodities: Array.from(new Set(effectiveCommodities)) as Factor["commodities"],
       explanation: summarizeEvidenceSentence(excerpt.text, excerpt.snippet, primaryPattern),
       direction,
       magnitude,
@@ -475,8 +483,81 @@ function buildEvidenceFactors(
     void sourceHost;
   }
 
-  // Fill up to FACTOR_COUNT by reusing existing factors
   return factorCandidates;
+}
+
+// Define function tools for the AI to call web search/scrape
+const WEB_SEARCH_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "web_search",
+    description: "Search the web for recent news and information about commodity markets in a specific region",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query for commodity market news" },
+        region: { type: "string", description: "Region to focus search on (asia, europe, africa, americas, oceania, or global)" },
+        limit: { type: "number", description: "Maximum number of results to return", default: 10 },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+const WEB_SCRAPE_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "web_scrape",
+    description: "Fetch and extract content from a specific URL",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "URL to scrape" },
+      },
+      required: ["url"],
+    },
+  },
+};
+
+/**
+ * Execute a function call from the AI
+ */
+async function executeFunctionCall(
+  name: string,
+  args: Record<string, unknown>,
+  scope: RegionId,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  switch (name) {
+    case "web_search": {
+      const query = typeof args.query === "string" ? args.query : "";
+      const region = typeof args.region === "string" ? args.region : scope;
+      const limit = typeof args.limit === "number" ? args.limit : 10;
+      const result = await tinyfishRouter.tinyfishSearch(query, { limit, region: region as Region | undefined }, signal);
+      return {
+        results: result.results.map((r) => ({
+          title: r.title,
+          url: r.url,
+          snippet: r.snippet,
+          source: r.site_name,
+        })),
+        total: result.total,
+      };
+    }
+    case "web_scrape": {
+      const url = typeof args.url === "string" ? args.url : "";
+      if (!url) return { error: "No URL provided" };
+      const result = await tinyfishRouter.tinyfishScrape(url, signal);
+      if (!result) return { error: "Failed to scrape URL" };
+      return {
+        url: result.url,
+        title: result.title,
+        text: result.text.slice(0, 8000),
+      };
+    }
+    default:
+      return { error: `Unknown function: ${name}` };
+  }
 }
 
 /**
@@ -572,32 +653,86 @@ export async function runFactorAnalysis(
     }
 
     const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
-    const payload = {
-      messages: [
-        { role: "system", content: prompt },
-        {
-          role: "user",
-          content: JSON.stringify({
-            analytics,
-            existingFactors: existing,
-            candidates: excerpts.map((c) => ({
-              title: c.title,
-              source: c.url,
-              snippet: c.snippet?.slice(0, 2500),
-              text: (c as { text?: string }).text?.slice(0, 8000),
-            })),
-            region,
-            month: RECENT_MONTH(),
-          }),
-        },
-      ],
-      max_tokens: 4096,
-      temperature: 0.2,
-    };
 
-    const response = await kiloRouter.kiloInfer(payload, signal);
-    const content = response.choices?.[0]?.message?.content ?? "";
-    const parsed = safeParseJson<{ factors?: unknown[] }>(content);
+    // Use function calling so the AI can actively fetch web data
+    const tools = [WEB_SEARCH_TOOL, WEB_SCRAPE_TOOL];
+    // Message type that supports tool_calls and tool_call_id
+    type ChatMessage = {
+      role: string;
+      content?: string;
+      tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+      tool_call_id?: string;
+    };
+    let messages: ChatMessage[] = [
+      { role: "system", content: prompt },
+      {
+        role: "user",
+        content: JSON.stringify({
+          analytics,
+          existingFactors: existing,
+          candidates: excerpts.map((c) => ({
+            title: c.title,
+            source: c.url,
+            snippet: c.snippet?.slice(0, 2500),
+            text: (c as { text?: string }).text?.slice(0, 8000),
+          })),
+          region,
+          month: RECENT_MONTH(),
+        }),
+      },
+    ];
+
+    // Tool calling loop - allow up to 3 rounds of tool calls
+    let finalContent = "";
+    for (let round = 0; round < 3; round++) {
+      const payload: KiloInferPayload = {
+        messages,
+        max_tokens: 4096,
+        temperature: 0.2,
+        tools,
+        tool_choice: "auto",
+      };
+
+      const response = await kiloRouter.kiloInfer(payload, signal);
+      const choice = response.choices?.[0];
+      if (!choice?.message) break;
+
+      const { content, tool_calls } = choice.message as ChatMessage;
+
+      if (tool_calls && tool_calls.length > 0) {
+        // Execute tool calls
+        messages.push({
+          role: "assistant",
+          content: content ?? "",
+          tool_calls,
+        });
+
+        for (const toolCall of tool_calls) {
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            const result = await executeFunctionCall(toolCall.function.name, args, scope, signal);
+            messages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(result),
+            });
+          } catch (err) {
+            messages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: JSON.stringify({ error: String(err) }),
+            });
+          }
+        }
+        continue; // Next round with tool results
+      }
+
+      // No tool calls - we have the final response
+      finalContent = content ?? "";
+      break;
+    }
+
+    const parsed = safeParseJson<{ factors?: unknown[] }>(finalContent);
     if (!parsed?.factors || !Array.isArray(parsed.factors)) {
       // AI returned no valid factors — try evidence-based fallback from web data
       const evidenceFactors = buildEvidenceFactors(excerpts, scope);

@@ -272,6 +272,9 @@ async function runTests(): Promise<void> {
   if (failed > 0) {
     process.exit(1);
   }
+  // The Playwright MCP singleton spawns a long-lived subprocess at import
+  // time; exit explicitly so the runner doesn't hang waiting for it.
+  process.exit(0);
 }
 
 runTests().catch((err) => {

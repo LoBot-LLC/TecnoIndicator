@@ -1,113 +1,48 @@
-name: Vercel Preview Deploy
+name: Deploy to Vercel
 
 on:
-  workflow_run:
-    workflows: ['Vercel Preview Build']
-    types: [completed]
-
-permissions:
-  contents: read
-  pull-requests: write
-  actions: read
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
 
 jobs:
-  deploy-preview:
-    name: Deploy Preview to Vercel
-    if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      (github.event.workflow_run.head_branch == 'preview' || true)
+  deploy:
+    name: Deploy to Vercel
     runs-on: ubuntu-latest
-    environment:
-      name: preview
-      url: ${{ steps.deploy.outputs.preview-url }}
+    permissions:
+      contents: read
+      deployments: write
     steps:
-      - name: Download Vercel Prebuilt Output
-        uses: actions/download-artifact@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          name: vercel-preview-output-${{ github.event.workflow_run.pull_request_number }}
-          path: .vercel/output
+          node-version: '20'
+          cache: 'npm'
 
-      - name: Verify Artifact Contains PR Number Metadata
-        run: |
-          if [ ! -f ".vercel/output/pr-number.json" ]; then
-            echo "::error::No pr-number.json found in artifact"
-            exit 1
-          fi
-          PR_NUMBER=$(cat .vercel/output/pr-number.json | python3 -c "import sys,json; print(json.load(sys.stdin)['prNumber'])")
-          if [ -z "$PR_NUMBER" ]; then
-            echo "::error::prNumber not found in metadata"
-            exit 1
-          fi
-          echo "PR Number from metadata: $PR_NUMBER"
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Check for preview label (maintainer approval)
-        run: |
-          PR_NUMBER=${{ github.event.workflow_run.pull_request_number }}
-          LABELS=$(gh pr view $PR_NUMBER --json labels --jq '.labels[].name' || true)
-          if echo "$LABELS" | grep -q "preview"; then
-            echo "preview label present - proceeding with deployment"
-          else
-            echo "::notice::No preview label found - skipping deployment (add 'preview' label to approve)"
-            exit 0
-          fi
-
-      - name: Install Vercel CLI
-        run: npm install --global vercel@latest
-
-      - name: Pull Vercel Environment Information
-        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Build
+        run: npm run build
 
       - name: Deploy to Vercel Preview
-        id: deploy
-        run: |
-          PREVIEW_URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
-          echo "preview-url=$PREVIEW_URL" >> $GITHUB_OUTPUT
-          echo "Deployed to: $PREVIEW_URL"
-
-      - name: Comment PR with Preview URL
-        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        uses: amondnet/vercel-action@v25
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const previewUrl = '${{ steps.deploy.outputs.preview-url }}';
-            const prNumber = ${{ github.event.workflow_run.pull_request_number }};
-            const comment = `## Preview Deployment Ready
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod=false'
 
-Your preview deployment is ready!
-
-**Preview URL:** ${previewUrl}
-
-**Environment:** Preview
-**Commit:** \${{ github.event.workflow_run.head_sha || context.sha || 'unknown' }.substring(0, 7) }
-**Branch:** \${{ github.event.workflow_run.head_ref || github.head_ref || 'unknown' }}
-
----
-
-*Deployed by Vercel via GitHub Actions (maintainer approved)*`;
-
-            // Find existing comment from this workflow to update
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber
-            });
-
-            const existingComment = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes('Deployed by Vercel via GitHub Actions')
-            );
-
-            if (existingComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existingComment.id,
-                body: comment
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                body: comment
-              });
-            }
+      - name: Deploy to Vercel Production
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod=true'

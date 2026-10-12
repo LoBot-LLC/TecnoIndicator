@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx test/mcp-fallback.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -27,6 +28,7 @@
     "@types/react-dom": "19.2.3",
     "playwright": "^1.64.0",
     "tailwindcss": "4.1.17",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }

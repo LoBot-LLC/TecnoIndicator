@@ -179,17 +179,18 @@ interface FactorsSectionProps {
   horizon: number;
   dynamicFactors?: Factor[];
   healthStatus?: "Initializing AI" | "Online Model Connected" | "Offline Model";
+  aiCurated?: boolean;
 }
 
 export default function FactorsSection({
   horizon,
   dynamicFactors,
   healthStatus,
+  aiCurated,
 }: FactorsSectionProps) {
-  const hasDynamicFactors = dynamicFactors && dynamicFactors.length === 8;
+  const hasDynamicFactors = dynamicFactors && dynamicFactors.length > 0;
   const activeFactors = hasDynamicFactors ? dynamicFactors : FACTORS;
   const isOnline = healthStatus === "Online Model Connected";
-  const aiCurated = hasDynamicFactors && isOnline;
 
   const sorted = useMemo(
     () =>
@@ -208,7 +209,7 @@ export default function FactorsSection({
               Key factors & drivers
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              {isOnline ? "AI-Curated Factors" : "Key factors & drivers"}
+              Recommended solutions for businesses
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               {aiCurated

@@ -31,6 +31,7 @@ export interface SearchStatus {
   rateLimitedKeys: number[];
   fallbackAvailable: boolean;
   fallbackType?: "playwright" | "duckduckgo";
+  tinyfishAvailable: boolean;
 }
 
 /**
@@ -183,6 +184,7 @@ export class UnifiedSearchRouter {
       rateLimitedKeys: tinyfishStatus.rateLimitedKeys,
       fallbackAvailable: mcpStatus.playwrightAvailable || mcpStatus.duckduckgoAvailable,
       fallbackType: shouldFallback ? (mcpStatus.playwrightAvailable ? "playwright" : "duckduckgo") : undefined,
+      tinyfishAvailable: tinyfishStatus.available,
     };
   }
 

@@ -203,7 +203,7 @@ async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Pr
   try {
     const searches = await Promise.all(
       queries.map((q) =>
-        tinyfishRouter.tinyfishSearch(
+        unifiedSearchRouter.search(
           `${q} ${recentMonth()}`,
           { limit: 10, region: scope === "global" ? undefined : (scope as Region) },
           abortSignal,
@@ -214,7 +214,7 @@ async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Pr
     await setCache(evidenceCacheKey, freshEvidence, EVIDENCE_CACHE_MS);
     return freshEvidence;
   } catch (error) {
-    console.error("TinyFish evidence fetch failed:", error);
+    console.error("Unified search evidence fetch failed:", error);
     return [];
   }
 }

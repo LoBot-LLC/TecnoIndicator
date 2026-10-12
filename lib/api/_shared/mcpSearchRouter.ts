@@ -1,11 +1,5 @@
 import {
-  TINYFISH_KEY_ENV_NAMES,
-  readConfiguredKeys,
-  sanitizeUrl,
   SCRAPE_CACHE_MS,
-  SEARCH_CACHE_MS,
-  isReputableSource,
-  isRecentPublishedAt,
 } from "./http";
 import { getCache, setCache } from "./cache";
 import type { Region } from "./regions";
@@ -42,19 +36,6 @@ interface ScrapedContent {
   text: string;
   keyIndex: number;
 }
-
-// DuckDuckGo HTML search result interface
-interface DuckDuckGoResult {
-  title: string;
-  snippet: string;
-  url: string;
-}
-
-// Playwright search result (same as TinyFish for compatibility)
-interface PlaywrightSearchResult extends SearchResult {}
-
-const SEARCH_URL = "https://api.search.tinyfish.ai";
-const FETCH_URL = "https://api.fetch.tinyfish.ai";
 
 /**
  * Unified search router with fallback hierarchy:
@@ -232,93 +213,91 @@ public async duckduckgoSearch(
   public async playwrightSearch(
     query: string,
     limit: number = 10,
-    abortSignal?: AbortSignal
+    _abortSignal?: AbortSignal
   ): Promise<TinyFishSearchResponse | null> {
     try {
-      // Check if Playwright is available
+      // Get Playwright chromium - works for both CommonJS and ESM
+      let chromium;
       if (typeof require !== 'undefined') {
-        try {
-          const { chromium } = require('playwright');
-          
-          const browser = await chromium.launch({
-            headless: true,
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu',
-              '--no-first-run',
-              '--no-zygote',
-              '--single-process',
-              '--disable-extensions'
-            ]
-          });
-          
-          try {
-            const page = await browser.newPage();
-            await page.setUserAgent('Mozilla/5.0 (compatible; TecnoIndicator/1.0; +https://tecnoindicator.com)');
-            
-            // Navigate to DuckDuckGo for search
-            const encodedQuery = encodeURIComponent(query);
-            await page.goto(`https://duckduckgo.com/html/?q=${encodedQuery}&kl=us-en`, {
-              waitUntil: 'networkidle',
-              timeout: 15000
-            });
-            
-            // Extract results
-            const results = await page.evaluate((maxLimit: number) => {
-              const items: any[] = [];
-              const resultElements = document.querySelectorAll('.result__body');
-              
-              for (let i = 0; i < Math.min(resultElements.length, maxLimit); i++) {
-                const element = resultElements[i] as HTMLElement;
-                const titleElement = element.querySelector('.result__title a');
-                const snippetElement = element.querySelector('.result__snippet');
-                const urlElement = element.querySelector('.result__url');
-                
-                if (titleElement && snippetElement && urlElement) {
-                  const title = titleElement.textContent?.trim() || '';
-                  const snippet = snippetElement.textContent?.trim() || '';
-                  const url = urlElement.getAttribute('href') || '';
-                  
-                  if (title && snippet && url) {
-                    items.push({
-                      position: i + 1,
-                      site_name: new URL(url).hostname.replace(/^www\./, ''),
-                      title: title.substring(0, 200),
-                      snippet: snippet.substring(0, 200),
-                      url: url.startsWith('http') ? url : `https://duckduckgo.com${url}`,
-                      publishedAt: undefined
-                    });
-                  }
-                }
-              }
-              
-              return items;
-            }, limit);
-            
-            await browser.close();
-            
-            return {
-              results: results as SearchResult[],
-              total: results.length,
-              keyIndex: -3 // Indicates Playwright source
-            };
-          } catch (error) {
-            await browser.close();
-            throw error;
-          }
-        } catch (requireError) {
-          // Playwright not available in this environment
-          console.warn("Playwright not available for search:", requireError);
-          return null;
-        }
+        const { chromium: cjsChromium } = require('playwright');
+        chromium = cjsChromium;
       } else {
-        // ESM environment - try dynamic import
-        const { chromium } = await import('playwright');
-        // Same logic as above would go here
-        // For now, return null to fall back to other methods
+        const { chromium: esmChromium } = await import('playwright');
+        chromium = esmChromium;
+      }
+
+      if (!chromium) {
+        console.warn("Playwright not available in this environment");
         return null;
+      }
+
+      const browser = await chromium.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+          '--disable-extensions'
+        ]
+      });
+      
+      try {
+        const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (compatible; TecnoIndicator/1.0; +https://tecnoindicator.com)');
+        
+        // Navigate to DuckDuckGo for search
+        const encodedQuery = encodeURIComponent(query);
+        await page.goto(`https://duckduckgo.com/html/?q=${encodedQuery}&kl=us-en`, {
+          waitUntil: 'networkidle',
+          timeout: 15000
+        });
+        
+        // Extract results
+        const results = await page.evaluate((maxLimit: number) => {
+          const items: any[] = [];
+          const resultElements = document.querySelectorAll('.result__body');
+          
+          for (let i = 0; i < Math.min(resultElements.length, maxLimit); i++) {
+            const element = resultElements[i] as HTMLElement;
+            const titleElement = element.querySelector('.result__title a');
+            const snippetElement = element.querySelector('.result__snippet');
+            const urlElement = element.querySelector('.result__url');
+            
+            if (titleElement && snippetElement && urlElement) {
+              const title = titleElement.textContent?.trim() || '';
+              const snippet = snippetElement.textContent?.trim() || '';
+              const url = urlElement.getAttribute('href') || '';
+              
+              if (title && snippet && url) {
+                items.push({
+                  position: i + 1,
+                  site_name: new URL(url).hostname.replace(/^www\./, ''),
+                  title: title.substring(0, 200),
+                  snippet: snippet.substring(0, 200),
+                  url: url.startsWith('http') ? url : `https://duckduckgo.com${url}`,
+                  publishedAt: undefined
+                });
+              }
+            }
+          }
+          
+          return items;
+        }, limit);
+        
+        await browser.close();
+        
+        return {
+          results: results as SearchResult[],
+          total: results.length,
+          keyIndex: -3 // Indicates Playwright source
+        };
+      } catch (error) {
+        await browser.close();
+        throw error;
       }
     } catch (error) {
       console.warn("Playwright search failed:", error);
@@ -499,14 +478,14 @@ public async duckduckgoSearch(
               for (const selector of selectors) {
                 const element = document.querySelector(selector);
                 if (element) {
-                  textContent = element.innerText || element.textContent || '';
+                  textContent = (element as HTMLElement).innerText || element.textContent || '';
                   if (textContent.length > 100) break; // Prefer substantive content
                 }
               }
               
               // Fallback to body if nothing found
               if (!textContent || textContent.length < 100) {
-                textContent = document.body.innerText || document.body.textContent || '';
+                textContent = (document.body as HTMLElement).innerText || document.body.textContent || '';
               }
               
               return {
@@ -572,7 +551,7 @@ public async duckduckgoSearch(
       // Return cached partial result while another fetch is in progress
       return null;
     }
-    await setCache(inProgress, '1', 1000);
+    await setCache(inProgressKey, '1', 1000);
 
     try {
       const controller = new AbortController();
@@ -633,7 +612,7 @@ public async duckduckgoSearch(
    */
   public async playwrightScrape(
     url: string,
-    abortSignal?: AbortSignal
+    _abortSignal?: AbortSignal
   ): Promise<ScrapedContent | null> {
     try {
       let playwright;
@@ -700,14 +679,14 @@ public async duckduckgoSearch(
           for (const selector of selectors) {
             const element = document.querySelector(selector);
             if (element) {
-              textContent = element.innerText || element.textContent || '';
+              textContent = (element as HTMLElement).innerText || element.textContent || '';
               if (textContent.length > 100) break; // Prefer substantive content
             }
           }
           
           // Fallback to body if nothing found
           if (!textContent || textContent.length < 100) {
-            textContent = document.body.innerText || document.body.textContent || '';
+            textContent = (document.body as HTMLElement).innerText || document.body.textContent || '';
           }
           
           return {

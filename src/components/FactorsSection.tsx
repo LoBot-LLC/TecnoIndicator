@@ -209,7 +209,7 @@ export default function FactorsSection({
               Key factors & drivers
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              Recommended solutions for businesses
+              AI-curated factors
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               {aiCurated

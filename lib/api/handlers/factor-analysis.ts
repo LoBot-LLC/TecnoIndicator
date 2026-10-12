@@ -13,6 +13,7 @@ import {
 import { getCache, setCache } from "../_shared/cache";
 import { coerceCategory, safeParseJson } from "../_shared/validation";
 import { VALID_CATEGORIES, type Factor, type RegionId } from "../_shared/types";
+import { summarizeEvidenceSentence, summarizeFactorName, inferCategory } from "../_shared/summarization";
 
 /**
  * The shape stored under the canonical `dynamic-factors:{scope}` key. Every
@@ -449,12 +450,15 @@ function buildEvidenceFactors(
       }
     })();
 
+    const primaryCommodity = matchedCommodities[0];
+    const primaryPattern = primaryCommodity ? COMMODITY_PATTERN[primaryCommodity] : undefined;
+
     factorCandidates.push({
       id: `evidence-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: excerpt.title.slice(0, 160),
-      category: "Market",
+      name: summarizeFactorName(excerpt.title, excerpt.snippet, primaryCommodity),
+      category: inferCategory(combinedText),
       commodities: Array.from(new Set(matchedCommodities)) as Factor["commodities"],
-      explanation: (excerpt.text ?? excerpt.snippet ?? "").slice(0, 1200),
+      explanation: summarizeEvidenceSentence(excerpt.text, excerpt.snippet, primaryPattern),
       direction,
       magnitude,
       source: sourceUrl,
@@ -541,17 +545,17 @@ export async function runFactorAnalysis(
     // This ensures the system always tries to surface live web data from
     // TinyFish API keys or Playwright MCP, even without AI inference.
     if (!kiloRouter.isInferAvailable(false)) {
-      console.warn(
-        `Kilo Gateway AI unavailable for scope "${scope}"; using evidence-based fallback factors`,
-      );
-      const evidenceFactors = buildEvidenceFactors(excerpts, scope);
-      if (evidenceFactors.length > 0) {
-        return {
-          factors: mergeRollingWindow(existing, evidenceFactors),
-          aiCurated: true,
-          updatedAt: new Date().toISOString(),
-        };
-      }
+        console.warn(
+          `Kilo Gateway AI unavailable for scope "${scope}"; using evidence-based fallback factors`,
+        );
+        const evidenceFactors = buildEvidenceFactors(excerpts, scope);
+        if (evidenceFactors.length > 0) {
+          return {
+            factors: mergeRollingWindow(existing, evidenceFactors),
+            aiCurated: false,
+            updatedAt: new Date().toISOString(),
+          };
+        }
       // No evidence-based factors could be generated; fall back to existing
       return returnExisting();
     }
@@ -589,7 +593,7 @@ export async function runFactorAnalysis(
       if (evidenceFactors.length > 0) {
         return {
           factors: mergeRollingWindow(existing, evidenceFactors),
-          aiCurated: true,
+          aiCurated: false,
           updatedAt: new Date().toISOString(),
         };
       }
@@ -609,7 +613,7 @@ export async function runFactorAnalysis(
       if (evidenceFactors.length > 0) {
         return {
           factors: mergeRollingWindow(existing, evidenceFactors),
-          aiCurated: true,
+          aiCurated: false,
           updatedAt: new Date().toISOString(),
         };
       }
@@ -655,7 +659,7 @@ export async function runFactorAnalysis(
         if (evidenceFactors.length > 0) {
           return {
             factors: mergeRollingWindow(existing, evidenceFactors),
-            aiCurated: true,
+            aiCurated: false,
             updatedAt: new Date().toISOString(),
           };
         }

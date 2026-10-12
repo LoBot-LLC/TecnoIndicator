@@ -1,7 +1,8 @@
 import { kiloRouter } from "../_shared/kiloRouter";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
-import { MAX_SOLUTIONS, SOLUTIONS_CACHE_MS } from "../_shared/http";
+import { MAX_SOLUTIONS, SOLUTIONS_CACHE_MS, isReputableSource, isRecentPublishedAt } from "../_shared/http";
+import { summarizeEvidenceSentence, safeHost, COMMODITY_PATTERNS } from "../_shared/summarization";
 import { getCache, setCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
 import { safeParseJson } from "../_shared/validation";
@@ -194,9 +195,24 @@ function buildFallbackSolutions(
   ];
 }
 
-async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Promise<unknown[]> {
+interface EvidenceItem {
+  title: string;
+  url: string;
+  snippet: string;
+  text?: string;
+  publishedAt?: string;
+}
+
+/**
+ * Fetches fresh web evidence for a scope, examining source legitimacy (reputable
+ * outlet + recent publish date) and scraping full article bodies so solutions
+ * can be summarized from real text rather than one-line snippets.
+ *
+ * Returns [] on failure; callers then fall back to static solutions.
+ */
+async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Promise<EvidenceItem[]> {
   const evidenceCacheKey = `solutions:evidence:${scope}`;
-  const cached = await getCache<unknown[]>(evidenceCacheKey, EVIDENCE_CACHE_MS);
+  const cached = await getCache<EvidenceItem[]>(evidenceCacheKey, EVIDENCE_CACHE_MS);
   if (cached) return cached;
 
   const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
@@ -210,13 +226,66 @@ async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Pr
         ),
       ),
     );
-    const freshEvidence = searches.flatMap((r) => r.results).slice(0, 15);
+    // Examine legitimacy: keep only reputable, recently-published sources.
+    const candidates = searches
+      .flatMap((r) => r.results)
+      .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
+      .slice(0, 15);
+
+    // Scrape full article bodies so solutions can be summarized from real text.
+    // Scraping failures degrade gracefully to the search snippet.
+    const evidence = await Promise.all(
+      candidates.map(async (r): Promise<EvidenceItem> => {
+        const url = typeof r.url === "string" ? r.url : "";
+        const item: EvidenceItem = {
+          title: typeof r.title === "string" && r.title.trim() ? r.title.trim() : "",
+          url,
+          snippet: typeof r.snippet === "string" ? r.snippet.trim() : "",
+          publishedAt: r.publishedAt,
+        };
+        if (url) {
+          try {
+            const scraped = await tinyfishRouter.tinyfishScrape(url, abortSignal);
+            if (scraped) {
+              item.text = scraped.text;
+              if (!item.title && scraped.title) item.title = scraped.title;
+            }
+          } catch (scrapeError) {
+            void scrapeError;
+          }
+        }
+        return item;
+      }),
+    );
+
+    const freshEvidence = evidence.filter((e) => e.title.length > 0 || e.snippet.length > 0);
     await setCache(evidenceCacheKey, freshEvidence, EVIDENCE_CACHE_MS);
     return freshEvidence;
   } catch (error) {
     console.error("TinyFish evidence fetch failed:", error);
     return [];
   }
+}
+
+/**
+ * Builds a concise, actionable solution title from evidence, cleaning the raw
+ * headline of source suffixes so the UI never shows a bare news byline.
+ */
+function buildEvidenceSolutionTitle(title: string, snippet: string, commodity?: CommodityId): string {
+  let cleaned = (title || snippet || "").trim()
+    .replace(/\s*[-|]\s*(Reuters|Associated Press|AP|Bloomberg|AFP|CNBC|BBC|WSJ|MarketWatch|Nikkei|Yahoo Finance)\s*$/i, "")
+    .replace(/\s*\[[^\]]+\]\s*$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (cleaned.length > 120) cleaned = cleaned.slice(0, 117).replace(/\s+\S*$/, "").trimEnd() + "...";
+  if (!cleaned) cleaned = `${commodity ?? "market"} trend identified from web evidence`;
+
+  cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  const prefix = commodity ? `${commodity.toUpperCase()} insight: ` : "Evidence: ";
+  let result = `${prefix}${cleaned}`;
+  if (result.length > 120) result = result.slice(0, 117).replace(/\s+\S*$/, "").trimEnd() + "...";
+  return result;
 }
 
 /**
@@ -238,41 +307,44 @@ function buildEvidenceSolutions(
   }
 
   const now = new Date().toISOString();
-  const regionName = scope;
   const solutions: Solution[] = [];
 
-  // Take up to 3 most relevant evidence items
+  // Take up to MAX_SOLUTIONS most relevant evidence items
   for (let i = 0; i < Math.min(MAX_SOLUTIONS, evidence.length); i++) {
-    const item = evidence[i] as Record<string, unknown> | undefined;
+    const item = evidence[i] as EvidenceItem | Record<string, unknown> | undefined;
     if (!item || typeof item !== "object") continue;
 
-    const title = typeof item.title === "string" ? item.title.trim().slice(0, 120) : `Market trend ${i + 1}`;
-    const snippet = typeof item.snippet === "string" ? item.snippet.trim().slice(0, 500) : "";
-    const url = typeof item.url === "string" ? item.url : "";
+    const ev = item as EvidenceItem;
+    const rawTitle = typeof ev.title === "string" ? ev.title.trim() : "";
+    const rawSnippet = typeof ev.snippet === "string" ? ev.snippet.trim() : "";
+    const rawText = typeof ev.text === "string" ? ev.text : "";
+    const url = typeof ev.url === "string" ? ev.url : "";
 
     // Determine which commodities this evidence relates to
-    const combinedText = `${title} ${snippet}`.toLowerCase();
+    const combinedText = `${rawTitle} ${rawSnippet} ${rawText}`.toLowerCase();
     const matchedCommodities: CommodityId[] = [];
-    if (/\b(oil|crude|opec|gasoline|diesel|lng)\b/.test(combinedText)) matchedCommodities.push("oil");
-    if (/\b(electricity|power|grid|renewable|wind|solar)\b/.test(combinedText)) matchedCommodities.push("electricity");
-    if (/\b(water|drought|scarcity|desalination|reservoir)\b/.test(combinedText)) matchedCommodities.push("water");
+    for (const [commodity, pattern] of Object.entries(COMMODITY_PATTERNS)) {
+      if (pattern.test(combinedText)) matchedCommodities.push(commodity as CommodityId);
+    }
     if (matchedCommodities.length === 0) matchedCommodities.push("oil", "electricity", "water");
 
-    const confidence = Math.min(85, 60 + (matchedCommodities.length * 10) + (snippet.length / 50));
+    const primaryCommodity = matchedCommodities[0];
+    const primaryPattern = primaryCommodity ? COMMODITY_PATTERNS[primaryCommodity] : undefined;
+    const host = safeHost(url);
+    const summary = summarizeEvidenceSentence(rawText, rawSnippet, primaryPattern);
+    const confidence = Math.min(85, 60 + matchedCommodities.length * 10 + summary.length / 20);
 
     const actions: string[] = [
-      `Monitor ${title} for supply-chain impact`,
+      `Track ${primaryCommodity ?? "market"} developments from ${host || "web sources"}`,
       `Assess ${matchedCommodities.join(", ")} exposure to this trend`,
-      `Adjust hedging or procurement timing based on evidence`,
-      `Engage regional suppliers to validate local conditions`,
+      `Time procurement or hedging once the evidence is confirmed`,
+      `Cross-check with regional suppliers to validate local conditions`,
     ];
 
     solutions.push({
       id: `evidence-solution-${Date.now()}-${i}`,
-      title,
-      summary: snippet
-        ? `${snippet} — Evidence from ${url ? new URL(url).hostname : "web news source"}.`
-        : `Trend identified from web evidence for ${regionName}.`,
+      title: buildEvidenceSolutionTitle(rawTitle, rawSnippet, primaryCommodity),
+      summary: `${summary} — Evidence: ${host}.`,
       actions,
       commodities: matchedCommodities,
       regions: scope === "global" ? ["global"] : [scope],
@@ -411,17 +483,18 @@ export async function handleSolutions(req: Request): Promise<Response> {
     if (!aiCurated && freshEvidence.length > 0) {
       const evidenceSolutions = buildEvidenceSolutions(scope, analytics, factors, freshEvidence);
       const combined = [...aiSolutions, ...evidenceSolutions].slice(0, MAX_SOLUTIONS);
-      // Mark as aiCurated=true because these solutions are based on live web evidence
+      // These solutions are derived from live web evidence, NOT AI inference
+      // (Kilo Gateway AI was unavailable), so they are NOT ai-curated.
       const allSolutions = combined;
       
-      await setCache(cacheKey, { solutions: allSolutions, aiCurated: true } satisfies CachedSolutions, SOLUTIONS_CACHE_MS);
+      await setCache(cacheKey, { solutions: allSolutions, aiCurated: false } satisfies CachedSolutions, SOLUTIONS_CACHE_MS);
 
       return Response.json(
         {
           solutions: allSolutions,
           scope,
           count: allSolutions.length,
-          aiCurated: true,
+          aiCurated: false,
           cacheKey,
           updatedAt: new Date().toISOString(),
         },

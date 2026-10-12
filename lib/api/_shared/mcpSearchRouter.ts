@@ -108,15 +108,15 @@ export class McpSearchRouter {
     }
   }
 
-  /**
-   * Perform DuckDuckGo HTML search
-   * Uses DuckDuckGo's lite version for simpler parsing
-   */
-  private async duckduckgoSearch(
-    query: string,
-    limit: number = 10,
-    abortSignal?: AbortSignal
-  ): Promise<TinyFishSearchResponse | null> {
+/**
+ * Perform DuckDuckGo HTML search
+ * Uses DuckDuckGo's lite version for simpler parsing
+ */
+public async duckduckgoSearch(
+  query: string,
+  limit: number = 10,
+  abortSignal?: AbortSignal
+): Promise<TinyFishSearchResponse | null> {
     try {
       const controller = new AbortController();
       const combinedSignal = abortSignal
@@ -229,7 +229,7 @@ export class McpSearchRouter {
    * Perform Playwright-based web search
    * Uses Playwright to fetch and extract content from search results
    */
-  private async playwrightSearch(
+  public async playwrightSearch(
     query: string,
     limit: number = 10,
     abortSignal?: AbortSignal
@@ -548,74 +548,279 @@ export class McpSearchRouter {
   }
 
   /**
-   * Extract title and text content from HTML
+   * HTTP fetch-based scrape with content extraction
+   * Fallback method when TinyFish keys are exhausted
    */
-  private extractContentFromHtml(html: string): { title: string; text: string } {
+  public async httpScrape(
+    url: string,
+    abortSignal?: AbortSignal
+  ): Promise<ScrapedContent | null> {
+    // Normalize and validate URL
+    const safeUrl = this.normalizeUrl(url);
+    if (!safeUrl || !/^https?:\/\//i.test(safeUrl)) {
+      return null;
+    }
+
+    const cacheKey = `mcp:http-scrape:${safeUrl}`;
+    const cached = await getCache<ScrapedContent>(cacheKey, SCRAPE_CACHE_MS);
+    if (cached) return cached;
+
+    // Check if already in progress (avoid concurrent fetches)
+    const inProgressKey = `mcp:http-scrape-in-progress:${safeUrl}`;
+    const inProgress = await getCache<string | null>(inProgressKey, 1000);
+    if (inProgress) {
+      // Return cached partial result while another fetch is in progress
+      return null;
+    }
+    await setCache(inProgress, '1', 1000);
+
     try {
-      // Create a temporary div to parse HTML
-      const template = document.createElement('template');
-      template.innerHTML = html;
-      const doc = template.content;
-      
-      // Extract title
-      let title = '';
-      const titleElement = doc.querySelector('title');
-      if (titleElement) {
-        title = titleElement.textContent?.trim() || '';
-        // Remove common suffixes
-        title = title.replace(/\s*[-–—]\s*(.+)?$/, '$1').trim();
-      }
-      
-      // Extract main content text
-      let text = '';
-      
-      // Try common content selectors in order of preference
-      const contentSelectors = [
-        'article',
-        'main',
-        '[role="main"]',
-        '.content',
-        '.post-content',
-        '.entry-content',
-        '#content',
-        '#main',
-        '.article-body',
-        '.story-body'
-      ];
-      
-      for (const selector of contentSelectors) {
-        const element = doc.querySelector(selector);
-        if (element) {
-          text = element.innerText || element.textContent || '';
-          if (text.length > 50) { // Prefer substantive content
-            break;
+      const controller = new AbortController();
+      const combinedSignal = abortSignal
+        ? { 
+            reason: abortSignal.reason,
+            addEventListener: (type: string, listener: EventListener) => {
+              abortSignal.addEventListener(type, listener);
+            },
+            dispatchEvent: (event: Event) => abortSignal.dispatchEvent(event)
           }
+        : { reason: undefined, addEventListener: () => {}, dispatchEvent: () => false };
+      
+      const timeoutId = setTimeout(() => {
+        // @ts-ignore - AbortController doesn't have a public abort method in types
+        if (typeof controller.abort === 'function') controller.abort();
+      }, 10000);
+
+      try {
+        const response = await fetch(safeUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; TecnoIndicator/1.0; +https://tecnoindicator.com)',
+            'Accept': 'text/html,*/*;q=0.8',
+          },
+          signal: combinedSignal as AbortSignal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP fetch failed with status ${response.status}`);
         }
+
+        const html = await response.text();
+        const { title, text } = this.extractContentFromHtml(html);
+        
+        const result: ScrapedContent = {
+          url: safeUrl,
+          title: title.substring(0, 200),
+          text: text.substring(0, 10000), // Limit text length
+          keyIndex: -2 // Indicates HTTP fetch source
+        };
+        
+        await setCache(cacheKey, result, SCRAPE_CACHE_MS);
+        return result;
+      } finally {
+        clearTimeout(timeoutId);
+        // Remove in-progress marker
+        await setCache(inProgressKey, null, 1000);
+      }
+    } catch (error) {
+      console.warn("HTTP fetch scrape failed:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Playwright-based scrape
+   * Fallback method when TinyFish keys are exhausted and HTTP also fails
+   */
+  public async playwrightScrape(
+    url: string,
+    abortSignal?: AbortSignal
+  ): Promise<ScrapedContent | null> {
+    try {
+      let playwright;
+      if (typeof require !== 'undefined') {
+        const { chromium } = require('playwright');
+        playwright = { chromium };
+      } else {
+        // ESM environment - dynamic import
+        const { chromium } = await import('playwright');
+        playwright = { chromium };
       }
       
-      // Fallback to body if no content found
-      if (!text || text.length < 50) {
-        const bodyElement = doc.querySelector('body');
-        if (bodyElement) {
-          text = bodyElement.innerText || bodyElement.textContent || '';
-        }
+      if (!playwright?.chromium) {
+        console.warn("Playwright not available in this environment");
+        return null;
       }
       
-      // Clean up text
-      text = text
+      const { chromium } = playwright;
+      
+      const browser = await chromium.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+          '--disable-extensions'
+        ]
+      });
+      
+      try {
+        const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (compatible; TecnoIndicator/1.0; +https://tecnoindicator.com)');
+        
+        await page.goto(url, {
+          waitUntil: 'networkidle',
+          timeout: 15000
+        });
+        
+        const scrapedData = await page.evaluate(() => {
+          // Try to use readability-like extraction
+          let title = document.title || '';
+          // Remove site name from title if it's at the end
+          title = title.replace(/\s*[-–—]\s*.*$/, '').trim();
+          
+          // Try to find main content
+          const selectors = [
+            'article',
+            'main',
+            '[role="main"]',
+            '.content',
+            '.post-content',
+            '.entry-content',
+            '#content',
+            '#main',
+            '.article-body',
+            '.story-body'
+          ];
+          
+          let textContent = '';
+          for (const selector of selectors) {
+            const element = document.querySelector(selector);
+            if (element) {
+              textContent = element.innerText || element.textContent || '';
+              if (textContent.length > 100) break; // Prefer substantive content
+            }
+          }
+          
+          // Fallback to body if nothing found
+          if (!textContent || textContent.length < 100) {
+            textContent = document.body.innerText || document.body.textContent || '';
+          }
+          
+          return {
+            title: title.substring(0, 200),
+            text: textContent.substring(0, 10000)
+          };
+        });
+        
+        await browser.close();
+        
+        const result: ScrapedContent = {
+          url: url,
+          title: scrapedData.title,
+          text: scrapedData.text,
+          keyIndex: -3 // Indicates Playwright source
+        };
+        
+        await setCache(`mcp:playwright-scrape:${url}`, result, SCRAPE_CACHE_MS);
+        return result;
+      } catch (error) {
+        await browser.close();
+        throw error;
+      }
+    } catch (error) {
+      console.warn("Playwright scrape failed:", error);
+      return null;
+    }
+  }
+
+/**
+ * Extract title and text content from HTML
+ * Uses regex-based parsing to avoid DOM APIs (which don't exist in Node.js)
+ */
+private extractContentFromHtml(html: string): { title: string; text: string } {
+  try {
+    // Extract title from HTML
+    let title = '';
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (titleMatch && titleMatch[1]) {
+      title = titleMatch[1]
+        .replace(/<[^>]*>/g, '') // Remove any HTML tags
+        .replace(/\s*[-–—]\s*(.+)?$/, '$1').trim() // Remove common suffixes
+        .substring(0, 200);
+    }
+    
+    // Extract main content text
+    let text = '';
+    
+    // Try to find content in common semantic elements
+    const contentPatterns = [
+      // Try to find article content
+      /<article[^>]*>([\s\S]*?)<\/article>/i,
+      // Try to find main content
+      /<main[^>]*>([\s\S]*?)<\/main>/i,
+      // Try to find content div
+      /<div[^>]*\sclass=["'][^"']*content[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+      // Try to find post-content
+      /<div[^>]*\sclass=["'][^"']*post-content[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+      // Try to find entry-content
+      /<div[^>]*\sclass=["'][^"']*entry-content[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+      // Try to find element by id
+      /<div[^>]*\s(id=["']content["']|id=["']main["'])(?:[^>]*)>([\s\S]*?)<\/div>/i,
+      // Fallback to body content
+      /<body[^>]*>([\s\S]*?)<\/body>/i
+    ];
+    
+    for (const pattern of contentPatterns) {
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        // Extract text from the matched content
+        let content = match[1];
+        
+        // Remove script and style elements
+        content = content.replace(/<script[\s\S]*?<\/script>/gi, '');
+        content = content.replace(/<style[\s\S]*?<\/style>/gi, '');
+        
+        // Extract text (remove HTML tags, normalize whitespace)
+        text = content
+          .replace(/<[^>]*>/g, ' ') // Replace HTML tags with spaces
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .replace(/[\n\r\t]+/g, ' ') // Replace line breaks/tabs with spaces
+          .trim();
+        
+        // If we got substantive content, use it
+        if (text.length > 50) {
+          break;
+        }
+      }
+    }
+    
+    // If still no good content, try to get text from the whole HTML
+    if (!text || text.length < 50) {
+      // Remove script and style elements
+      let cleanHtml = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+      cleanHtml = cleanHtml.replace(/<style[\s\S]*?<\/style>/gi, '');
+      
+      // Extract text from remaining HTML
+      text = cleanHtml
+        .replace(/<[^>]*>/g, ' ') // Replace HTML tags with spaces
         .replace(/\s+/g, ' ') // Normalize whitespace
         .replace(/[\n\r\t]+/g, ' ') // Replace line breaks/tabs with spaces
         .trim();
-      
-      return {
-        title: title.substring(0, 200),
-        text: text.substring(0, 10000) // Limit length
-      };
-    } catch (error) {
-      console.warn("HTML content extraction failed:", error);
-      return { title: '', text: '' };
     }
+    
+    return {
+      title: title.substring(0, 200),
+      text: text.substring(0, 10000) // Limit length
+    };
+  } catch (error) {
+    console.warn("HTML content extraction failed:", error);
+    return { title: '', text: '' };
   }
+}
 
   /**
    * Get search status for health checks

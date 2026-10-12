@@ -1,4 +1,4 @@
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { unifiedSearchRouter } from "../_shared/unifiedSearchRouter";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getCache, setCache } from "../_shared/cache";
 import { SEARCH_CACHE_MS, sanitizeUrl } from "../_shared/http";
@@ -167,7 +167,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
   const searchResults = await Promise.all(
     COMMODITY_QUERIES.map(async ({ commodity, queryTemplate }) => {
       try {
-        return await tinyfishRouter.tinyfishSearch(queryTemplate, {
+        return await unifiedSearchRouter.search(queryTemplate, {
           limit: 10,
           region: scope === "global" ? undefined : scope,
         }, abortSignal);

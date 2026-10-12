@@ -1,5 +1,5 @@
 import { kiloRouter } from "../_shared/kiloRouter";
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { unifiedSearchRouter } from "../_shared/unifiedSearchRouter";
 import { REGION_NAMES, isRegion, type Region } from "../_shared/regions";
 import { getRegionalAnalytics, getScopePriceDefaults } from "../_shared/deterministicAnalytics";
 import { FORECAST_CACHE_MS, factorCacheKey, sanitizeUrl } from "../_shared/http";
@@ -71,7 +71,7 @@ export async function handleRegionalForecast(req: Request): Promise<Response> {
     }
 
     const analytics = await getRegionalAnalytics(region);
-    const search = await tinyfishRouter.tinyfishSearch(`${REGION_NAMES[region]} oil electricity water prices 2026`, {
+    const search = await unifiedSearchRouter.search(`${REGION_NAMES[region]} oil electricity water prices 2026`, {
       region,
     });
     const regionalWindow = await readFactorWindow(region);

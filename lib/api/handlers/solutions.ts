@@ -45,24 +45,89 @@ const REGION_QUERIES: Record<Region, string[]> = {
   ],
 };
 
-const SOLUTION_PROMPT = `You are a Senior Business Strategy Advisor for commodity-driven companies. Based on the following market analytics, dynamic factors, and fresh web evidence, generate exactly 3 actionable solutions for business owners and executives to manage their logistics and business decisions better. Each solution should target a different strategic aspect: operational resilience, cost optimization, and strategic positioning.
+const SOLUTION_PROMPT = `You are a Senior Business Strategy Advisor for commodity-driven companies. Your task is to turn the supplied DYNAMIC FACTORS into exactly 3 actionable business solutions — NOT to summarize market reports or restate statistics.
 
-Return strict JSON only with this schema:
+## CRITICAL RULES
+
+1. **Every solution MUST be a concrete, executable business action.** A solution is something a CEO or logistics director can decide to DO next week. It is NOT:
+   - A market statistic or forecast number
+   - A restatement of a factor's explanation
+   - A generic "monitor the market" suggestion
+   - A list of facts or trends
+
+2. **Each solution MUST be derived from the DYNAMIC FACTORS provided.** The factors are the REASONS the market is changing. Your job is to translate each reason into a strategic response. Every solution must reference at least 2 related factor IDs from the supplied factors array.
+
+3. **Each solution targets a DIFFERENT strategic aspect:**
+   - **Operational resilience** — how to keep operations running despite disruptions (supply chains, infrastructure, regulatory)
+   - **Cost optimization** — how to reduce procurement, logistics, or energy costs
+   - **Strategic positioning** — how to gain competitive advantage or capture new opportunities
+
+4. **Each solution MUST have exactly 5 specific, numbered actions.** Each action must be:
+   - A concrete step (verb + object + measurable outcome)
+   - Under 200 characters
+   - Something a business can actually execute
+
+5. **Cite sources.** When referencing a specific data point, include the source URL in the summary.
+
+## FEW-SHOT EXAMPLE (learn the format)
+
+Input factors:
+- f1: "OPEC+ supply cuts" (category: DEMAND, direction: up, magnitude: High)
+- f2: "Asian demand surge" (category: DEMAND, direction: up, magnitude: High)
+- f3: "Brent crude at $95/bbl" (category: TRANSITION, direction: up, magnitude: Medium)
+
+Output solutions:
 {
   "solutions": [
     {
-      "title": "string (max 120 chars)",
-      "summary": "string (max 600 chars)",
-      "actions": ["string (max 200 chars)", "string", "string", "string", "string"],
-      "commodities": ["oil" | "electricity" | "water"],
-      "regions": ["global" | "asia" | "europe" | "africa" | "americas" | "oceania"],
-      "relatedFactors": ["factorId", ...],
-      "confidence": number (0-100)
+      "title": "Lock in Q4 fuel costs with forward contracts before OPEC+ cuts tighten supply",
+      "summary": "With OPEC+ supply cuts (f1) and Asian demand surge (f2) pushing Brent toward $100 (f3), secure fixed-price fuel contracts covering 60-80% of Q4 volume now. Source: https://www.opec.org",
+      "actions": [
+        "Negotiate 6-month forward fuel contracts with primary suppliers",
+        "Identify 2 secondary suppliers outside OPEC+ affected regions",
+        "Set internal trigger: lock prices if Brent exceeds $98/bbl",
+        "Hedge remaining exposure via ICE Brent futures",
+        "Review contract quarterly against benchmark prices"
+      ],
+      "commodities": ["oil"],
+      "regions": ["global", "asia"],
+      "relatedFactors": ["f1", "f2", "f3"],
+      "confidence": 85
+    },
+    {
+      "title": "Shift energy-intensive operations to off-peak electricity windows",
+      "summary": "Rising electricity demand in Asia (f2) and grid stress from EV adoption (f4) are widening peak/off-peak spreads. Reschedule production to off-peak hours and deploy on-site solar to cut demand charges.",
+      "actions": [
+        "Install smart energy management system with load shifting",
+        "Negotiate time-of-use contracts with tiered peak pricing",
+        "Deploy on-site solar arrays for daytime peak shaving",
+        "Join regional demand response program for rebates",
+        "Track hourly consumption vs. tariff bands weekly"
+      ],
+      "commodities": ["electricity"],
+      "regions": ["asia"],
+      "relatedFactors": ["f2", "f4"],
+      "confidence": 78
+    },
+    {
+      "title": "Diversify water sourcing with on-site recycling to hedge drought risk",
+      "summary": "Water scarcity index rising in Asia (f5) and declining dam reservoir levels (f6) threaten operational continuity. Invest in on-site water recycling and negotiate long-term supply contracts with volume guarantees.",
+      "actions": [
+        "Conduct water audit to identify recycling opportunities",
+        "Install on-site wastewater treatment and reuse system",
+        "Negotiate 3-year water supply contract with volume discount",
+        "Apply for government water efficiency incentives",
+        "Monitor reservoir levels and adjust intake monthly"
+      ],
+      "commodities": ["water"],
+      "regions": ["asia"],
+      "relatedFactors": ["f5", "f6"],
+      "confidence": 72
     }
   ]
 }
 
-Use only the supplied analytics, factors, and fresh web evidence with source URLs. Cite sources by including the URL in the summary when referencing specific data points. Do not invent sources or facts.`;
+## NOW, using the supplied factors, analytics, and evidence, generate exactly 3 solutions following the format above. Each solution must be a distinct, executable business strategy — not a market report summary.`;
 
 const VALID_REGIONS: RegionId[] = ["global", "asia", "europe", "africa", "americas", "oceania"];
 
@@ -130,43 +195,73 @@ function buildFallbackSolutions(
 ): Solution[] {
   const now = new Date().toISOString();
   const regionName = scope;
-  const fuelLevy = (analytics.fuelLevy as number) ?? 0;
-  const elecIdx = (analytics.electricityTariffAdjustmentIndex as number) ?? 0;
-  const waterIdx = (analytics.waterScarcityAdjustedPriceIndex as number) ?? 0;
+
+  // Extract the most relevant factor info per solution: each solution
+  // targets one factor with specific content (explanation, direction, magnitude).
+  // We use factor names, explanations, and properties to make solutions
+  // referenceable to the displayed dynamic factors.
+  const factorUuids = factors.map((f) => ({
+    id: f.id,
+    name: f.name,
+    category: f.category,
+    direction: f.direction,
+    magnitude: f.magnitude,
+    importanceScore: f.importanceScore,
+    commodities: f.commodities,
+    explanation: f.explanation,
+  }));
 
   return [
     {
       id: `solution-fallback-${Date.now()}-0`,
-      title: fuelLevy > 0 ? "Lock in fuel costs via fixed-price hedging" : "Optimize fuel procurement with dynamic sourcing",
-      summary: `Based on ${regionName} market analytics (fuelLevy ${fuelLevy >= 0 ? "+" : ""}${fuelLevy}, electricity index ${elecIdx >= 0 ? "+" : ""}${elecIdx}), hedge exposure to ${fuelLevy > 0 ? "rising" : "volatile"} fuel costs using fixed-price contracts or financial swaps. Source from diversified suppliers to mitigate regional supply disruptions. Current analytics: ${analytics.dataSource ?? "benchmark data"}.`,
+      title:
+        factorUuids[0]?.name === undefined
+          ? "Lock in fuel costs via fixed-price hedging"
+          : `Hedge ${factorUuids[0]?.name.toLowerCase()} exposure using fixed-price contracts`,
+      summary:
+        factorUuids[0]?.explanation ||
+        `Based on ${regionName} market analytics (fuelLevy ${(analytics.fuelLevy as number) ?? 0 >= 0 ? "+" : ""}${analytics.fuelLevy as number ?? 0}, electricity index ${(analytics.electricityTariffAdjustmentIndex as number) ?? 0 >= 0 ? "+" : ""}${analytics.electricityTariffAdjustmentIndex as number ?? 0}), hedge exposure to ${factorUuids[0]?.direction === "up" ? "rising" : "volatile"} fuel costs using fixed-price contracts or financial swaps. Source from diversified suppliers to mitigate regional supply disruptions. Current analytics: ${analytics.dataSource ?? "benchmark data"}.`,
       actions: [
         "Secure fixed-price fuel contracts for 60-80% of Q4 2026 volume",
         "Establish secondary supplier agreements outside primary delivery corridors",
         "Monitor regional inventory levels weekly to adjust procurement timing",
         "Use futures or swaps to hedge remaining variable exposure",
+        "Review hedge effectiveness monthly against factor direction change",
       ],
-      commodities: ["oil"],
+      commodities: factorUuids[0]?.commodities?.includes("oil")
+        ? ["oil"]
+        : ["oil"],
       regions: [scope],
       scope,
-      relatedFactors: factors.slice(0, 4).map((f) => f.id),
+      relatedFactors: factors.length > 0 ? [factors[0].id] : [],
       confidence: 65,
       createdAt: now,
       updatedAt: now,
     },
     {
       id: `solution-fallback-${Date.now()}-1`,
-      title: elecIdx > 0 ? "Reduce electricity demand during peak pricing windows" : "Stabilize electricity procurement with flexible contracts",
-      summary: `Electricity tariff adjustment index is ${elecIdx >= 0 ? "+" : ""}${elecIdx} for ${regionName}. ${elecIdx > 0 ? "Shift energy-intensive operations to off-peak hours and invest in demand response." : "Lock in flexible contracts that track real-time pricing to benefit from low-demand periods."}`,
+      title:
+        factorUuids[1]?.name === undefined
+          ? "Reduce electricity demand during peak pricing windows"
+          : `Reduce ${factorUuids[1]?.name.toLowerCase()} cost through demand response`,
+      summary:
+        factorUuids[1]?.explanation ||
+        `Electricity tariff adjustment index is ${(analytics.electricityTariffAdjustmentIndex as number) ?? 0 >= 0 ? "+" : ""}${analytics.electricityTariffAdjustmentIndex as number ?? 0} for ${regionName}. ${factorUuids[1]?.direction === "up"
+          ? "Shift energy-intensive operations to off-peak hours and invest in demand response."
+          : "Lock in flexible contracts that track real-time pricing to benefit from low-demand periods."}`,
       actions: [
         "Install smart energy management systems to optimize load scheduling",
         "Negotiate time-of-use electricity contracts with tiered pricing",
         "Deploy on-site power generation (solar/diesel backup) for peak shaving",
         "Join regional demand response programs for additional revenue",
+        "Track hourly consumption vs. tariff bands against factor magnitude",
       ],
-      commodities: ["electricity"],
+      commodities: factorUuids[1]?.commodities?.includes("electricity")
+        ? ["electricity"]
+        : ["electricity"],
       regions: [scope],
       scope,
-      relatedFactors: factors.slice(4, 8).map((f) => f.id),
+      relatedFactors: factors.length > 1 ? [factors[1].id] : [],
       confidence: 65,
       createdAt: now,
       updatedAt: now,
@@ -174,20 +269,29 @@ function buildFallbackSolutions(
     {
       id: `solution-fallback-${Date.now()}-2`,
       title:
-        waterIdx > 0.5
+        factorUuids[2]?.name === undefined
           ? "Secure alternative water sources before scarcity impacts operations"
-          : "Implement water recycling to reduce long-term supply risk",
-      summary: `Water scarcity adjusted price index is ${waterIdx >= 0 ? "+" : ""}${waterIdx} for ${regionName}. ${waterIdx > 0.5 ? "Drought conditions and rising costs indicate need for immediate alternative sourcing." : "Modest water cost changes allow proactive investment in efficiency."} ${factors.length > 0 ? `Key factors: ${factors.map((f) => f.name).join(", ")}.` : ""}`,
+          : `Implement water recycling to hedge ${factorUuids[2]?.name.toLowerCase()} risk`,
+      summary:
+        factorUuids[2]?.explanation ||
+        `Water scarcity adjusted price index is ${(analytics.waterScarcityAdjustedPriceIndex as number) >= 0 ? "+" : ""}${analytics.waterScarcityAdjustedPriceIndex as number ?? 0} for ${regionName}. ${factorUuids[2]?.direction === "up"
+          ? "Drought conditions and rising costs indicate need for immediate alternative sourcing."
+          : "Modest water cost changes allow proactive investment in efficiency."} ${factorUuids[2]?.magnitude === "High"
+          ? "Evaluate immediate alternative sourcing options"
+          : ""}`,
       actions: [
         "Conduct water audit to identify recycling and efficiency opportunities",
         "Negotiate long-term water supply contracts with volume discounts",
         "Invest in on-site water treatment or rainwater harvesting systems",
         "Explore regulatory incentives for water conservation programs",
+        "Track water scarcity index vs factor magnitude and adjust sourcing quarterly",
       ],
-      commodities: ["water"],
+      commodities: factorUuids[2]?.commodities?.includes("water")
+        ? ["water"]
+        : ["water"],
       regions: [scope],
       scope,
-      relatedFactors: factors.slice(0, 4).map((f) => f.id),
+      relatedFactors: factors.length > 2 ? [factors[2].id] : [],
       confidence: 65,
       createdAt: now,
       updatedAt: now,
@@ -268,24 +372,98 @@ async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Pr
 }
 
 /**
- * Builds a concise, actionable solution title from evidence, cleaning the raw
- * headline of source suffixes so the UI never shows a bare news byline.
+ * Generates a strategic, action-oriented title from evidence content.
+ * Transforms market report headlines into business strategy titles.
  */
-function buildEvidenceSolutionTitle(title: string, snippet: string, commodity?: CommodityId): string {
-  let cleaned = (title || snippet || "").trim()
-    .replace(/\s*[-|]\s*(Reuters|Associated Press|AP|Bloomberg|AFP|CNBC|BBC|WSJ|MarketWatch|Nikkei|Yahoo Finance)\s*$/i, "")
-    .replace(/\s*\[[^\]]+\]\s*$/, "")
-    .replace(/\s+/g, " ")
-    .trim();
+function generateEvidenceStrategyTitle(
+  commodity: CommodityId | undefined,
+  summary: string,
+  url: string
+): string {
+  const host = safeHost(url);
+  const hostUpper = host.toUpperCase();
 
-  if (cleaned.length > 120) cleaned = cleaned.slice(0, 117).replace(/\s+\S*$/, "").trimEnd() + "...";
-  if (!cleaned) cleaned = `${commodity ?? "market"} trend identified from web evidence`;
+  // Action-oriented titles based on commodity and evidence content
+  const actionTitles: Record<CommodityId, string[]> = {
+    oil: [
+      `Secure fuel supply against ${hostUpper} supply disruption signals`,
+      `Lock in fuel hedging before price escalation from ${hostUpper}`,
+      `Diversify crude sourcing in response to ${hostUpper} market shifts`,
+      `Optimize fuel procurement timing using ${hostUpper} signals`,
+      `Hedge exposure to ${hostUpper} crude supply volatility`,
+    ],
+    electricity: [
+      `Deploy demand response to offset ${hostUpper} peak pricing`,
+      `Shift load scheduling using ${hostUpper} grid signal data`,
+      `Secure flexible PPAs before ${hostUpper} capacity constraints`,
+      `Invest in on-site generation to hedge ${hostUpper} outage risk`,
+      `Negotiate time-of-use contracts from ${hostUpper} tariff data`,
+    ],
+    water: [
+      `Implement water recycling to counter ${hostUpper} scarcity risk`,
+      `Secure long-term water rights using ${hostUpper} allocation data`,
+      `Diversify water sourcing against ${hostUpper} drought signals`,
+      `Optimize water efficiency based on ${hostUpper} cost trends`,
+      `Invest in on-site treatment to reduce ${hostUpper} supply risk`,
+    ],
+  };
 
-  cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-  const prefix = commodity ? `${commodity.toUpperCase()} insight: ` : "Evidence: ";
-  let result = `${prefix}${cleaned}`;
-  if (result.length > 120) result = result.slice(0, 117).replace(/\s+\S*$/, "").trimEnd() + "...";
-  return result;
+  if (commodity && actionTitles[commodity]) {
+    const titles = actionTitles[commodity];
+    // Pick title based on summary content for variety
+    const hash = summary.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
+    return titles[hash % titles.length].slice(0, 120);
+  }
+
+  // Fallback: create from summary
+  const words = summary.split(" ").slice(0, 8).join(" ");
+  return `Strategic response to ${commodity || "market"} signals: ${words}`.slice(0, 120);
+}
+
+/**
+ * Generates strategic, executable actions from evidence (not just "track/monitor").
+ * Each action is a concrete business step with measurable outcome.
+ */
+function generateEvidenceStrategicActions(
+  primaryCommodity: CommodityId | undefined,
+  matchedCommodities: CommodityId[]
+): string[] {
+  const actionsByCommodity: Record<CommodityId, string[]> = {
+    oil: [
+      "Negotiate 6-12 month fixed-price fuel contracts with primary suppliers",
+      "Qualify 2 secondary suppliers outside affected delivery corridors",
+      "Set internal price trigger: hedge 80% volume if benchmark exceeds $X",
+      "Purchase ICE Brent futures or swaps for remaining variable exposure",
+      "Review contract terms quarterly against OPEC+/inventory benchmarks",
+    ],
+    electricity: [
+      "Install smart energy management with automated load shifting",
+      "Execute time-of-use electricity contracts with tiered peak pricing",
+      "Deploy on-site solar + storage for peak demand shaving",
+      "Enroll in regional demand response programs for capacity payments",
+      "Track hourly consumption vs tariff bands; optimize weekly",
+    ],
+    water: [
+      "Conduct water audit to identify top 3 recycling opportunities",
+      "Negotiate 3-year supply contracts with volume discount clauses",
+      "Install on-site wastewater treatment for process water reuse",
+      "Apply for government water efficiency incentive programs",
+      "Monitor reservoir levels monthly; trigger contingency at 30% capacity",
+    ],
+  };
+
+  if (primaryCommodity && actionsByCommodity[primaryCommodity]) {
+    return actionsByCommodity[primaryCommodity].slice(0, 5);
+  }
+
+  // Generic strategic actions (better than "track/monitor")
+  return [
+    `Secure supply agreements with 2+ diversified ${matchedCommodities.join("/")} providers`,
+    `Implement real-time price monitoring with automated hedge triggers`,
+    `Diversify sourcing across ${matchedCommodities.length > 1 ? "multiple" : "alternative"} regions`,
+    `Optimize inventory buffers to absorb ${matchedCommodities[0] || "commodity"} volatility`,
+    `Review and renegotiate contracts with volume-flexibility clauses quarterly`,
+  ];
 }
 
 /**
@@ -334,18 +512,17 @@ function buildEvidenceSolutions(
     const summary = summarizeEvidenceSentence(rawText, rawSnippet, primaryPattern);
     const confidence = Math.min(85, 60 + matchedCommodities.length * 10 + summary.length / 20);
 
-    const actions: string[] = [
-      `Track ${primaryCommodity ?? "market"} developments from ${host || "web sources"}`,
-      `Assess ${matchedCommodities.join(", ")} exposure to this trend`,
-      `Time procurement or hedging once the evidence is confirmed`,
-      `Cross-check with regional suppliers to validate local conditions`,
-    ];
+    // Generate more strategic, actionable titles and actions based on the evidence
+    // Instead of "OIL insight: [news headline]" which looks like market reports,
+    // create business-impacting strategic insights
+    const strategicTitle = generateEvidenceStrategyTitle(primaryCommodity, summary, url);
+    const strategicActions = generateEvidenceStrategicActions(primaryCommodity, matchedCommodities);
 
     solutions.push({
       id: `evidence-solution-${Date.now()}-${i}`,
-      title: buildEvidenceSolutionTitle(rawTitle, rawSnippet, primaryCommodity),
+      title: strategicTitle,
       summary: `${summary} — Evidence: ${host}.`,
-      actions,
+      actions: strategicActions,
       commodities: matchedCommodities,
       regions: scope === "global" ? ["global"] : [scope],
       scope,

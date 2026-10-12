@@ -6,6 +6,7 @@ import {
   SEARCH_CACHE_MS,
 } from "./http";
 import { getCache, setCache } from "./cache";
+import { playwrightMcpRouter } from "./playwrightMcpRouter";
 import type { Region } from "./regions";
 
 export interface TinyFishKeyState {
@@ -296,6 +297,22 @@ export class TinyFishRouter {
     );
     if (cachedFallback) return cachedFallback;
 
+    // All TinyFish keys failed — try Playwright MCP as fallback
+    console.warn("All TinyFish keys unavailable, attempting Playwright MCP fallback for search...");
+    try {
+      const playwrightResult = await playwrightMcpRouter.playwrightMcpSearch(
+        query,
+        options,
+        abortSignal
+      );
+      if (playwrightResult.results.length > 0) {
+        await setCache(cacheKey, playwrightResult, SEARCH_CACHE_MS);
+        return playwrightResult;
+      }
+    } catch (error) {
+      console.error("Playwright MCP search fallback failed:", error);
+    }
+
     console.error("TinyFish search failed:", lastError?.message);
     return { results: [], total: 0, keyIndex: -1 };
   }
@@ -393,6 +410,19 @@ export class TinyFishRouter {
     }
 
     console.error("TinyFish scrape failed:", lastError?.message);
+    
+    // All TinyFish keys failed — try Playwright MCP as fallback
+    console.warn("All TinyFish keys unavailable, attempting Playwright MCP fallback for scrape...");
+    try {
+      const playwrightResult = await playwrightMcpRouter.playwrightMcpScrape(safeUrl, abortSignal);
+      if (playwrightResult && playwrightResult.text.length > 0) {
+        await setCache(cacheKey, playwrightResult, SCRAPE_CACHE_MS);
+        return playwrightResult;
+      }
+    } catch (error) {
+      console.error("Playwright MCP scrape fallback failed:", error);
+    }
+    
     return null;
   }
 

@@ -36,8 +36,42 @@ A modern, clean, professional single-page web application that delivers illustra
 - **AI Model Integration**
   - Search and fetch current prices
   - Search, analyze and display 8 dynamic factors affecting the prices
-  - Updating 3 dynamic AI-powered solutions based on the updating factors 
+  - Updating 3 dynamic AI-powered solutions based on the updating factors
   - Executed via models from Kilo Gateway and TinyFish API
+  - **Playwright MCP Fallback** — When all TinyFish API keys are unavailable, the system automatically falls back to a Playwright MCP server for web search and content scraping, ensuring 24/7 operation
+
+---
+
+## 🤖 Playwright MCP Fallback
+
+This project implements a **Playwright MCP (Model Context Protocol) server** as a fallback mechanism when all TinyFish API keys become unavailable, expired, or invalid.
+
+### How It Works
+
+1. **Primary Path**: The application uses TinyFish API keys for web search and content scraping
+2. **Fallback Path**: When all TinyFish API keys fail (401/403 errors, rate limits, or network issues), the system automatically switches to the Playwright MCP server
+3. **Cascade**: If both TinyFish and Playwright MCP fail, the system falls back to deterministic benchmark data
+
+The fallback is **not used by default** — it only activates when all TinyFish API keys are unavailable. This ensures the application always uses the fastest, most reliable API when available.
+
+### Configuration
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `PLAYWRIGHT_MCP_HOST` | Optional | Connect to an existing SSE-based MCP server (e.g., `http://localhost:8931`). Leave unset to automatically start the Playwright MCP server via stdio. |
+| `PLAYWRIGHT_MCP_BROWSER` | Optional | Browser to use: `chromium`, `firefox`, `webkit`, or `msedge` |
+| `PLAYWRIGHT_MCP_HEADLESS` | Optional | Set to `true` to run browser in headless mode |
+
+### Architecture
+
+- **`lib/api/_shared/mcpClient.ts`** — MCP client that connects to the Playwright MCP server (via stdio or SSE)
+- **`lib/api/_shared/playwrightMcpRouter.ts`** — High-level router that provides search and scrape methods matching the TinyFish API format
+- **`lib/api/_shared/tinyfishRouter.ts`** — Enhanced with fallback logic: tries TinyFish first, then Playwright MCP
+
+The Playwright MCP server can be run as a long-lived process (24/7 always-on) using the `@playwright/mcp` package. It provides browser automation capabilities including:
+- `browser_navigate` — Navigate to URLs
+- `browser_get_page_content` — Extract page content
+- `browser_evaluate` — Execute JavaScript in page context
 
 ---
 

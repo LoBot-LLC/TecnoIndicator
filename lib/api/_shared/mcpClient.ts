@@ -2,7 +2,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import { ReadResourceResult, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { sanitizeUrl } from "./http";
 
@@ -75,10 +75,10 @@ export class PlaywrightMcpClient {
         });
       }
       
-      this.client = new Client({ 
-        name: "tecnoindicator-mcp-client", 
-        version: "0.0.0" 
-      });
+      this.client = new Client(
+        { name: "tecnoindicator-mcp-client", version: "0.0.0" },
+        { capabilities: {} }
+      );
       
       await this.client.connect(this.transport);
       this.initialized = true;
@@ -114,7 +114,7 @@ export class PlaywrightMcpClient {
   async playwrightMcpSearch(
     query: string,
     options: { limit?: number } = {},
-    abortSignal?: AbortSignal
+    _abortSignal?: AbortSignal
   ): Promise<TinyFishSearchResponse> {
     if (!this.initialized) {
       try {
@@ -155,7 +155,7 @@ export class PlaywrightMcpClient {
       }) as CallToolResult;
       
       const pageContent = typeof pageContentResult.content[0] === "object" && "text" in pageContentResult.content[0] 
-        ? pageContentResult.content[0].text 
+        ? String(pageContentResult.content[0].text) 
         : "";
       
       // Parse search results from HTML (simplified)
@@ -181,7 +181,7 @@ export class PlaywrightMcpClient {
    */
   async playwrightMcpScrape(
     url: string,
-    abortSignal?: AbortSignal
+    _abortSignal?: AbortSignal
   ): Promise<ScrapedContent | null> {
     if (!this.initialized) {
       try {
@@ -226,7 +226,7 @@ export class PlaywrightMcpClient {
         }
       }) as CallToolResult;
       const title = typeof titleResult.content[0] === "object" && "text" in titleResult.content[0] 
-        ? titleResult.content[0].text 
+        ? String(titleResult.content[0].text) 
         : "";
       
       // Get page text content (simplified - get body text)
@@ -237,7 +237,7 @@ export class PlaywrightMcpClient {
         }
       }) as CallToolResult;
       const text = typeof textResult.content[0] === "object" && "text" in textResult.content[0] 
-        ? textResult.content[0].text 
+        ? String(textResult.content[0].text) 
         : "";
       
       const result: ScrapedContent = {

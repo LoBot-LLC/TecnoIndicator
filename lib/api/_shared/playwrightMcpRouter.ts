@@ -1,6 +1,4 @@
 // Playwright MCP Router for fallback when TinyFish API keys are unavailable
-import { sanitizeUrl } from "./http";
-import { getCache, setCache } from "./cache";
 import { playwrightMcpClient } from "./mcpClient";
 
 export interface PlaywrightMcpState {

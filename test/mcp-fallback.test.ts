@@ -164,7 +164,7 @@ async function runTests(): Promise<void> {
     console.log(`Test 1: No keys configured`);
     assert(allDown === true, "areAllKeysDown() returns true when no keys configured");
     assert(status.available === false, "status.available is false");
-    assert(status.fallbackToMcp === true, "fallbackToMcp is true (MCP can init on demand)");
+    assert(status.fallbackToMcp === true, "fallbackToMcp is true (MCP is always-on and ready)");
   }
 
   // Test 2: areAllKeysDown() with all keys unavailable

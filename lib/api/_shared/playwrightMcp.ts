@@ -78,8 +78,15 @@ class PlaywrightMcpClient {
   private initPromise: Promise<void> | null = null;
   private cleanupScheduled: boolean = false;
 
-  /** Lazily starts the Playwright MCP subprocess in headless mode. */
-  private async ensureInit(): Promise<void> {
+  /** Always-on initialization — starts the Playwright MCP subprocess immediately
+   * when the module is imported, rather than lazily on first use. This matches
+   * the "24/24, always-on" requirement from issue #46 so that web search
+   * fallback is immediate when all TinyFish keys become unavailable. */
+  constructor() {
+    this.ensureAlwaysOn();
+  }
+
+  private async ensureAlwaysOn(): Promise<void> {
     if (this.initialized && this.client) return;
     if (this.initPromise) {
       await this.initPromise;
@@ -158,7 +165,6 @@ class PlaywrightMcpClient {
     const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
     try {
-      await this.ensureInit();
       if (!this.client) throw new Error("MCP client not initialised");
 
       const client = this.client;
@@ -279,7 +285,6 @@ class PlaywrightMcpClient {
     const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
     try {
-      await this.ensureInit();
       if (!this.client) throw new Error("MCP client not initialised");
 
       const client = this.client;

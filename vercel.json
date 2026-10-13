@@ -13,7 +13,8 @@
     "app/api/health/route.ts": { "maxDuration": 60 },
     "app/api/ai-forecast/route.ts": { "maxDuration": 60 },
     "app/api/regional-forecast/route.ts": { "maxDuration": 60 },
-    "app/api/cron/curate-factors/route.ts": { "maxDuration": 300 }
+    "app/api/cron/curate-factors/route.ts": { "maxDuration": 300 },
+    "app/api/telemetry/route.ts": { "maxDuration": 60 }
   },
   "crons": [
     { "path": "/api/cron/curate-factors", "schedule": "0 2 * * *" }

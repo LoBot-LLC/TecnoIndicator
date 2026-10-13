@@ -9,6 +9,7 @@ export interface SearchResult {
   snippet: string;
   url: string;
   publishedAt?: string;
+  sourceType?: "tinyfish" | "playwright" | "duckduckgo";
 }
 
 export interface SearchResponse {
@@ -39,13 +40,13 @@ export interface SearchStatus {
  * 
  * Fallback hierarchy:
  * 1. TinyFish API (primary) - with key rotation
- * 2. Playwright MCP-based search (fallback 1) - ONLY when ALL TinyFish keys exhausted OR no keys configured
- * 3. DuckDuckGo HTTP search (fallback 2) - ONLY when Playwright also fails
+ * 2. Playwright MCP-based search (fallback 1) - when TinyFish keys exhausted OR TinyFish returns no results
+ * 3. DuckDuckGo HTTP search (fallback 2) - when Playwright also fails or returns no results
  * 
- * The fallback is ONLY triggered when:
+ * The fallback is triggered when:
  * - All TinyFish API keys are exhausted (unavailable, rate-limited, or invalid)
  * - OR no TinyFish API keys are configured at all
- * - Not when a query simply returns no results
+ * - OR TinyFish returns no results for the query (to ensure we always get search results)
  */
 export class UnifiedSearchRouter {
   private fallbackTriggered: boolean = false;
@@ -63,16 +64,19 @@ export class UnifiedSearchRouter {
   }
 
   /**
-   * Check if we should use fallback (all TinyFish keys exhausted)
+   * Check if we should use fallback (all TinyFish keys exhausted OR no results)
    */
-  private async shouldUseFallback(): Promise<boolean> {
-    return await this.areAllTinyfishKeysExhausted();
+  private async shouldUseFallback(tinyfishResult?: { results: SearchResult[]; total: number }): Promise<boolean> {
+    const keysExhausted = await this.areAllTinyfishKeysExhausted();
+    // Also trigger fallback if TinyFish returned no results (even if keys are valid)
+    const noResults = tinyfishResult ? tinyfishResult.total === 0 : false;
+    return keysExhausted || noResults;
   }
 
   /**
    * Search with fallback hierarchy
    * Primary: TinyFish API with key rotation
-   * Fallback: Playwright/DuckDuckGo ONLY when all TinyFish keys exhausted
+   * Fallback: Playwright/DuckDuckGo when TinyFish keys exhausted OR TinyFish returns no results
    */
   async search(
     query: string,
@@ -82,21 +86,27 @@ export class UnifiedSearchRouter {
     // First, try TinyFish API (primary)
     const tinyfishResult = await tinyfishRouter.tinyfishSearch(query, options, abortSignal);
 
-    // If TinyFish returned results (even empty results from a successful query), return them
-    // We only fall back when TinyFish keys are EXHAUSTED (all keys failed), not when query returns no results
-    const shouldFallback = await this.shouldUseFallback();
+    // Check if we should fall back: keys exhausted OR TinyFish returned no results
+    const shouldFallback = await this.shouldUseFallback(tinyfishResult);
 
     if (!shouldFallback) {
-      // TinyFish keys are available, return whatever TinyFish returned
-      // (could be empty results for this specific query, but that's correct behavior)
+      // TinyFish keys are available AND returned results, return them
       this.fallbackTriggered = false;
       this.lastFallbackType = null;
-      return tinyfishResult;
+      // Mark results as from TinyFish
+      return {
+        ...tinyfishResult,
+        results: tinyfishResult.results.map(r => ({ ...r, sourceType: "tinyfish" as const }))
+      };
     }
 
-    // All TinyFish keys exhausted - trigger fallback
+    // TinyFish keys exhausted OR no results - trigger fallback
     this.fallbackTriggered = true;
-    console.warn("All TinyFish keys exhausted, falling back to Playwright/DuckDuckGo");
+    if (tinyfishResult.total === 0 && !await this.areAllTinyfishKeysExhausted()) {
+      console.warn("TinyFish returned no results, falling back to Playwright/DuckDuckGo");
+    } else {
+      console.warn("All TinyFish keys exhausted, falling back to Playwright/DuckDuckGo");
+    }
 
     // Try Playwright first (fallback 1)
     const playwrightResult = await mcpSearchRouter.playwrightSearch(
@@ -107,7 +117,10 @@ export class UnifiedSearchRouter {
 
     if (playwrightResult && playwrightResult.results.length > 0) {
       this.lastFallbackType = "playwright";
-      return playwrightResult;
+      return {
+        ...playwrightResult,
+        results: playwrightResult.results.map(r => ({ ...r, sourceType: "playwright" as const }))
+      };
     }
 
     // Try DuckDuckGo HTTP (fallback 2)
@@ -119,7 +132,10 @@ export class UnifiedSearchRouter {
 
     if (duckduckgoResult && duckduckgoResult.results.length > 0) {
       this.lastFallbackType = "duckduckgo";
-      return duckduckgoResult;
+      return {
+        ...duckduckgoResult,
+        results: duckduckgoResult.results.map(r => ({ ...r, sourceType: "duckduckgo" as const }))
+      };
     }
 
     // All fallbacks failed - return empty results (callers handle deterministic fallbacks)
@@ -130,7 +146,7 @@ export class UnifiedSearchRouter {
   /**
    * Scrape with fallback hierarchy
    * Primary: TinyFish scrape
-   * Fallback: HTTP fetch + Playwright ONLY when all TinyFish keys exhausted
+   * Fallback: HTTP fetch + Playwright when TinyFish keys exhausted OR TinyFish scrape fails
    */
   async scrape(
     url: string,

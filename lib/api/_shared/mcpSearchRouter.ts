@@ -155,42 +155,134 @@ public async duckduckgoSearch(
   private parseDuckDuckGoResults(html: string, limit: number): SearchResult[] {
     const results: SearchResult[] = [];
     
-    // Simple regex-based parsing for DuckDuckGo lite results
-    // Look for result containers
-    const resultRegex = /<a class="result__url"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>[\s\S]*?<a class="result__snippet"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+    // Try multiple regex patterns for different DuckDuckGo HTML structures
+    const patterns = [
+      // Pattern 1: Standard result structure (result__body)
+      /<div class="result__body"[^>]*>[\s\S]*?<a class="result__title"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__url"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g,
+      // Pattern 2: Alternative structure with result__url first
+      /<a class="result__url"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>[\s\S]*?<a class="result__title"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g,
+      // Pattern 3: Simpler pattern for result links
+      /<a class="result__title"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g,
+      // Pattern 4: Very generic pattern for any result link with snippet
+      /<a[^>]*class="[^"]*result__[^"]*"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="[^"]*result__[^"]*"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g,
+    ];
     
-    let match;
-    let count = 0;
-    
-    while ((match = resultRegex.exec(html)) && count < limit) {
-      try {
-        const url = match[1];
-        const title = match[2].trim();
-        const resultUrl = match[3];
-        const snippet = match[4]
-          .replace(/<[^>]*>/g, ' ')  // Remove HTML tags
-          .replace(/\s+/g, ' ')      // Normalize whitespace
-          .trim()
-          .substring(0, 200);        // Limit snippet length
-        
-        if (url && title && resultUrl && snippet) {
-          results.push({
-            position: count + 1,
-            site_name: this.extractSiteName(url),
-            title: title.substring(0, 200),
-            snippet,
-            url: this.normalizeUrl(resultUrl),
-            publishedAt: undefined // DuckDuckGo doesn't provide dates easily
-          });
-          count++;
+    for (const resultRegex of patterns) {
+      if (results.length >= limit) break;
+      
+      let match;
+      let count = 0;
+      
+      // Reset regex lastIndex for global regex
+      resultRegex.lastIndex = 0;
+      
+      while ((match = resultRegex.exec(html)) && count < limit && results.length < limit) {
+        try {
+          // Different patterns have different group orders
+          let url, title, resultUrl, snippet;
+          
+          if (match.length >= 6) {
+            // Pattern 1: url, title, resultUrl, snippet, siteUrl, siteName
+            url = match[1];
+            title = match[2];
+            resultUrl = match[3];
+            snippet = match[4];
+          } else if (match.length >= 5) {
+            // Pattern 2: siteUrl, siteName, url, title, snippet
+            url = match[3];
+            title = match[4];
+            resultUrl = match[1];
+            snippet = match[5] || match[4];
+          } else if (match.length >= 4) {
+            // Pattern 3/4: url, title, resultUrl, snippet
+            url = match[1];
+            title = match[2];
+            resultUrl = match[3];
+            snippet = match[4];
+          } else {
+            continue;
+          }
+          
+          const cleanTitle = title
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .substring(0, 200);
+          
+          const cleanSnippet = snippet
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .substring(0, 200);
+          
+          const cleanUrl = resultUrl ? this.normalizeUrl(resultUrl) : (url ? this.normalizeUrl(url) : '');
+          const siteName = cleanUrl ? this.extractSiteName(cleanUrl) : '';
+          
+          if (cleanUrl && cleanTitle && cleanSnippet) {
+            // Check for duplicates
+            const isDuplicate = results.some(r => r.url === cleanUrl);
+            if (!isDuplicate) {
+              results.push({
+                position: results.length + 1,
+                site_name: siteName,
+                title: cleanTitle,
+                snippet: cleanSnippet,
+                url: cleanUrl,
+                publishedAt: undefined
+              });
+              count++;
+            }
+          }
+        } catch (e) {
+          continue;
         }
-      } catch (e) {
-        // Skip malformed results
-        continue;
       }
     }
     
-    return results;
+    // If regex patterns failed, try a more generic approach
+    if (results.length === 0) {
+      // Look for any links that look like search results
+      const genericRegex = /<a[^>]*href="(https?:\/\/[^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+      let match;
+      let count = 0;
+      while ((match = genericRegex.exec(html)) && count < limit && results.length < limit) {
+        try {
+          const url = match[1];
+          const title = match[2]
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          // Skip navigation links, ads, etc.
+          if (title.length > 10 && title.length < 200 && 
+              !title.toLowerCase().includes('duckduckgo') &&
+              !title.toLowerCase().includes('privacy') &&
+              !title.toLowerCase().includes('settings') &&
+              !url.includes('duckduckgo.com')) {
+            
+            const cleanUrl = this.normalizeUrl(url);
+            const siteName = this.extractSiteName(cleanUrl);
+            
+            const isDuplicate = results.some(r => r.url === cleanUrl);
+            if (!isDuplicate) {
+              results.push({
+                position: results.length + 1,
+                site_name: siteName,
+                title: title.substring(0, 200),
+                snippet: title.substring(0, 200), // Use title as snippet fallback
+                url: cleanUrl,
+                publishedAt: undefined
+              });
+              count++;
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+    
+    return results.slice(0, limit);
   }
 
   /**

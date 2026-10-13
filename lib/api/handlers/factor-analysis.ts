@@ -1,5 +1,5 @@
 import { kiloRouter } from "../_shared/kiloRouter";
-import { unifiedSearchRouter } from "../_shared/unifiedSearchRouter";
+import { unifiedSearchRouter, type SearchResult } from "../_shared/unifiedSearchRouter";
 import { REGION_NAMES, type Region } from "../_shared/regions";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
 import {
@@ -13,6 +13,10 @@ import {
 import { getCache, setCache } from "../_shared/cache";
 import { coerceCategory, safeParseJson } from "../_shared/validation";
 import { VALID_CATEGORIES, type Factor, type RegionId } from "../_shared/types";
+
+interface ScrapedSearchResult extends SearchResult {
+  text?: string;
+}
 
 /**
  * The shape stored under the canonical `dynamic-factors:{scope}` key. Every
@@ -393,23 +397,44 @@ export async function runFactorAnalysis(
 
   try {
     const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
+    console.log(`[FactorAnalysis] Starting curation for scope: ${scope}, queries: ${queries.length}`);
     const searches = await Promise.all(
       queries.map((q) =>
         unifiedSearchRouter.search(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
       ),
     );
+    console.log(`[FactorAnalysis] Search completed for ${scope}, got ${searches.length} search results`);
+    
+    let totalResults = 0;
+    searches.forEach((s, i) => {
+      console.log(`[FactorAnalysis] Query ${i}: ${s.results.length} results, source: ${s.results[0]?.sourceType || 'unknown'}`);
+      totalResults += s.results.length;
+    });
+    console.log(`[FactorAnalysis] Total raw search results: ${totalResults}`);
+
     const candidates = searches
       .flatMap((r) => r.results)
       .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
-      .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
+      .filter((r) => {
+        // Allow fallback search results (Playwright/DuckDuckGo) to bypass reputable source filter
+        // since they come from web search which may include newer/lesser-known sources
+        const isFallbackSource = r.sourceType === "playwright" || r.sourceType === "duckduckgo";
+        return (isFallbackSource || isReputableSource(r.url)) && isRecentPublishedAt(r.publishedAt);
+      })
       .slice(0, 15);
 
+    console.log(`[FactorAnalysis] After filtering: ${candidates.length} candidates for ${scope}`);
+    if (candidates.length > 0) {
+      console.log(`[FactorAnalysis] Top candidate: ${candidates[0].title} (source: ${candidates[0].sourceType})`);
+    }
+
     if (candidates.length === 0) {
+      console.warn(`[FactorAnalysis] No valid candidates for ${scope}, returning existing factors`);
       return returnExisting();
     }
 
-    const excerpts = await Promise.all(
-      candidates.map(async (r) => {
+    const excerpts: ScrapedSearchResult[] = await Promise.all(
+      candidates.map(async (r): Promise<ScrapedSearchResult> => {
         try {
           const scraped = await unifiedSearchRouter.scrape(r.url, signal);
           return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
@@ -418,6 +443,8 @@ export async function runFactorAnalysis(
         }
       }),
     );
+
+    console.log(`[FactorAnalysis] Scraped ${excerpts.filter(e => e.text).length}/${excerpts.length} articles for ${scope}`);
 
     const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
     const payload = {
@@ -443,12 +470,23 @@ export async function runFactorAnalysis(
       temperature: 0.2,
     };
 
+    console.log(`[FactorAnalysis] Calling Kilo AI inference for ${scope}...`);
     const response = await kiloRouter.kiloInfer(payload, signal);
     const content = response.choices?.[0]?.message?.content ?? "";
-    const parsed = safeParseJson<{ factors?: unknown[] }>(content);
-    if (!parsed?.factors || !Array.isArray(parsed.factors)) {
+    console.log(`[FactorAnalysis] Kilo AI response length: ${content.length} chars for ${scope}`);
+    
+    if (!content) {
+      console.warn(`[FactorAnalysis] Empty AI response for ${scope}, returning existing factors`);
       return returnExisting();
     }
+
+    const parsed = safeParseJson<{ factors?: unknown[] }>(content);
+    if (!parsed?.factors || !Array.isArray(parsed.factors)) {
+      console.warn(`[FactorAnalysis] Invalid AI response format for ${scope}:`, content.slice(0, 500));
+      return returnExisting();
+    }
+
+    console.log(`[FactorAnalysis] AI returned ${parsed.factors.length} raw factors for ${scope}`);
 
     const normalized = parsed.factors
       .map((f) => normalizeFactor(f, scope))
@@ -456,7 +494,10 @@ export async function runFactorAnalysis(
       .filter((f) => f.scope === scope)
       .slice(0, FACTOR_COUNT);
 
+    console.log(`[FactorAnalysis] Normalized to ${normalized.length} valid factors for ${scope}`);
+
     if (normalized.length === 0) {
+      console.warn(`[FactorAnalysis] No valid normalized factors for ${scope}, returning existing factors`);
       return returnExisting();
     }
 
@@ -468,7 +509,7 @@ export async function runFactorAnalysis(
   } catch (error) {
     // Never throw: the callers (route handlers, cron) must always be able to
     // write a window so the health endpoint can report a real `lastRun`.
-    console.error(`Factor analysis failed for scope "${scope}":`, error);
+    console.error(`[FactorAnalysis] Factor analysis failed for scope "${scope}":`, error);
     return returnExisting();
   }
 }

@@ -211,10 +211,11 @@ async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Pr
       ),
     );
     const freshEvidence = searches.flatMap((r) => r.results).slice(0, 15);
+    console.log(`[Solutions] Fetched ${freshEvidence.length} evidence items for ${scope}`);
     await setCache(evidenceCacheKey, freshEvidence, EVIDENCE_CACHE_MS);
     return freshEvidence;
   } catch (error) {
-    console.error("Unified search evidence fetch failed:", error);
+    console.error("[Solutions] Unified search evidence fetch failed:", error);
     return [];
   }
 }
@@ -299,16 +300,19 @@ export async function handleSolutions(req: Request): Promise<Response> {
 
     let aiSolutions: Solution[] = [];
     try {
+      console.log(`[Solutions] Calling Kilo AI inference for ${scope}...`);
       const response = await kiloRouter.kiloInfer(payload, abortController.signal);
       const content = response.choices?.[0]?.message?.content ?? "";
+      console.log(`[Solutions] Kilo AI response length: ${content.length} chars for ${scope}`);
       const parsed = safeParseJson<{ solutions?: unknown[] }>(content);
       // Tolerant: a short but valid AI response is kept and backfilled below.
       aiSolutions = (Array.isArray(parsed?.solutions) ? parsed.solutions : [])
         .map((s: unknown) => buildSolution(s, scope, VALID_REGIONS))
         .filter((s): s is Solution => s !== null)
         .slice(0, MAX_SOLUTIONS);
+      console.log(`[Solutions] Parsed ${aiSolutions.length} AI solutions for ${scope}`);
     } catch (error) {
-      console.error("Kilo inference failed, using deterministic fallback:", error);
+      console.error("[Solutions] Kilo inference failed, using deterministic fallback:", error);
     }
 
     const aiCurated = aiSolutions.length > 0;

@@ -280,6 +280,8 @@ export async function handleSolutions(req: Request): Promise<Response> {
       freshEvidence = [];
     }
 
+    console.log(`[Solutions] Fresh evidence count: ${freshEvidence.length} for scope ${scope}`);
+
     const payload = {
       messages: [
         { role: "system", content: SOLUTION_PROMPT },
@@ -304,6 +306,9 @@ export async function handleSolutions(req: Request): Promise<Response> {
       const response = await kiloRouter.kiloInfer(payload, abortController.signal);
       const content = response.choices?.[0]?.message?.content ?? "";
       console.log(`[Solutions] Kilo AI response length: ${content.length} chars for ${scope}`);
+      if (content.length > 0) {
+        console.log(`[Solutions] Kilo AI response preview: ${content.slice(0, 300)}...`);
+      }
       const parsed = safeParseJson<{ solutions?: unknown[] }>(content);
       // Tolerant: a short but valid AI response is kept and backfilled below.
       aiSolutions = (Array.isArray(parsed?.solutions) ? parsed.solutions : [])
@@ -318,6 +323,8 @@ export async function handleSolutions(req: Request): Promise<Response> {
     const aiCurated = aiSolutions.length > 0;
     const fallback = buildFallbackSolutions(scope, analytics, factors);
     const solutions = [...aiSolutions, ...fallback].slice(0, MAX_SOLUTIONS);
+
+    console.log(`[Solutions] Final solutions: ${solutions.length} (AI: ${aiSolutions.length}, Fallback: ${fallback.length}) for ${scope}`);
 
     await setCache(cacheKey, { solutions, aiCurated } satisfies CachedSolutions, SOLUTIONS_CACHE_MS);
 

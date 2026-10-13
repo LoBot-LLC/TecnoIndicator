@@ -419,7 +419,16 @@ export async function runFactorAnalysis(
         // Allow fallback search results (Playwright/DuckDuckGo) to bypass reputable source filter
         // since they come from web search which may include newer/lesser-known sources
         const isFallbackSource = r.sourceType === "playwright" || r.sourceType === "duckduckgo";
-        return (isFallbackSource || isReputableSource(r.url)) && isRecentPublishedAt(r.publishedAt);
+        const passesReputableFilter = isFallbackSource || isReputableSource(r.url);
+        const passesDateFilter = isRecentPublishedAt(r.publishedAt);
+        // Track filtered-out results for diagnostics
+        if (!passesReputableFilter) {
+          console.warn(`[FactorAnalysis] Filtered out non-reputable/non-fallback result: ${r.title.slice(0, 80)} (${r.url}) source=${r.sourceType}`);
+        }
+        if (!passesDateFilter) {
+          console.warn(`[FactorAnalysis] Filtered out stale result: ${r.title.slice(0, 80)} (${r.url}) publishedAt=${r.publishedAt}`);
+        }
+        return passesReputableFilter && passesDateFilter;
       })
       .slice(0, 15);
 

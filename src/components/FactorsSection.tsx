@@ -204,12 +204,12 @@ export default function FactorsSection({
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
         <Reveal>
           <div className="mb-10 max-w-2xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
-              Key factors & drivers
-            </p>
-            <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              {isOnline ? "AI-Curated Factors" : "Key factors & drivers"}
-            </h2>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
+            Key factors & drivers
+          </p>
+          <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
+            {isOnline ? "AI-Curated Factors" : "Key factors & drivers"}
+          </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               {aiCurated
                 ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."

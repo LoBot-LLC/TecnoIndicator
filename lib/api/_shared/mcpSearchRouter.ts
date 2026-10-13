@@ -90,14 +90,14 @@ export class McpSearchRouter {
   }
 
 /**
- * Perform DuckDuckGo HTML search
- * Uses DuckDuckGo's lite version for simpler parsing
- */
-public async duckduckgoSearch(
-  query: string,
-  limit: number = 10,
-  abortSignal?: AbortSignal
-): Promise<TinyFishSearchResponse | null> {
+   * Perform DuckDuckGo HTML search
+   * Uses DuckDuckGo's lite version for simpler parsing
+   */
+  public async duckduckgoSearch(
+    query: string,
+    limit: number = 10,
+    abortSignal?: AbortSignal
+  ): Promise<TinyFishSearchResponse | null> {
     try {
       const controller = new AbortController();
       const combinedSignal = abortSignal
@@ -135,9 +135,12 @@ public async duckduckgoSearch(
         const html = await response.text();
         const results = this.parseDuckDuckGoResults(html, limit);
         
+        // Set sourceType on all results
+        const resultsWithSource = results.map(r => ({ ...r, sourceType: "duckduckgo" as const }));
+        
         return {
-          results,
-          total: results.length,
+          results: resultsWithSource,
+          total: resultsWithSource.length,
           keyIndex: -2 // Indicates DuckDuckGo source
         };
       } finally {
@@ -151,130 +154,163 @@ public async duckduckgoSearch(
 
   /**
    * Parse DuckDuckGo HTML results
+   * Handles both old (class-based) and new (data-testid-based) DuckDuckGo HTML structures
    */
   private parseDuckDuckGoResults(html: string, limit: number): SearchResult[] {
     const results: SearchResult[] = [];
     
-    // Try multiple regex patterns for different DuckDuckGo HTML structures
-    const patterns = [
-      // Pattern 1: Standard result structure (result__body)
-      /<div class="result__body"[^>]*>[\s\S]*?<a class="result__title"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__url"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g,
-      // Pattern 2: Alternative structure with result__url first
-      /<a class="result__url"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>[\s\S]*?<a class="result__title"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g,
-      // Pattern 3: Simpler pattern for result links
-      /<a class="result__title"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g,
-      // Pattern 4: Very generic pattern for any result link with snippet
-      /<a[^>]*class="[^"]*result__[^"]*"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="[^"]*result__[^"]*"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g,
-    ];
+    // Try to extract results using the NEW data-testid-based structure first
+    // New DDG structure (2024+): <div data-testid="result"> <h2> <a data-testid="result-title-a" href="URL">Title</a> </h2> <div data-result="snippet">Snippet</div> </div>
+    const newContainerRegex = /<div\s[^>]*data-testid=["']result["'][^>]*>([\s\S]*?)<\/div>/gi;
+    let containerMatch;
+    let count = 0;
     
-    for (const resultRegex of patterns) {
-      if (results.length >= limit) break;
+    while ((containerMatch = newContainerRegex.exec(html)) && count < limit && results.length < limit) {
+      const containerHtml = containerMatch[1];
       
-      let match;
-      let count = 0;
-      
-      // Reset regex lastIndex for global regex
-      resultRegex.lastIndex = 0;
-      
-      while ((match = resultRegex.exec(html)) && count < limit && results.length < limit) {
-        try {
-          // Different patterns have different group orders
-          let url, title, resultUrl, snippet;
+      // Extract title link using data-testid="result-title-a" (new style)
+      const titleMatch = containerHtml.match(/<a\s[^>]*data-testid=["']result-title-a["'][^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
+      if (!titleMatch) {
+        // Try fallback: <a> tag with title text in h2 (another new style)
+        const titleFallback = containerHtml.match(/<h2><a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a><\/h2>/i);
+        if (titleFallback) {
+          const url = titleFallback[1];
+          const title = titleFallback[2].replace(/<[^>]*>/g, ' ').trim();
+          const snippet = title; // No snippet in this case
           
-          if (match.length >= 6) {
-            // Pattern 1: url, title, resultUrl, snippet, siteUrl, siteName
-            url = match[1];
-            title = match[2];
-            resultUrl = match[3];
-            snippet = match[4];
-          } else if (match.length >= 5) {
-            // Pattern 2: siteUrl, siteName, url, title, snippet
-            url = match[3];
-            title = match[4];
-            resultUrl = match[1];
-            snippet = match[5] || match[4];
-          } else if (match.length >= 4) {
-            // Pattern 3/4: url, title, resultUrl, snippet
-            url = match[1];
-            title = match[2];
-            resultUrl = match[3];
-            snippet = match[4];
-          } else {
-            continue;
-          }
+          if (!url || url.includes('duckduckgo.com')) continue;
+          if (title.length < 10 || title.length > 200) continue;
           
-          const cleanTitle = title
-            .replace(/<[^>]*>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .substring(0, 200);
-          
-          const cleanSnippet = snippet
-            .replace(/<[^>]*>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .substring(0, 200);
-          
-          const cleanUrl = resultUrl ? this.normalizeUrl(resultUrl) : (url ? this.normalizeUrl(url) : '');
+          const cleanUrl = this.normalizeUrl(url);
           const siteName = cleanUrl ? this.extractSiteName(cleanUrl) : '';
           
-          if (cleanUrl && cleanTitle && cleanSnippet) {
-            // Check for duplicates
-            const isDuplicate = results.some(r => r.url === cleanUrl);
-            if (!isDuplicate) {
-              results.push({
-                position: results.length + 1,
-                site_name: siteName,
-                title: cleanTitle,
-                snippet: cleanSnippet,
-                url: cleanUrl,
-                publishedAt: undefined
-              });
-              count++;
-            }
+          if (!results.some(r => r.url === cleanUrl)) {
+            results.push({
+              position: results.length + 1,
+              site_name: siteName,
+              title: title,
+              snippet: snippet,
+              url: cleanUrl,
+              publishedAt: undefined
+            });
+            count++;
           }
-        } catch (e) {
           continue;
         }
+        // Also try the old style: <a class="result__title">, <a class="result__a">
+        const oldTitleMatch = containerHtml.match(/<(a\.(?:result__title|result__a))[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
+        if (oldTitleMatch) {
+          const url = oldTitleMatch[2];
+          const title = oldTitleMatch[3].replace(/<[^>]*>/g, ' ').trim();
+          const snippet = title;
+          
+          if (!url || url.includes('duckduckgo.com')) continue;
+          if (title.length < 10 || title.length > 200) continue;
+          
+          const cleanUrl = this.normalizeUrl(url);
+          const siteName = cleanUrl ? this.extractSiteName(cleanUrl) : '';
+          
+          if (!results.some(r => r.url === cleanUrl)) {
+            results.push({
+              position: results.length + 1,
+              site_name: siteName,
+              title: title,
+              snippet: snippet,
+              url: cleanUrl,
+              publishedAt: undefined
+            });
+            count++;
+          }
+          continue;
+        }
+        // Still no valid title, skip this container
+        continue;
+      }
+      
+      const url = titleMatch[1];
+      const title = titleMatch[2].replace(/<[^>]*>/g, ' ').trim();
+      if (title.length < 10 || title.length > 200) continue;
+      
+      const cleanUrl = this.normalizeUrl(url);
+      const siteName = cleanUrl ? this.extractSiteName(cleanUrl) : '';
+      
+      // Extract snippet using data-result="snippet" (new style)
+      let snippet = title; // Default to title if no snippet found
+      const snippetMatch = containerHtml.match(/<div\s[^>]*data-result=["']snippet["'][^>]*>([\s\S]*?)<\/div>/i);
+      if (snippetMatch) {
+        snippet = snippetMatch[1].replace(/<[^>]*>/g, ' ').trim().substring(0, 200);
+      } else {
+        // Try fallback: .result__snippet (old style)
+        const oldSnippetMatch = containerHtml.match(/<(?:div|span)\s[^>]*class=["']?result__snippet["'][^>]*>([\s\S]*?)<\/div>/i);
+        if (oldSnippetMatch) {
+          snippet = oldSnippetMatch[1].replace(/<[^>]*>/g, ' ').trim().substring(0, 200);
+        }
+      }
+      
+      const isDuplicate = results.some(r => r.url === cleanUrl);
+      if (!isDuplicate) {
+        results.push({
+          position: results.length + 1,
+          site_name: siteName,
+          title: title,
+          snippet: snippet,
+          url: cleanUrl,
+          publishedAt: undefined
+        });
+        count++;
       }
     }
     
-    // If regex patterns failed, try a more generic approach
+    // Fallback: generic link extraction for old DDG structure
     if (results.length === 0) {
-      // Look for any links that look like search results
-      const genericRegex = /<a[^>]*href="(https?:\/\/[^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
-      let match;
-      let count = 0;
-      while ((match = genericRegex.exec(html)) && count < limit && results.length < limit) {
+      // Extract all <a> tags
+      const linkRegex = /<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+      let linkMatch;
+      let linkCount = 0;
+      
+      while ((linkMatch = linkRegex.exec(html)) && linkCount < limit && results.length < limit) {
         try {
-          const url = match[1];
-          const title = match[2]
-            .replace(/<[^>]*>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
+          const url = linkMatch[1];
+          if (!url || url.includes('duckduckgo.com')) continue;
           
-          // Skip navigation links, ads, etc.
-          if (title.length > 10 && title.length < 200 && 
-              !title.toLowerCase().includes('duckduckgo') &&
-              !title.toLowerCase().includes('privacy') &&
-              !title.toLowerCase().includes('settings') &&
-              !url.includes('duckduckgo.com')) {
-            
-            const cleanUrl = this.normalizeUrl(url);
-            const siteName = this.extractSiteName(cleanUrl);
-            
-            const isDuplicate = results.some(r => r.url === cleanUrl);
-            if (!isDuplicate) {
-              results.push({
-                position: results.length + 1,
-                site_name: siteName,
-                title: title.substring(0, 200),
-                snippet: title.substring(0, 200), // Use title as snippet fallback
-                url: cleanUrl,
-                publishedAt: undefined
-              });
-              count++;
-            }
+          const rawTitle = linkMatch[2];
+          let title = rawTitle
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/&/g, '&')
+            .replace(/</g, '<')
+            .replace(/>/g, '>')
+            .replace(/'/g, "'")
+            .replace(/"/g, '"')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .substring(0, 200);
+          
+          // Skip if title is too short (likely navigation) or too long
+          if (title.length < 10 || title.length > 200) continue;
+          
+          // Skip titles that are clearly not search results
+          const lowerTitle = title.toLowerCase();
+          if (lowerTitle.includes('duckduckgo') || 
+              lowerTitle.includes('privacy') ||
+              lowerTitle.includes('settings') ||
+              lowerTitle.includes('preferences') ||
+              lowerTitle.includes('terms') ||
+              lowerTitle.includes('feedback') ||
+              lowerTitle.includes('help')) continue;
+          
+          const cleanUrl = this.normalizeUrl(url);
+          const siteName = cleanUrl ? this.extractSiteName(cleanUrl) : '';
+          
+          if (!results.some(r => r.url === cleanUrl)) {
+            results.push({
+              position: results.length + 1,
+              site_name: siteName,
+              title: title,
+              snippet: title, // Use title as snippet fallback
+              url: cleanUrl,
+              publishedAt: undefined
+            });
+            linkCount++;
           }
         } catch (e) {
           continue;
@@ -382,9 +418,12 @@ public async duckduckgoSearch(
         
         await browser.close();
         
+        // Set sourceType on all results
+        const resultsWithSource = (results as SearchResult[]).map(r => ({ ...r, sourceType: "playwright" as const }));
+        
         return {
-          results: results as SearchResult[],
-          total: results.length,
+          results: resultsWithSource,
+          total: resultsWithSource.length,
           keyIndex: -3 // Indicates Playwright source
         };
       } catch (error) {

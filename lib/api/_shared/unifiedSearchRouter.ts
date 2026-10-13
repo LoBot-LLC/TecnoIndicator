@@ -188,22 +188,23 @@ export class UnifiedSearchRouter {
     url: string,
     abortSignal?: AbortSignal
   ): Promise<ScrapedContent | null> {
+    this.lastSearchError = null;
+
     // First, try TinyFish scrape (primary)
     const tinyfishResult = await tinyfishRouter.tinyfishScrape(url, abortSignal);
 
-    // Check if we should use fallback
-    const shouldFallback = await this.shouldUseFallback();
-
-    if (!shouldFallback || tinyfishResult) {
-      // TinyFish keys available OR TinyFish succeeded - return result
+    if (tinyfishResult) {
+      // TinyFish scrape succeeded
       this.fallbackTriggered = false;
       this.lastFallbackType = null;
       return tinyfishResult;
     }
 
-    // All TinyFish keys exhausted - trigger fallback
-    this.fallbackTriggered = true;
-    console.warn("All TinyFish keys exhausted, falling back to HTTP/Playwright scrape");
+    // TinyFish scrape failed (returned null) - fall back to HTTP/Playwright regardless of key status.
+    // TinyFish keys may still be valid but the fetch endpoint can fail, so we don't wait for
+    // key exhaustion before using the reliable HTTP/Playwright scrape fallback.
+    this.lastSearchError = `TinyFish scrape failed for "${url}"`;
+    console.warn(`[UnifiedSearch] TinyFish scrape unavailable for "${url}", falling back to HTTP/Playwright`);
 
     // Try HTTP fetch with content extraction (fallback 1)
     const httpResult = await mcpSearchRouter.httpScrape(url, abortSignal);

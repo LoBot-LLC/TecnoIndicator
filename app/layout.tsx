@@ -4,7 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { CurrencyProvider } from "../src/context/CurrencyContext";
 import { ThemeProvider } from "../src/context/ThemeContext";
 import "./globals.css";
-import { Analytics } from "@vercel/analytics/next";
+import VercelAnalytics from "../src/components/VercelAnalytics";
 
 export const metadata: Metadata = {
   title: "TecnoIndicator — Oil, Electricity & Water Price Forecasts",
@@ -75,7 +75,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ThemeProvider>
           <CurrencyProvider>{children}</CurrencyProvider>
         </ThemeProvider>
-        <Analytics />
+        <VercelAnalytics />
       </body>
     </html>
   );

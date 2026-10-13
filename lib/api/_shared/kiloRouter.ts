@@ -509,7 +509,16 @@ await this.refreshKiloModels(true, abortSignal);
       if (availableKeys.length > 0 && configuredKeys.length > 0) {
         throw new Error("No zero-cost Kilo Gateway models available and no fallback models available");
       }
-      throw new Error("No available Kilo Gateway key/model combinations");
+      const configuredKeyCount = this.keyStates.length;
+      const usableKeyCount = this.keyStates.filter(k => k.available && !k.rateLimited).length;
+      const modelCount = this.modelCandidates.length;
+      const zeroCostModelCount = this.modelCandidates.filter(m => m.zeroCostVerified).length;
+      throw new Error(
+        `No available Kilo Gateway key/model combinations. ` +
+        `Configured keys: ${configuredKeyCount}, Usable keys: ${usableKeyCount}, ` +
+        `Total models: ${modelCount}, Zero-cost models: ${zeroCostModelCount}. ` +
+        `Ensure KILO_GATEWAY_KEY_* environment variables are set with valid JWT tokens.`
+      );
     }
 
     // Shuffle keys and models using crypto-secure random

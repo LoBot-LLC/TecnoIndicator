@@ -139,8 +139,7 @@ export async function handleHealth(_req: Request): Promise<Response> {
       kiloStatus.available &&
       kiloStatus.usableKeys > 0 &&
       kiloStatus.zeroCostModels.length > 0 &&
-      searchStatus.available &&
-      searchStatus.usableKeys > 0;
+      (searchStatus.usableKeys > 0 || searchStatus.fallbackAvailable);
 
     const response: HealthResponse = {
       kiloGateway: {

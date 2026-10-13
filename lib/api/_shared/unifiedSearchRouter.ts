@@ -39,11 +39,12 @@ export interface SearchStatus {
  * 
  * Fallback hierarchy:
  * 1. TinyFish API (primary) - with key rotation
- * 2. Playwright MCP-based search (fallback 1) - ONLY when ALL TinyFish keys exhausted
+ * 2. Playwright MCP-based search (fallback 1) - ONLY when ALL TinyFish keys exhausted OR no keys configured
  * 3. DuckDuckGo HTTP search (fallback 2) - ONLY when Playwright also fails
  * 
  * The fallback is ONLY triggered when:
  * - All TinyFish API keys are exhausted (unavailable, rate-limited, or invalid)
+ * - OR no TinyFish API keys are configured at all
  * - Not when a query simply returns no results
  */
 export class UnifiedSearchRouter {
@@ -55,8 +56,10 @@ export class UnifiedSearchRouter {
    */
   private async areAllTinyfishKeysExhausted(): Promise<boolean> {
     const status = await tinyfishRouter.getTinyfishStatus();
-    // All keys exhausted means: configured > 0 but usable == 0
-    return status.configuredKeys > 0 && status.usableKeys === 0;
+    // Fallback should trigger when:
+    // 1. No TinyFish keys are configured at all (configuredKeys === 0), OR
+    // 2. All configured TinyFish keys are exhausted (configuredKeys > 0 but usable === 0)
+    return status.configuredKeys === 0 || (status.configuredKeys > 0 && status.usableKeys === 0);
   }
 
   /**

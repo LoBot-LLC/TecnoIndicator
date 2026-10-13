@@ -51,6 +51,7 @@ export interface SearchStatus {
 export class UnifiedSearchRouter {
   private fallbackTriggered: boolean = false;
   private lastFallbackType: "playwright" | "duckduckgo" | null = null;
+  private lastSearchError: string | null = null;
 
   /**
    * Check if all TinyFish keys are exhausted
@@ -83,13 +84,23 @@ export class UnifiedSearchRouter {
     options: { limit?: number; region?: Region } = {},
     abortSignal?: AbortSignal
   ): Promise<SearchResponse> {
+    this.lastSearchError = null;
+    
     // First, try TinyFish API (primary)
-    const tinyfishResult = await tinyfishRouter.tinyfishSearch(query, options, abortSignal);
+    let tinyfishResult: SearchResponse;
+    try {
+      tinyfishResult = await tinyfishRouter.tinyfishSearch(query, options, abortSignal);
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.warn(`[UnifiedSearch] TinyFish search threw error: ${errMsg}`);
+      tinyfishResult = { results: [], total: 0, keyIndex: -1 };
+      this.lastSearchError = `TinyFish error: ${errMsg}`;
+    }
 
     // Check if we should fall back: keys exhausted OR TinyFish returned no results
     const shouldFallback = await this.shouldUseFallback(tinyfishResult);
 
-    if (!shouldFallback) {
+    if (!shouldFallback && tinyfishResult.results.length > 0) {
       // TinyFish keys are available AND returned results, return them
       this.fallbackTriggered = false;
       this.lastFallbackType = null;
@@ -103,44 +114,69 @@ export class UnifiedSearchRouter {
     // TinyFish keys exhausted OR no results - trigger fallback
     this.fallbackTriggered = true;
     if (tinyfishResult.total === 0 && !await this.areAllTinyfishKeysExhausted()) {
-      console.warn("TinyFish returned no results, falling back to Playwright/DuckDuckGo");
+      console.warn(`[UnifiedSearch] TinyFish returned no results for query "${query}", falling back to Playwright/DuckDuckGo`);
     } else {
-      console.warn("All TinyFish keys exhausted, falling back to Playwright/DuckDuckGo");
+      console.warn(`[UnifiedSearch] All TinyFish keys exhausted for query "${query}", falling back to Playwright/DuckDuckGo`);
     }
 
     // Try Playwright first (fallback 1)
-    const playwrightResult = await mcpSearchRouter.playwrightSearch(
-      query,
-      options.limit ?? 10,
-      abortSignal
-    );
-
-    if (playwrightResult && playwrightResult.results.length > 0) {
-      this.lastFallbackType = "playwright";
-      return {
-        ...playwrightResult,
-        results: playwrightResult.results.map(r => ({ ...r, sourceType: "playwright" as const }))
-      };
+    let playwrightResult: SearchResponse | null = null;
+    try {
+      playwrightResult = await mcpSearchRouter.playwrightSearch(
+        query,
+        options.limit ?? 10,
+        abortSignal
+      );
+      if (playwrightResult && playwrightResult.results.length > 0) {
+        console.log(`[UnifiedSearch] Playwright search succeeded for "${query}" with ${playwrightResult.results.length} results`);
+        this.lastFallbackType = "playwright";
+        return {
+          ...playwrightResult,
+          results: playwrightResult.results.map(r => ({ ...r, sourceType: "playwright" as const }))
+        };
+      } else {
+        console.warn(`[UnifiedSearch] Playwright search returned no results for "${query}"`);
+      }
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.warn(`[UnifiedSearch] Playwright search failed for "${query}": ${errMsg}`);
+      this.lastSearchError = `Playwright error: ${errMsg}`;
     }
 
     // Try DuckDuckGo HTTP (fallback 2)
-    const duckduckgoResult = await mcpSearchRouter.duckduckgoSearch(
-      query,
-      options.limit ?? 10,
-      abortSignal
-    );
-
-    if (duckduckgoResult && duckduckgoResult.results.length > 0) {
-      this.lastFallbackType = "duckduckgo";
-      return {
-        ...duckduckgoResult,
-        results: duckduckgoResult.results.map(r => ({ ...r, sourceType: "duckduckgo" as const }))
-      };
+    let duckduckgoResult: SearchResponse | null = null;
+    try {
+      duckduckgoResult = await mcpSearchRouter.duckduckgoSearch(
+        query,
+        options.limit ?? 10,
+        abortSignal
+      );
+      if (duckduckgoResult && duckduckgoResult.results.length > 0) {
+        console.log(`[UnifiedSearch] DuckDuckGo search succeeded for "${query}" with ${duckduckgoResult.results.length} results`);
+        this.lastFallbackType = "duckduckgo";
+        return {
+          ...duckduckgoResult,
+          results: duckduckgoResult.results.map(r => ({ ...r, sourceType: "duckduckgo" as const }))
+        };
+      } else {
+        console.warn(`[UnifiedSearch] DuckDuckGo search returned no results for "${query}"`);
+      }
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.warn(`[UnifiedSearch] DuckDuckGo search failed for "${query}": ${errMsg}`);
+      this.lastSearchError = `DuckDuckGo error: ${errMsg}`;
     }
 
     // All fallbacks failed - return empty results (callers handle deterministic fallbacks)
-    console.warn("All search methods failed, returning empty results");
+    console.error(`[UnifiedSearch] All search methods failed for query "${query}". Last error: ${this.lastSearchError || 'unknown'}`);
     return { results: [], total: 0, keyIndex: -1 };
+  }
+
+  /**
+   * Get the last search error for diagnostics
+   */
+  getLastSearchError(): string | null {
+    return this.lastSearchError;
   }
 
   /**

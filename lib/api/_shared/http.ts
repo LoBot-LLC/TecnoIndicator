@@ -37,7 +37,7 @@ export const FACTORS_CACHE_MS = 60_000;
  */
 export const FACTORS_WINDOW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Cache version for factor windows - increment to invalidate stale static fallback cache. */
-export const FACTOR_WINDOW_CACHE_VERSION = 3;
+export const FACTOR_WINDOW_CACHE_VERSION = 4;
 export const SEARCH_CACHE_MS = 60_000;
 /** Read AND write TTL for scraped article bodies — they must agree. */
 export const SCRAPE_CACHE_MS = 10 * 60_000;
@@ -46,7 +46,7 @@ export const ACCESS_PROBE_CACHE_MS = 5 * 60_000;
 export const FORECAST_CACHE_MS = 5 * 60_000;
 export const SOLUTIONS_CACHE_MS = 60_000;
 /** Cache version for solutions - increment to invalidate stale fallback cache. */
-export const SOLUTIONS_CACHE_VERSION = 2;
+export const SOLUTIONS_CACHE_VERSION = 3;
 export const MAX_SOLUTIONS = 3;
 export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
 
@@ -149,14 +149,16 @@ export function readConfiguredKeys(
   // otherwise double-count `configuredKeys` and duplicate probe work.
   const seenValues = new Set<string>();
   for (const envName of envNames) {
-    const value = normalizeApiKey(process.env[envName]);
-    if (!value) continue;
-    if (isPlaceholderApiKey(value)) continue;
-    if (seenValues.has(value)) continue;
-    if (options.requireRecognizedFormat && !isRecognizedKiloGatewayKeyFormat(value)) continue;
-    if (options.validator && !options.validator(value)) continue;
-    seenValues.add(value);
-    keys.push({ envName, value });
+    const rawValue = process.env[envName];
+    if (!rawValue) continue;
+    const normalizedValue = normalizeApiKey(rawValue);
+    if (!normalizedValue) continue;
+    if (isPlaceholderApiKey(normalizedValue)) continue;
+    if (seenValues.has(normalizedValue)) continue;
+    if (options.requireRecognizedFormat && !isRecognizedKiloGatewayKeyFormat(normalizedValue)) continue;
+    if (options.validator && !options.validator(normalizedValue)) continue;
+    seenValues.add(normalizedValue);
+    keys.push({ envName, value: normalizedValue });
   }
   return keys;
 }

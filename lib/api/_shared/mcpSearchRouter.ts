@@ -159,9 +159,19 @@ export class McpSearchRouter {
    * <tr> <td>N.</td> <td><a class="result-link" href="...">Title</a></td> </tr>
    * <tr> <td>&nbsp;</td> <td class="result-snippet">Snippet</td> </tr>
    * <tr> <td>&nbsp;</td> <td><span class="link-text">URL</span> <span class="timestamp">date</span></td> </tr>
+   * 
+   * Also handles bot challenge pages gracefully (returns empty results)
    */
   private parseDuckDuckGoResults(html: string, limit: number): SearchResult[] {
     const results: SearchResult[] = [];
+    
+    // First, check if this is a bot challenge page
+    if (html.includes('Unfortunately, bots use DuckDuckGo too') || 
+        html.includes('Please complete the following challenge') ||
+        html.includes('Select all squares containing a duck')) {
+      console.warn("[DuckDuckGo] Bot challenge detected - search blocked by CAPTCHA");
+      return results; // Return empty array gracefully
+    }
     
     // Parse the lite DDG table structure
     // Each result spans 3 rows: title row, snippet row, URL/timestamp row
@@ -266,6 +276,10 @@ export class McpSearchRouter {
         url: cleanUrl,
         publishedAt
       });
+    }
+    
+    if (results.length === 0 && titleMatches.length === 0) {
+      console.warn("[DuckDuckGo] No results parsed from HTML (may be empty or unexpected structure)");
     }
     
     return results.slice(0, limit);

@@ -194,6 +194,182 @@ function buildFallbackSolutions(
   ];
 }
 
+/**
+ * Build dynamic fallback solutions from fresh evidence when AI inference is unavailable.
+ * Uses the actual search evidence to create contextually relevant solution titles and actions.
+ */
+function buildDynamicFallbackSolutions(
+  scope: RegionId,
+  analytics: Record<string, unknown>,
+  factors: Factor[],
+  evidence: unknown[]
+): Solution[] {
+  const now = new Date().toISOString();
+  const regionName = scope;
+  const fuelLevy = (analytics.fuelLevy as number) ?? 0;
+  const elecIdx = (analytics.electricityTariffAdjustmentIndex as number) ?? 0;
+  const waterIdx = (analytics.waterScarcityAdjustedPriceIndex as number) ?? 0;
+  
+  // Extract key themes from evidence
+  const evidenceText = evidence
+    .map(e => {
+      if (typeof e === 'object' && e !== null) {
+        const obj = e as Record<string, unknown>;
+        return `${obj.title || ''} ${obj.snippet || ''}`.toLowerCase();
+      }
+      return String(e).toLowerCase();
+    })
+    .join(' ');
+  
+  const hasOilTerms = evidenceText.includes('oil') || evidenceText.includes('fuel') || evidenceText.includes('crude') || evidenceText.includes('opec');
+  const hasElectricityTerms = evidenceText.includes('electricity') || evidenceText.includes('power') || evidenceText.includes('grid') || evidenceText.includes('renewable');
+  const hasWaterTerms = evidenceText.includes('water') || evidenceText.includes('drought') || evidenceText.includes('scarcity') || evidenceText.includes('desalination');
+  const hasGeopoliticalTerms = evidenceText.includes('geopolitical') || evidenceText.includes('sanction') || evidenceText.includes('conflict') || evidenceText.includes('russia') || evidenceText.includes('middle east');
+  const hasDemandTerms = evidenceText.includes('demand') || evidenceText.includes('china') || evidenceText.includes('india') || evidenceText.includes('growth');
+  
+  const solutions: Solution[] = [];
+  
+  // Solution 1: Fuel/Oil focused
+  if (hasOilTerms || fuelLevy !== 0) {
+    let title = "Lock in fuel costs via fixed-price hedging";
+    let summary = `Based on ${regionName} market analytics (fuelLevy ${fuelLevy >= 0 ? "+" : ""}${fuelLevy}, electricity index ${elecIdx >= 0 ? "+" : ""}${elecIdx}), hedge exposure to ${fuelLevy > 0 ? "rising" : "volatile"} fuel costs using fixed-price contracts or financial swaps. Source from diversified suppliers to mitigate regional supply disruptions. Current analytics: ${analytics.dataSource ?? "benchmark data"}.`;
+    let actions = [
+      "Secure fixed-price fuel contracts for 60-80% of Q4 2026 volume",
+      "Establish secondary supplier agreements outside primary delivery corridors",
+      "Monitor regional inventory levels weekly to adjust procurement timing",
+      "Use futures or swaps to hedge remaining variable exposure",
+    ];
+    
+    if (hasGeopoliticalTerms) {
+      title = "Mitigate geopolitical fuel supply risks";
+      summary = `Geopolitical tensions detected in ${regionName} energy markets. ${summary}`;
+      actions = [
+        "Diversify fuel suppliers across multiple geographic regions",
+        "Build strategic fuel reserves for 30-60 days of operations",
+        "Negotiate force majeure clauses in supply contracts",
+        "Monitor Strait of Hormuz and other chokepoint risks daily",
+      ];
+    } else if (hasDemandTerms) {
+      title = "Optimize fuel procurement for demand growth";
+      summary = `Rising demand from key markets (China, India) driving ${regionName} fuel prices. ${summary}`;
+      actions = [
+        "Lock in long-term supply agreements with volume discounts",
+        "Invest in fuel efficiency to reduce per-unit consumption",
+        "Explore alternative fuels (LNG, biofuels) for flexibility",
+        "Coordinate procurement timing with seasonal demand cycles",
+      ];
+    }
+    
+    solutions.push({
+      id: `solution-dynamic-${Date.now()}-0`,
+      title,
+      summary,
+      actions,
+      commodities: ["oil"],
+      regions: [scope],
+      scope,
+      relatedFactors: factors.slice(0, 4).map((f) => f.id),
+      confidence: 70,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  
+  // Solution 2: Electricity focused
+  if (hasElectricityTerms || elecIdx !== 0) {
+    let title = elecIdx > 0 ? "Reduce electricity demand during peak pricing windows" : "Stabilize electricity procurement with flexible contracts";
+    let summary = `Electricity tariff adjustment index is ${elecIdx >= 0 ? "+" : ""}${elecIdx} for ${regionName}. ${elecIdx > 0 ? "Shift energy-intensive operations to off-peak hours and invest in demand response." : "Lock in flexible contracts that track real-time pricing to benefit from low-demand periods."}`;
+    let actions = [
+      "Install smart energy management systems to optimize load scheduling",
+      "Negotiate time-of-use electricity contracts with tiered pricing",
+      "Deploy on-site power generation (solar/diesel backup) for peak shaving",
+      "Join regional demand response programs for additional revenue",
+    ];
+    
+    if (hasElectricityTerms && evidenceText.includes('renewable')) {
+      title = "Accelerate renewable energy integration";
+      summary = `Renewable energy buildout detected in ${regionName} grid. ${summary} Consider PPAs and on-site generation.`;
+      actions = [
+        "Sign corporate PPAs for solar/wind to lock in low rates",
+        "Invest in on-site solar with battery storage",
+        "Participate in grid flexibility markets",
+        "Electrify fossil-fuel processes where feasible",
+      ];
+    }
+    
+    solutions.push({
+      id: `solution-dynamic-${Date.now()}-1`,
+      title,
+      summary,
+      actions,
+      commodities: ["electricity"],
+      regions: [scope],
+      scope,
+      relatedFactors: factors.slice(4, 8).map((f) => f.id),
+      confidence: 70,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  
+  // Solution 3: Water focused
+  if (hasWaterTerms || waterIdx !== 0) {
+    let title = waterIdx > 0.5
+      ? "Secure alternative water sources before scarcity impacts operations"
+      : "Implement water recycling to reduce long-term supply risk";
+    let summary = `Water scarcity adjusted price index is ${waterIdx >= 0 ? "+" : ""}${waterIdx} for ${regionName}. ${waterIdx > 0.5 ? "Drought conditions and rising costs indicate need for immediate alternative sourcing." : "Modest water cost changes allow proactive investment in efficiency."} ${factors.length > 0 ? `Key factors: ${factors.map((f) => f.name).join(", ")}.` : ""}`;
+    let actions = [
+      "Conduct water audit to identify recycling and efficiency opportunities",
+      "Negotiate long-term water supply contracts with volume discounts",
+      "Invest in on-site water treatment or rainwater harvesting systems",
+      "Explore regulatory incentives for water conservation programs",
+    ];
+    
+    if (hasWaterTerms && evidenceText.includes('desalination')) {
+      title = "Invest in desalination and water reuse infrastructure";
+      summary = `Desalination and reuse technology advances detected in ${regionName}. ${summary}`;
+      actions = [
+        "Evaluate desalination for coastal operations",
+        "Implement industrial water recycling systems",
+        "Partner with municipal water utilities for treated effluent",
+        "Monitor regulatory changes on water reuse permits",
+      ];
+    }
+    
+    solutions.push({
+      id: `solution-dynamic-${Date.now()}-2`,
+      title,
+      summary,
+      actions,
+      commodities: ["water"],
+      regions: [scope],
+      scope,
+      relatedFactors: factors.slice(0, 4).map((f) => f.id),
+      confidence: 70,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  
+  // If we didn't generate enough solutions, fill with static fallbacks
+  if (solutions.length < 3) {
+    const staticFallbacks = buildFallbackSolutions(scope, analytics, factors);
+    for (const fallback of staticFallbacks) {
+      if (solutions.length >= 3) break;
+      // Avoid duplicates by title
+      if (!solutions.some(s => s.title === fallback.title)) {
+        solutions.push({
+          ...fallback,
+          id: `solution-dynamic-${Date.now()}-${solutions.length}`,
+          confidence: 65,
+        });
+      }
+    }
+  }
+  
+  return solutions.slice(0, 3);
+}
+
 async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Promise<unknown[]> {
   const evidenceCacheKey = `solutions:evidence:${scope}`;
   const cached = await getCache<unknown[]>(evidenceCacheKey, EVIDENCE_CACHE_MS);
@@ -271,8 +447,8 @@ export async function handleSolutions(req: Request): Promise<Response> {
     };
   }
 
+  let freshEvidence: unknown[] = [];
   try {
-    let freshEvidence: unknown[] = [];
     try {
       freshEvidence = await fetchFreshEvidence(scope, abortController.signal);
     } catch (error) {
@@ -301,6 +477,7 @@ export async function handleSolutions(req: Request): Promise<Response> {
     };
 
     let aiSolutions: Solution[] = [];
+    let aiFailed = false;
     try {
       console.log(`[Solutions] Calling Kilo AI inference for ${scope}...`);
       const response = await kiloRouter.kiloInfer(payload, abortController.signal);
@@ -317,14 +494,31 @@ export async function handleSolutions(req: Request): Promise<Response> {
         .slice(0, MAX_SOLUTIONS);
       console.log(`[Solutions] Parsed ${aiSolutions.length} AI solutions for ${scope}`);
     } catch (error) {
-      console.error("[Solutions] Kilo inference failed, using deterministic fallback:", error);
+      console.warn(`[Solutions] Kilo inference failed for ${scope}: ${error instanceof Error ? error.message : String(error)}. Using dynamic fallback from search evidence.`);
+      aiFailed = true;
     }
 
-    const aiCurated = aiSolutions.length > 0;
-    const fallback = buildFallbackSolutions(scope, analytics, factors);
-    const solutions = [...aiSolutions, ...fallback].slice(0, MAX_SOLUTIONS);
+    let solutions: Solution[];
+    let aiCurated: boolean;
+    
+    if (!aiFailed && aiSolutions.length > 0) {
+      // AI succeeded - use AI solutions, backfill with static fallbacks if needed
+      const fallback = buildFallbackSolutions(scope, analytics, factors);
+      solutions = [...aiSolutions, ...fallback].slice(0, MAX_SOLUTIONS);
+      aiCurated = true;
+    } else if (freshEvidence.length > 0) {
+      // AI failed but we have search evidence - use dynamic fallback
+      console.log(`[Solutions] Generating dynamic fallback solutions from ${freshEvidence.length} evidence items for ${scope}`);
+      solutions = buildDynamicFallbackSolutions(scope, analytics, factors, freshEvidence);
+      aiCurated = false;
+    } else {
+      // Both AI and search failed - use static fallback
+      console.warn(`[Solutions] Both AI and search failed for ${scope}, using static fallbacks`);
+      solutions = buildFallbackSolutions(scope, analytics, factors);
+      aiCurated = false;
+    }
 
-    console.log(`[Solutions] Final solutions: ${solutions.length} (AI: ${aiSolutions.length}, Fallback: ${fallback.length}) for ${scope}`);
+    console.log(`[Solutions] Final solutions: ${solutions.length} (AI: ${aiCurated ? aiSolutions.length : 0}, Dynamic: ${!aiCurated && freshEvidence.length > 0 ? solutions.length : 0}, Static: ${!aiCurated && freshEvidence.length === 0 ? solutions.length : 0}) for ${scope}`);
 
     await setCache(cacheKey, { solutions, aiCurated } satisfies CachedSolutions, SOLUTIONS_CACHE_MS);
 
@@ -338,22 +532,36 @@ export async function handleSolutions(req: Request): Promise<Response> {
         updatedAt: new Date().toISOString(),
         ...(aiCurated
           ? {}
-          : { error: "No AI-curated solutions; static fallbacks returned" }),
+          : freshEvidence.length > 0
+            ? { error: "AI curation unavailable; dynamic fallbacks generated from search evidence" }
+            : { error: "No AI-curated solutions; static fallbacks returned" }),
       },
       { status: 200 },
     );
   } catch (error) {
     console.error("Solutions error:", error);
-    const fallback = buildFallbackSolutions(scope, analytics, factors);
+    // Try dynamic fallback if we have evidence
+    let solutions: Solution[];
+    if (freshEvidence.length > 0) {
+      try {
+        solutions = buildDynamicFallbackSolutions(scope, analytics, factors, freshEvidence);
+      } catch {
+        solutions = buildFallbackSolutions(scope, analytics, factors);
+      }
+    } else {
+      solutions = buildFallbackSolutions(scope, analytics, factors);
+    }
     return Response.json(
       {
-        solutions: fallback,
+        solutions,
         scope,
-        count: fallback.length,
+        count: solutions.length,
         aiCurated: false,
         cacheKey: "solutions:error",
         updatedAt: new Date().toISOString(),
-        error: "Solutions temporarily unavailable; static fallbacks returned",
+        error: freshEvidence.length > 0 
+          ? "Solutions error; dynamic fallbacks generated from search evidence" 
+          : "Solutions temporarily unavailable; static fallbacks returned",
       },
       { status: 200 },
     );

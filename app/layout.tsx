@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { Analytics } from "@vercel/analytics/next";
 import { CurrencyProvider } from "../src/context/CurrencyContext";
 import { ThemeProvider } from "../src/context/ThemeContext";
 import "./globals.css";

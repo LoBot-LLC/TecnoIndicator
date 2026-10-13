@@ -1,10 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
 import { CurrencyProvider } from "../src/context/CurrencyContext";
 import { ThemeProvider } from "../src/context/ThemeContext";
 import "./globals.css";
+import VercelAnalytics from "../src/components/VercelAnalytics";
 
 export const metadata: Metadata = {
   title: "TecnoIndicator — Oil, Electricity & Water Price Forecasts",
@@ -75,8 +74,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ThemeProvider>
           <CurrencyProvider>{children}</CurrencyProvider>
         </ThemeProvider>
-        <Analytics />
-        <SpeedInsights />
+        <VercelAnalytics />
       </body>
     </html>
   );

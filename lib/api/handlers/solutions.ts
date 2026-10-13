@@ -1,7 +1,7 @@
 import { kiloRouter } from "../_shared/kiloRouter";
 import { unifiedSearchRouter } from "../_shared/unifiedSearchRouter";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
-import { MAX_SOLUTIONS, SOLUTIONS_CACHE_MS } from "../_shared/http";
+import { MAX_SOLUTIONS, SOLUTIONS_CACHE_MS, SOLUTIONS_CACHE_VERSION } from "../_shared/http";
 import { getCache, setCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
 import { safeParseJson } from "../_shared/validation";
@@ -407,7 +407,7 @@ export async function handleSolutions(req: Request): Promise<Response> {
   const regionParam = url.searchParams.get("region");
   const isGlobal = regionParam === null || regionParam === "";
   const scope: RegionId = isGlobal ? "global" : isValidRegionId(regionParam) ? regionParam : "global";
-  const cacheKey = `solutions:${scope}`;
+  const cacheKey = `solutions:v${SOLUTIONS_CACHE_VERSION}:${scope}`;
 
   if (!force) {
     const cached = await getCache<CachedSolutions>(cacheKey, SOLUTIONS_CACHE_MS);
@@ -498,8 +498,8 @@ export async function handleSolutions(req: Request): Promise<Response> {
       aiFailed = true;
     }
 
-    let solutions: Solution[];
     let aiCurated: boolean;
+    let solutions: Solution[] = [];
     
     if (!aiFailed && aiSolutions.length > 0) {
       // AI succeeded - use AI solutions, backfill with static fallbacks if needed
@@ -551,17 +551,15 @@ export async function handleSolutions(req: Request): Promise<Response> {
     } else {
       solutions = buildFallbackSolutions(scope, analytics, factors);
     }
-    return Response.json(
+return Response.json(
       {
         solutions,
         scope,
         count: solutions.length,
         aiCurated: false,
-        cacheKey: "solutions:error",
+        cacheKey: `solutions:v${SOLUTIONS_CACHE_VERSION}:error`,
         updatedAt: new Date().toISOString(),
-        error: freshEvidence.length > 0 
-          ? "Solutions error; dynamic fallbacks generated from search evidence" 
-          : "Solutions temporarily unavailable; static fallbacks returned",
+        error: "Solutions temporarily unavailable; static fallbacks returned",
       },
       { status: 200 },
     );

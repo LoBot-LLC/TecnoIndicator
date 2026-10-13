@@ -492,8 +492,18 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
  * A factor that is re-curated under the same name keeps its original `id` and
  * `createdAt`, so its age stays meaningful; only genuinely new reasons push the
  * oldest ones out of the window.
+ * 
+ * When `forceReplace` is true (e.g., when using dynamic fallback because AI failed),
+ * the existing window is completely replaced by incoming factors to avoid
+ * mixing stale static fallbacks with new dynamic factors.
  */
-export function mergeRollingWindow(existing: Factor[], incoming: Factor[]): Factor[] {
+export function mergeRollingWindow(existing: Factor[], incoming: Factor[], forceReplace: boolean = false): Factor[] {
+  if (forceReplace) {
+    // When AI failed and we're using dynamic fallback, completely replace
+    // the existing window to avoid mixing stale static fallbacks
+    return incoming.slice(0, FACTOR_COUNT);
+  }
+  
   const priorByName = new Map<string, Factor>();
   for (const factor of existing) {
     const key = normalizeFactorName(factor.name);
@@ -682,7 +692,7 @@ export async function runFactorAnalysis(
     console.log(`[FactorAnalysis] Generating dynamic fallback factors from ${excerpts.length} search excerpts for ${scope}`);
     const dynamicFallbacks = buildDynamicFallbackFactors(scope, excerpts, analytics);
     return {
-      factors: mergeRollingWindow(existing, dynamicFallbacks),
+      factors: mergeRollingWindow(existing, dynamicFallbacks, true), // forceReplace: true to avoid mixing static fallbacks
       aiCurated: false,
       updatedAt: new Date().toISOString(),
     };
@@ -695,7 +705,7 @@ export async function runFactorAnalysis(
       try {
         const dynamicFallbacks = buildDynamicFallbackFactors(scope, candidates, analytics);
         return {
-          factors: mergeRollingWindow(existing, dynamicFallbacks),
+          factors: mergeRollingWindow(existing, dynamicFallbacks, true), // forceReplace: true
           aiCurated: false,
           updatedAt: new Date().toISOString(),
         };

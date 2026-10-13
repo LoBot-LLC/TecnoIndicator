@@ -36,6 +36,8 @@ export const FACTORS_CACHE_MS = 60_000;
  * thrown away between cron runs and the oldest reason could never be evicted.
  */
 export const FACTORS_WINDOW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Cache version for factor windows - increment to invalidate stale static fallback cache. */
+export const FACTOR_WINDOW_CACHE_VERSION = 3;
 export const SEARCH_CACHE_MS = 60_000;
 /** Read AND write TTL for scraped article bodies — they must agree. */
 export const SCRAPE_CACHE_MS = 10 * 60_000;
@@ -43,6 +45,8 @@ export const MODEL_CACHE_MS = 60_000;
 export const ACCESS_PROBE_CACHE_MS = 5 * 60_000;
 export const FORECAST_CACHE_MS = 5 * 60_000;
 export const SOLUTIONS_CACHE_MS = 60_000;
+/** Cache version for solutions - increment to invalidate stale fallback cache. */
+export const SOLUTIONS_CACHE_VERSION = 2;
 export const MAX_SOLUTIONS = 3;
 export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
 
@@ -53,9 +57,11 @@ export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
  * (solutions, forecasts) uses this scheme, so the reasons the UI shows are
  * exactly the reasons the solutions are generated from. `scope` is "global" or
  * a region id.
+ * 
+ * Includes a version number to invalidate stale cache when the factor generation logic changes.
  */
 export function factorCacheKey(scope: RegionId): string {
-  return `dynamic-factors:${scope}`;
+  return `dynamic-factors:v${FACTOR_WINDOW_CACHE_VERSION}:${scope}`;
 }
 
 /** Canonical cache key for the analytics snapshot of a scope. */

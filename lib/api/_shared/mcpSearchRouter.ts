@@ -193,6 +193,8 @@ export class McpSearchRouter {
         .replace(/>/g, '>')
         .replace(/'/g, "'")
         .replace(/"/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&nbsp;/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
         .substring(0, 200);
@@ -214,6 +216,8 @@ export class McpSearchRouter {
         .replace(/>/g, '>')
         .replace(/'/g, "'")
         .replace(/"/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&nbsp;/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
         .substring(0, 200);

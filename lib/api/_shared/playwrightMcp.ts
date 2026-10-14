@@ -81,7 +81,17 @@ async function getBrowser(): Promise<import("playwright-core").Browser> {
         const execDir = (await import("path")).dirname(executablePath);
 
         // CRITICAL: Set LD_LIBRARY_PATH so Chromium can find libraries
+        // @sparticuz/chromium extracts libraries to the same directory as the executable
         process.env.LD_LIBRARY_PATH = execDir;
+
+        // Also add common library paths
+        const additionalPaths = [
+          "/lib/x86_64-linux-gnu",
+          "/usr/lib/x86_64-linux-gnu",
+          "/lib64",
+          "/usr/lib64",
+        ];
+        process.env.LD_LIBRARY_PATH = [execDir, ...additionalPaths].join(":");
 
         return chromium.launch({
           args: (chromiumPack as any).args,
@@ -89,7 +99,7 @@ async function getBrowser(): Promise<import("playwright-core").Browser> {
           headless: true,
         });
       } else {
-        // Local development - use system Chromium
+        // Local development - use system Chromium (installed via postinstall)
         return chromium.launch({
           args: [
             "--disable-dev-shm-usage",

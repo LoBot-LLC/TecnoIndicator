@@ -26,7 +26,21 @@ export interface DuckDuckGoStatus {
 
 // Use DuckDuckGo Lite endpoint - more scraper-tolerant and lightweight
 const DUCKDUCKGO_LITE_URL = "https://lite.duckduckgo.com/lite/";
+// Also try the HTML endpoint as fallback
+const DUCKDUCKGO_HTML_URL = "https://html.duckduckgo.com/html/";
 const SEARCH_TIMEOUT_MS = Number(process.env.DUCKDUCKGO_SEARCH_TIMEOUT_MS ?? 10000);
+
+// Rotating user agents to avoid bot detection
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+];
+
+function getRandomUserAgent(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
 
 let _status: DuckDuckGoStatus = {
   available: true,
@@ -46,6 +60,16 @@ function buildSearchUrl(query: string, region?: Region): string {
     // Note: lite endpoint doesn't use 'ia' parameter
   });
   return `${DUCKDUCKGO_LITE_URL}?${params.toString()}`;
+}
+
+function buildHtmlSearchUrl(query: string, region?: Region): string {
+  const params = new URLSearchParams({
+    q: query,
+    kl: regionToDuckDuckGoRegion(region),
+    df: "2026-01..2026-12",
+    ia: "web",
+  });
+  return `${DUCKDUCKGO_HTML_URL}?${params.toString()}`;
 }
 
 function regionToDuckDuckGoRegion(region?: Region): string {
@@ -76,10 +100,17 @@ async function fetchHtml(url: string, abortSignal?: AbortSignal): Promise<string
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": getRandomUserAgent(),
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
       },
       signal: combinedSignal,
     });
@@ -197,6 +228,68 @@ function parseSearchResults(html: string, limit: number): SearchResult[] {
   return results;
 }
 
+// Parse classic DuckDuckGo HTML structure (https://html.duckduckgo.com/html/)
+function parseClassicDuckDuckGo(html: string, limit: number): SearchResult[] {
+  const results: SearchResult[] = [];
+
+  // Classic DuckDuckGo HTML structure:
+  // <div class="result results_links results_links_deep web-result">
+  //   <div class="result__body">
+  //     <h2 class="result__title">
+  //       <a class="result__a" href="REDIRECT_URL">Title Text</a>
+  //     </h2>
+  //     <div class="result__extras">
+  //       <span class="result__url">display.url.com</span>
+  //     </div>
+  //     <a class="result__snippet">Snippet text...</a>
+  //   </div>
+  // </div>
+
+  const tagRegex = /<[^>]*>/g;
+  const entityRegex = /&[a-z]+;/gi;
+  const nbspRegex = /\u00a0/g;
+
+  // Extract result containers
+  const resultRegex = /<div class="result[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?=<div class="result|$)/g;
+  const titleRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/;
+  const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/;
+
+  let match;
+  let position = 0;
+
+  while ((match = resultRegex.exec(html)) !== null && position < limit) {
+    const resultHtml = match[1];
+
+    const titleMatch = titleRegex.exec(resultHtml);
+    const snippetMatch = snippetRegex.exec(resultHtml);
+
+    if (titleMatch) {
+      const rawUrl = titleMatch[1];
+      const title = titleMatch[2].replace(tagRegex, "").replace(entityRegex, "").replace(nbspRegex, " ").trim();
+      const snippet = snippetMatch?.[1]?.replace(tagRegex, "").replace(entityRegex, "").replace(nbspRegex, " ").trim() ?? "";
+
+      const resolvedUrl = resolveDuckDuckGoUrl(rawUrl);
+
+      let site_name = "";
+      try {
+        site_name = new URL(resolvedUrl).hostname.replace("www.", "");
+      } catch {
+        site_name = "";
+      }
+
+      results.push({
+        position: ++position,
+        site_name,
+        title,
+        snippet,
+        url: resolvedUrl,
+      });
+    }
+  }
+
+  return results;
+}
+
 export class DuckDuckGoSearch {
   private static instance: DuckDuckGoSearch;
 
@@ -218,25 +311,51 @@ export class DuckDuckGoSearch {
     options: { limit?: number; region?: Region } = {}
   ): Promise<{ results: SearchResult[]; total: number; source: "duckduckgo" }> {
     const limit = options.limit ?? 10;
-    const searchUrl = buildSearchUrl(query, options.region);
 
-    try {
-      const html = await fetchHtml(searchUrl);
-      const results = parseSearchResults(html, limit);
+    // Try both endpoints: Lite first (lighter), then HTML as fallback
+    const endpoints = [
+      { name: "lite", url: buildSearchUrl(query, options.region) },
+      { name: "html", url: buildHtmlSearchUrl(query, options.region) },
+    ];
 
-      // Check for challenge page (bot detection)
-      if (results.length === 0 && html.includes("bots use DuckDuckGo")) {
-        throw new Error("DuckDuckGo challenge page detected (bot detection)");
+    let lastError: Error | null = null;
+
+    for (const endpoint of endpoints) {
+      try {
+        const html = await fetchHtml(endpoint.url);
+        const results = endpoint.name === "lite"
+          ? parseSearchResults(html, limit)
+          : parseClassicDuckDuckGo(html, limit);
+
+        // Check for challenge page (bot detection)
+        const isChallenge = results.length === 0 && (
+          html.includes("bots use DuckDuckGo") ||
+          html.includes("challenge") ||
+          html.includes("captcha") ||
+          html.includes("Please verify you are human")
+        );
+
+        if (isChallenge) {
+          lastError = new Error(`DuckDuckGo ${endpoint.name} challenge page detected (bot detection)`);
+          continue; // Try next endpoint
+        }
+
+        if (results.length > 0) {
+          updateStatus({ lastError: null, lastErrorAt: null });
+          return { results, total: results.length, source: "duckduckgo" };
+        }
+        // No results but not a challenge - try next endpoint
+        lastError = new Error(`DuckDuckGo ${endpoint.name} returned 0 results`);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
       }
-
-      updateStatus({ lastError: null, lastErrorAt: null });
-      return { results, total: results.length, source: "duckduckgo" };
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      updateStatus({ lastError: err.message, lastErrorAt: new Date().toISOString() });
-      console.error("DuckDuckGo search failed:", err.message);
-      return { results: [], total: 0, source: "duckduckgo" };
     }
+
+    // All endpoints failed
+    const err = lastError ?? new Error("DuckDuckGo search failed: all endpoints exhausted");
+    updateStatus({ lastError: err.message, lastErrorAt: new Date().toISOString() });
+    console.error("DuckDuckGo search failed:", err.message);
+    return { results: [], total: 0, source: "duckduckgo" };
   }
 
   /**

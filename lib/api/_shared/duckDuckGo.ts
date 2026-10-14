@@ -2,10 +2,10 @@ import type { Region } from "./regions";
 
 /**
  * DuckDuckGo HTTP Search
- * 
+ *
  * A simple HTTP-based web search using DuckDuckGo's HTML endpoint.
  * Used as the final fallback when both TinyFish API and Playwright MCP fail.
- * 
+ *
  * No browser required - pure HTTP requests with HTML parsing.
  */
 
@@ -24,7 +24,8 @@ export interface DuckDuckGoStatus {
   lastErrorAt: string | null;
 }
 
-const DUCKDUCKGO_HTML_URL = "https://lite.duckduckgo.com/lite/";
+// Use DuckDuckGo Lite endpoint - more scraper-tolerant and lightweight
+const DUCKDUCKGO_LITE_URL = "https://lite.duckduckgo.com/lite/";
 const SEARCH_TIMEOUT_MS = Number(process.env.DUCKDUCKGO_SEARCH_TIMEOUT_MS ?? 10000);
 
 let _status: DuckDuckGoStatus = {
@@ -42,9 +43,9 @@ function buildSearchUrl(query: string, region?: Region): string {
     q: query,
     kl: regionToDuckDuckGoRegion(region),
     df: "2026-01..2026-12",
-    ia: "web",
+    // Note: lite endpoint doesn't use 'ia' parameter
   });
-  return `${DUCKDUCKGO_HTML_URL}?${params.toString()}`;
+  return `${DUCKDUCKGO_LITE_URL}?${params.toString()}`;
 }
 
 function regionToDuckDuckGoRegion(region?: Region): string {
@@ -67,7 +68,7 @@ function regionToDuckDuckGoRegion(region?: Region): string {
 async function fetchHtml(url: string, abortSignal?: AbortSignal): Promise<string> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
-  
+
   const combinedSignal = abortSignal
     ? combineAbortSignals([abortSignal, controller.signal])
     : controller.signal;
@@ -107,87 +108,90 @@ function combineAbortSignals(signals: AbortSignal[]): AbortSignal {
   return controller.signal;
 }
 
+function resolveDuckDuckGoUrl(href: string): string {
+  // DuckDuckGo Lite wraps targets in a redirect like
+  // //duckduckgo.com/l/?uddg=<percent-encoded-url>&rut=...
+  // We pull the uddg parameter back out.
+  try {
+    const parsed = new URL(href, "https://duckduckgo.com");
+    const uddg = parsed.searchParams.get("uddg");
+    if (uddg) {
+      return decodeURIComponent(uddg);
+    }
+    // Protocol-relative URLs (//example.com) get https: prefix
+    if (href.startsWith("//")) {
+      return "https:" + href;
+    }
+    return href;
+  } catch {
+    return href;
+  }
+}
+
 function parseSearchResults(html: string, limit: number): SearchResult[] {
   const results: SearchResult[] = [];
-  
-  // DuckDuckGo Lite HTML structure: table rows with links
-  // Each result is in a table row: <tr> <td> <a href="...">Title</a> </td> <td>Snippet</td> </tr>
-  const rowRegex = /<tr>\s*<td[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>\s*<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<\/tr>/gi;
+
+  // DuckDuckGo Lite HTML structure (as of 2025-2026):
+  // <table>
+  //   <tr><td colspan="2"><b><a href="DDG-REDIRECT">Title</a></b></td></tr>
+  //   <tr>
+  //     <td valign="top">&nbsp;</td>
+  //     <td valign="top">Snippet text. <span class="link-text">display.url</span></td>
+  //   </tr>
+  //   <tr><td colspan="2"><hr/></td></tr>
+  // </table>
+  //
+  // Title links: <b><a href="...">Title</a></b>
+  // Snippets: <td valign="top"> with substantial content (filter out &nbsp; padding cells)
+
   const tagRegex = /<[^>]*>/g;
   const entityRegex = /&[a-z]+;/gi;
+  const nbspRegex = /\u00a0/g;
 
+  // Extract all title links (inside <b><a href="...">)
+  const titleLinkRegex = /<b>\s*<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>\s*<\/b>/gi;
+  const titleMatches: Array<{ href: string; title: string }> = [];
   let match;
-  let position = 0;
-  
-  while ((match = rowRegex.exec(html)) !== null && position < limit) {
-    const rawUrl = match[1];
-    const title = match[2].replace(tagRegex, "").replace(entityRegex, "").trim();
-    const snippet = match[3].replace(tagRegex, "").replace(entityRegex, "").trim();
-    
-    if (!title) continue;
-    
+  while ((match = titleLinkRegex.exec(html)) !== null) {
+    const href = match[1];
+    const title = match[2].replace(tagRegex, "").replace(entityRegex, "").replace(nbspRegex, " ").trim();
+    if (title) {
+      titleMatches.push({ href, title });
+    }
+  }
+
+  // Extract all snippet cells (td[valign="top"] with substantial content)
+  const snippetRegex = /<td[^>]*valign=["']top["'][^>]*>([\s\S]*?)<\/td>/gi;
+  const snippets: string[] = [];
+  while ((match = snippetRegex.exec(html)) !== null) {
+    const content = match[1].replace(tagRegex, "").replace(entityRegex, "").replace(nbspRegex, " ").trim();
+    // Filter out padding cells (only &nbsp; or empty)
+    if (content.length > 2 && content !== "\u00a0") {
+      snippets.push(content);
+    }
+  }
+
+  // Pair titles with snippets (they appear in document order: title, then snippet)
+  const maxPairs = Math.min(titleMatches.length, snippets.length, limit);
+  for (let i = 0; i < maxPairs; i++) {
+    const { href, title } = titleMatches[i];
+    const snippet = snippets[i] ?? "";
+    const resolvedUrl = resolveDuckDuckGoUrl(href);
+
     let site_name = "";
     try {
-      site_name = new URL(rawUrl).hostname.replace("www.", "");
+      site_name = new URL(resolvedUrl).hostname.replace("www.", "");
     } catch {
       site_name = "";
     }
-    
+
     results.push({
-      position: ++position,
+      position: i + 1,
       site_name,
       title,
       snippet,
-      url: rawUrl,
+      url: resolvedUrl,
     });
-  }
-  
-  // Fallback: try to parse classic DuckDuckGo HTML if lite returns no results
-  if (results.length === 0) {
-    return parseClassicDuckDuckGo(html, limit);
-  }
-  
-  return results;
-}
-
-function parseClassicDuckDuckGo(html: string, limit: number): SearchResult[] {
-  const results: SearchResult[] = [];
-  
-  // Classic DuckDuckGo HTML structure
-  const resultRegex = /<div class="result[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?=<div class="result|$)/g;
-  const titleRegex = /<a[^>]*class="result__title"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/;
-  const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/;
-  const tagRegex = /<[^>]*>/g;
-  const entityRegex = /&[a-z]+;/gi;
-
-  let match;
-  let position = 0;
-  
-  while ((match = resultRegex.exec(html)) !== null && position < limit) {
-    const resultHtml = match[1];
-    
-    const titleMatch = titleRegex.exec(resultHtml);
-    const snippetMatch = snippetRegex.exec(resultHtml);
-    if (titleMatch) {
-      const rawUrl = titleMatch[1];
-      const title = titleMatch[2].replace(tagRegex, "").replace(entityRegex, "").trim();
-      const snippet = snippetMatch?.[1]?.replace(tagRegex, "").replace(entityRegex, "").trim() ?? "";
-      
-      let site_name = "";
-      try {
-        site_name = new URL(rawUrl).hostname.replace("www.", "");
-      } catch {
-        site_name = "";
-      }
-      
-      results.push({
-        position: ++position,
-        site_name,
-        title,
-        snippet,
-        url: rawUrl,
-      });
-    }
   }
 
   return results;
@@ -206,7 +210,7 @@ export class DuckDuckGoSearch {
   }
 
   /**
-   * Performs a web search using DuckDuckGo's HTML endpoint.
+   * Performs a web search using DuckDuckGo's Lite HTML endpoint.
    * Returns results in the same format as TinyFish for compatibility.
    */
   async search(
@@ -219,6 +223,11 @@ export class DuckDuckGoSearch {
     try {
       const html = await fetchHtml(searchUrl);
       const results = parseSearchResults(html, limit);
+
+      // Check for challenge page (bot detection)
+      if (results.length === 0 && html.includes("bots use DuckDuckGo")) {
+        throw new Error("DuckDuckGo challenge page detected (bot detection)");
+      }
 
       updateStatus({ lastError: null, lastErrorAt: null });
       return { results, total: results.length, source: "duckduckgo" };

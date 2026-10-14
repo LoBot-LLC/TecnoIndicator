@@ -64,12 +64,12 @@ export async function search(
         provider: "tinyfish",
       };
     }
-    console.warn("TinyFish has no configured keys, falling back to Playwright MCP");
+    console.warn("TinyFish has no configured keys (keyIndex=-1), falling back to Playwright MCP");
   } catch (error) {
     console.warn("TinyFish search failed, falling back:", error instanceof Error ? error.message : String(error));
   }
 
-  // Step 2: Try Playwright MCP (first fallback - used when TinyFish has no usable keys)
+  // Step 2: Try Playwright MCP (first fallback - used when TinyFish has no usable keys or errors)
   try {
     const ppResult = await playwrightMcp.search(query, { limit, region: regionNormalized });
     if (ppResult.total > 0) {
@@ -86,6 +86,7 @@ export async function search(
         provider: "playwright-mcp",
       };
     }
+    console.warn("Playwright MCP search returned 0 results, falling back to DuckDuckGo HTTP");
   } catch (error) {
     console.warn("Playwright MCP search failed, falling back to DuckDuckGo:", error instanceof Error ? error.message : String(error));
   }
@@ -107,6 +108,7 @@ export async function search(
         provider: "duckduckgo",
       };
     }
+    console.warn("DuckDuckGo HTTP search returned 0 results, all providers exhausted");
   } catch (error) {
     console.error("DuckDuckGo search failed:", error instanceof Error ? error.message : String(error));
   }

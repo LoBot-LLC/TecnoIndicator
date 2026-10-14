@@ -2,10 +2,11 @@ import type { Region } from "./regions";
 
 /**
  * Playwright MCP (Model Context Protocol) Server Wrapper
- * 
+ *
  * An always-on headless browser instance that provides web search and scraping
  * capabilities as a fallback when TinyFish API keys are unavailable.
- * 
+ *
+ * Uses playwright-core + @sparticuz/chromium for Vercel/serverless compatibility.
  * The browser is lazily initialized on first use and kept alive for the lifetime
  * of the serverless function instance to minimize cold-start overhead.
  */
@@ -34,26 +35,18 @@ export interface PlaywrightMcpStatus {
   lastErrorAt: string | null;
 }
 
-const BROWSER_TYPE = (process.env.PLAYWRIGHT_BROWSER as "chromium" | "firefox" | "webkit") ?? "chromium";
-const BROWSER_ARGS = process.env.PLAYWRIGHT_ARGS?.split(" ").filter(Boolean) ?? [
-  "--disable-dev-shm-usage",
-  "--disable-gpu",
-  "--no-sandbox",
-  "--disable-setuid-sandbox",
-  "--disable-blink-features=AutomationControlled",
-];
 const SEARCH_TIMEOUT_MS = Number(process.env.PLAYWRIGHT_SEARCH_TIMEOUT_MS ?? 15000);
 const SCRAPE_TIMEOUT_MS = Number(process.env.PLAYWRIGHT_SCRAPE_TIMEOUT_MS ?? 20000);
 const MAX_PAGES = Number(process.env.PLAYWRIGHT_MAX_PAGES ?? 4);
 
-let _browser: import("playwright").Browser | null = null;
-let _browserPromise: Promise<import("playwright").Browser> | null = null;
-let _context: import("playwright").BrowserContext | null = null;
-let _pagePool: import("playwright").Page[] = [];
+let _browser: import("playwright-core").Browser | null = null;
+let _browserPromise: Promise<import("playwright-core").Browser> | null = null;
+let _context: import("playwright-core").BrowserContext | null = null;
+let _pagePool: import("playwright-core").Page[] = [];
 let _status: PlaywrightMcpStatus = {
   available: false,
   initialized: false,
-  browserType: BROWSER_TYPE,
+  browserType: "chromium",
   pageCount: 0,
   lastError: null,
   lastErrorAt: null,
@@ -63,16 +56,52 @@ function updateStatus(partial: Partial<PlaywrightMcpStatus>): void {
   _status = { ..._status, ...partial };
 }
 
-async function getBrowser(): Promise<import("playwright").Browser> {
+async function getBrowser(): Promise<import("playwright-core").Browser> {
   if (_browser) return _browser;
 
   if (!_browserPromise) {
-    const { chromium, firefox, webkit } = await import("playwright");
-    const launcher = { chromium, firefox, webkit }[BROWSER_TYPE] ?? chromium;
-    _browserPromise = launcher.launch({
-      headless: true,
-      args: BROWSER_ARGS,
-    });
+    _browserPromise = (async () => {
+      const { chromium } = await import("playwright-core");
+      const chromiumPack = await import("@sparticuz/chromium");
+
+      const isVercel = !!(process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+      if (isVercel) {
+        // Set runtime environment for @sparticuz/chromium
+        if (!process.env.AWS_LAMBDA_JS_RUNTIME) {
+          process.env.AWS_LAMBDA_JS_RUNTIME = "nodejs22.x";
+        }
+
+        // Disable graphics mode to prevent freezing
+        if (typeof (chromiumPack as any).setGraphicsMode === "function") {
+          (chromiumPack as any).setGraphicsMode(false);
+        }
+
+        const executablePath = await (chromiumPack as any).executablePath();
+        const execDir = (await import("path")).dirname(executablePath);
+
+        // CRITICAL: Set LD_LIBRARY_PATH so Chromium can find libraries
+        process.env.LD_LIBRARY_PATH = execDir;
+
+        return chromium.launch({
+          args: (chromiumPack as any).args,
+          executablePath,
+          headless: true,
+        });
+      } else {
+        // Local development - use system Chromium
+        return chromium.launch({
+          args: [
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-blink-features=AutomationControlled",
+          ],
+          headless: true,
+        });
+      }
+    })();
   }
 
   _browser = await _browserPromise;
@@ -89,7 +118,7 @@ async function getBrowser(): Promise<import("playwright").Browser> {
   return _browser;
 }
 
-async function getPage(): Promise<import("playwright").Page> {
+async function getPage(): Promise<import("playwright-core").Page> {
   await getBrowser();
   if (!_context) throw new Error("Browser context not initialized");
 
@@ -124,7 +153,7 @@ async function getPage(): Promise<import("playwright").Page> {
   return page;
 }
 
-function releasePage(page: import("playwright").Page): void {
+function releasePage(page: import("playwright-core").Page): void {
   if (!page.isClosed() && _pagePool.length < MAX_PAGES) {
     _pagePool.push(page);
   } else {
@@ -161,82 +190,102 @@ function regionToDuckDuckGoRegion(region?: Region): string {
 }
 
 async function extractSearchResults(
-   page: import("playwright").Page,
-   limit: number
+  page: import("playwright-core").Page,
+  limit: number
 ): Promise<SearchResult[]> {
-   const selectors = [
-     "#links .result",           // Classic DuckDuckGo
-     "[data-testid='result']",   // New DuckDuckGo
-     ".result",                  // Generic result class
-     ".web-result",              // Alternative class
-     "article[data-layout='organic']", // Another possible structure
-   ];
+  // Current DuckDuckGo HTML structure (as of 2025-2026):
+  // <div class="result results_links results_links_deep web-result">
+  //   <div class="result__body">
+  //     <h2 class="result__title">
+  //       <a class="result__a" href="REDIRECT_URL">Title Text</a>
+  //     </h2>
+  //     <div class="result__extras">
+  //       <span class="result__url">display.url.com</span>
+  //     </div>
+  //     <a class="result__snippet">Snippet text...</a>
+  //   </div>
+  // </div>
 
-   for (const selector of selectors) {
-     try {
-       await page.waitForSelector(selector, { timeout: 5000 });
-       const results = await page.$$eval(selector, (els, limit) => {
-         return els.slice(0, limit).map((el, index) => {
-           // Try multiple possible selectors for title, snippet, URL
-           const titleSelectors = [
-             ".result__title a", ".result__snippet a", "h2 a", 
-             "[data-testid='result-title-a']", "a.result__url",
-             "h3 a", "a[data-testid='result-title']"
-           ];
-           const snippetSelectors = [
-             ".result__snippet", ".snippet", 
-             "[data-testid='result-snippet']", ".result__snippet__text"
-           ];
-           const urlSelectors = [
-             ".result__url", ".url", 
-             "[data-testid='result-url']"
-           ];
+  const selectors = [
+    ".result.results_links",  // Current DDG structure
+    ".web-result",            // Alternative class
+    "#links .result",         // Classic structure
+    "[data-testid='result']", // New DDG
+    "article[data-layout='organic']",
+  ];
 
-           let titleEl: Element | null = null;
-           let snippetEl: Element | null = null;
-           let urlEl: Element | null = null;
+  for (const selector of selectors) {
+    try {
+      await page.waitForSelector(selector, { timeout: 5000 });
+      const results = await page.$$eval(selector, (els, limit) => {
+        return els.slice(0, limit).map((el, index) => {
+          // Try multiple possible selectors for title, snippet, URL
+          const titleSelectors = [
+            "h2.result__title a.result__a",
+            ".result__title a",
+            "h2 a",
+            "[data-testid='result-title-a']",
+            "h3 a",
+            "a[data-testid='result-title']",
+          ];
+          const snippetSelectors = [
+            "a.result__snippet",
+            ".result__snippet",
+            ".snippet",
+            "[data-testid='result-snippet']",
+            ".result__snippet__text",
+          ];
+          const urlSelectors = [
+            ".result__url",
+            ".url",
+            "[data-testid='result-url']",
+          ];
 
-           for (const sel of titleSelectors) {
-             titleEl = el.querySelector(sel);
-             if (titleEl) break;
-           }
-           for (const sel of snippetSelectors) {
-             snippetEl = el.querySelector(sel);
-             if (snippetEl) break;
-           }
-           for (const sel of urlSelectors) {
-             urlEl = el.querySelector(sel);
-             if (urlEl) break;
-           }
+          let titleEl: Element | null = null;
+          let snippetEl: Element | null = null;
+          let urlEl: Element | null = null;
 
-           const href = titleEl?.getAttribute("href") ?? urlEl?.textContent?.trim() ?? "";
-           let site_name = "";
-           try {
-             site_name = new URL(href).hostname.replace("www.", "");
-           } catch {
-             site_name = "";
-           }
+          for (const sel of titleSelectors) {
+            titleEl = el.querySelector(sel);
+            if (titleEl) break;
+          }
+          for (const sel of snippetSelectors) {
+            snippetEl = el.querySelector(sel);
+            if (snippetEl) break;
+          }
+          for (const sel of urlSelectors) {
+            urlEl = el.querySelector(sel);
+            if (urlEl) break;
+          }
 
-           return {
-             position: index + 1,
-             title: titleEl?.textContent?.trim() ?? "",
-             url: href,
-             snippet: snippetEl?.textContent?.trim() ?? "",
-             site_name,
-           };
-         });
-       }, limit);
+          const href = titleEl?.getAttribute("href") ?? urlEl?.textContent?.trim() ?? "";
+          let site_name = "";
+          try {
+            site_name = new URL(href).hostname.replace("www.", "");
+          } catch {
+            site_name = "";
+          }
 
-       if (results.length > 0) {
-         return results;
-       }
-     } catch {
-       // Selector not found or error, try next
-       continue;
-     }
-   }
+          return {
+            position: index + 1,
+            title: titleEl?.textContent?.trim() ?? "",
+            url: href,
+            snippet: snippetEl?.textContent?.trim() ?? "",
+            site_name,
+          };
+        });
+      }, limit);
 
-   return [];
+      if (results.length > 0) {
+        return results;
+      }
+    } catch {
+      // Selector not found or error, try next
+      continue;
+    }
+  }
+
+  return [];
 }
 
 export class PlaywrightMcpServer {

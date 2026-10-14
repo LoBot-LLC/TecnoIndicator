@@ -1,3 +1,4 @@
+import { webSearch } from "../_shared/webSearch";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getCache, setCache } from "../_shared/cache";
@@ -163,14 +164,30 @@ function extractPriceFromText(text: string): number | null {
   return null;
 }
 
-async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
+export async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
   const searchResults = await Promise.all(
     COMMODITY_QUERIES.map(async ({ commodity, queryTemplate }) => {
       try {
-        return await tinyfishRouter.tinyfishSearch(queryTemplate, {
+        // Use webSearch module which includes fallback chain
+        const webSearchResult = await webSearch.search(queryTemplate, {
           limit: 10,
           region: scope === "global" ? undefined : scope,
-        }, abortSignal);
+          abortSignal,
+        });
+
+        // Convert webSearch results to TinyFish-like format for compatibility
+        return {
+          results: webSearchResult.results.map((r, idx) => ({
+            position: r.position || idx + 1,
+            site_name: r.site_name || "",
+            title: r.title || "",
+            snippet: r.snippet || "",
+            url: r.url || "",
+            publishedAt: undefined,
+          })),
+          total: webSearchResult.total,
+          keyIndex: -1, // WebSearch doesn't use keyIndex, use -1 for compatibility
+        };
       } catch (error) {
         console.warn(`Failed to search for ${commodity}:`, error);
         return { results: [], total: 0, keyIndex: -1 };
@@ -182,7 +199,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
     .map((result, index) => {
       const commodity = COMMODITY_QUERIES[index].commodity;
       const resultLines = (result.results ?? [])
-        .map((r) => `- ${r.title}\n  Snippet: ${r.snippet}\n  URL: ${r.url}\n  Published: ${r.publishedAt}\n`)
+        .map((r) => `- ${r.title}\n  Snippet: ${r.snippet}\n  URL: ${r.url}\n`)
         .join("\n");
       return `Commodity: ${commodity}\n${resultLines}`;
     })
@@ -232,7 +249,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
           electricity: { ...prices.electricity, isLive: true },
           water: { ...prices.water, isLive: true },
           asOf: new Date().toISOString(),
-          dataSource: "Kilo AI analysis of TinyFish search results",
+          dataSource: `Kilo AI analysis of ${searchResults[0]?.dataSource ?? "search results"}`, // Include source provider
           isLive: true,
         };
       }
@@ -264,7 +281,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
       electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true },
       water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true },
       asOf: new Date().toISOString(),
-      dataSource: "TinyFish search (deterministic fallback)",
+      dataSource: "Web search (deterministic fallback)", // More generic name
       isLive: true,
     };
   }
@@ -274,7 +291,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
     electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false },
     water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false },
     asOf: new Date().toISOString(),
-    dataSource: "TinyFish search (insufficient data)",
+    dataSource: "Web search (insufficient data)",
     isLive: false,
   };
 }

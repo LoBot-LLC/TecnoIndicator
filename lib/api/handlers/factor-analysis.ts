@@ -1,5 +1,5 @@
 import { kiloRouter } from "../_shared/kiloRouter";
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { webSearch } from "../_shared/webSearch";
 import { REGION_NAMES, type Region } from "../_shared/regions";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
 import {
@@ -395,7 +395,25 @@ export async function runFactorAnalysis(
     const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
     const searches = await Promise.all(
       queries.map((q) =>
-        tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
+        webSearch.search(`${q} ${RECENT_MONTH()}`, {
+          limit: 10,
+          region: region ?? undefined,
+          abortSignal: signal,
+        }).then(result => {
+          // Convert webSearch result to TinyFish-like format for compatibility
+          return {
+            results: result.results.map((r, idx) => ({
+              position: r.position ?? idx + 1,
+              site_name: r.site_name ?? "",
+              title: r.title ?? "",
+              snippet: r.snippet ?? "",
+              url: r.url ?? "",
+              publishedAt: undefined,
+            })),
+            total: result.total,
+            keyIndex: -1,
+          };
+        }),
       ),
     );
     const candidates = searches
@@ -411,8 +429,10 @@ export async function runFactorAnalysis(
     const excerpts = await Promise.all(
       candidates.map(async (r) => {
         try {
-          const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal);
-          return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
+          const scrapeResult = await webSearch.scrape(r.url, { url: r.url, abortSignal: signal });
+          return scrapeResult.data
+            ? { ...r, text: scrapeResult.data.text, title: scrapeResult.data.title || r.title }
+            : r;
         } catch {
           return r;
         }

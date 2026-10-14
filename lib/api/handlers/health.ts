@@ -1,6 +1,8 @@
 import { REGIONS, type Region } from "../_shared/regions";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { playwrightMcp } from "../_shared/playwrightMcp";
+import { duckDuckGo } from "../_shared/duckDuckGo";
 import { analyticsCacheKey } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
@@ -23,6 +25,19 @@ interface HealthResponse {
     available: boolean;
     usableKeys: number;
     configuredKeys: number;
+  };
+  playwrightMcp: {
+    available: boolean;
+    initialized: boolean;
+    browserType: string;
+    pageCount: number;
+    lastError: string | null;
+    lastErrorAt: string | null;
+  };
+  duckDuckGo: {
+    available: boolean;
+    lastError: string | null;
+    lastErrorAt: string | null;
   };
   onlineModelConnected: boolean;
   analytics: {
@@ -133,6 +148,9 @@ export async function handleHealth(_req: Request): Promise<Response> {
         Promise.all(REGIONS.map((region) => readFactorStatus(region))),
       ]);
 
+    const playwrightMcpStatus = playwrightMcp.getStatus();
+    const duckDuckGoStatus = duckDuckGo.getStatus();
+
     const onlineModelConnected =
       kiloStatus.available &&
       kiloStatus.usableKeys > 0 &&
@@ -151,6 +169,19 @@ export async function handleHealth(_req: Request): Promise<Response> {
         available: tinyfishStatus.available,
         usableKeys: tinyfishStatus.usableKeys,
         configuredKeys: tinyfishStatus.configuredKeys,
+      },
+      playwrightMcp: {
+        available: playwrightMcpStatus.available,
+        initialized: playwrightMcpStatus.initialized,
+        browserType: playwrightMcpStatus.browserType,
+        pageCount: playwrightMcpStatus.pageCount,
+        lastError: playwrightMcpStatus.lastError,
+        lastErrorAt: playwrightMcpStatus.lastErrorAt,
+      },
+      duckDuckGo: {
+        available: duckDuckGoStatus.available,
+        lastError: duckDuckGoStatus.lastError,
+        lastErrorAt: duckDuckGoStatus.lastErrorAt,
       },
       onlineModelConnected,
       analytics: {
@@ -176,6 +207,8 @@ export async function handleHealth(_req: Request): Promise<Response> {
         onlineModelConnected: false,
         kiloGateway: { available: false, usableKeys: 0, configuredKeys: 0, keyFormats: { jwt: 0, opaque: 0, unrecognized: 0 } },
         tinyfish: { available: false, usableKeys: 0, configuredKeys: 0 },
+        playwrightMcp: { available: false, initialized: false, browserType: "chromium", pageCount: 0, lastError: null, lastErrorAt: null },
+        duckDuckGo: { available: false, lastError: null, lastErrorAt: null },
       },
       { status: 200 },
     );

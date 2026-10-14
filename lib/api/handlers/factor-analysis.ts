@@ -1,5 +1,5 @@
 import { kiloRouter } from "../_shared/kiloRouter";
-import { webSearch } from "../_shared/webSearch";
+import { search as webSearch, scrape as webScrape } from "../_shared/webSearch";
 import { REGION_NAMES, type Region } from "../_shared/regions";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
 import {
@@ -395,7 +395,7 @@ export async function runFactorAnalysis(
     const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
     const searches = await Promise.all(
       queries.map((q) =>
-        webSearch.search(`${q} ${RECENT_MONTH()}`, {
+        webSearch(`${q} ${RECENT_MONTH()}`, {
           limit: 10,
           region: region ?? undefined,
           abortSignal: signal,
@@ -429,7 +429,7 @@ export async function runFactorAnalysis(
     const excerpts = await Promise.all(
       candidates.map(async (r) => {
         try {
-          const scrapeResult = await webSearch.scrape(r.url, { url: r.url, abortSignal: signal });
+          const scrapeResult = await webScrape(r.url, { url: r.url, abortSignal: signal });
           return scrapeResult.data
             ? { ...r, text: scrapeResult.data.text, title: scrapeResult.data.title || r.title }
             : r;

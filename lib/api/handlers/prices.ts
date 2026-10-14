@@ -1,5 +1,4 @@
-import { webSearch } from "../_shared/webSearch";
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { search as webSearch } from "../_shared/webSearch";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getCache, setCache } from "../_shared/cache";
 import { SEARCH_CACHE_MS, sanitizeUrl } from "../_shared/http";
@@ -169,7 +168,7 @@ export async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: Ab
     COMMODITY_QUERIES.map(async ({ commodity, queryTemplate }) => {
       try {
         // Use webSearch module which includes fallback chain
-        const webSearchResult = await webSearch.search(queryTemplate, {
+        const webSearchResult = await webSearch(queryTemplate, {
           limit: 10,
           region: scope === "global" ? undefined : scope,
           abortSignal,
@@ -177,20 +176,22 @@ export async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: Ab
 
         // Convert webSearch results to TinyFish-like format for compatibility
         return {
-          results: webSearchResult.results.map((r, idx) => ({
-            position: r.position || idx + 1,
-            site_name: r.site_name || "",
-            title: r.title || "",
-            snippet: r.snippet || "",
-            url: r.url || "",
+          results: webSearchResult.results.map((r: { position?: number; site_name?: string; title?: string; snippet?: string; url?: string }, idx: number) => ({
+            position: r.position ?? idx + 1,
+            site_name: r.site_name ?? "",
+            title: r.title ?? "",
+            snippet: r.snippet ?? "",
+            url: r.url ?? "",
             publishedAt: undefined,
           })),
           total: webSearchResult.total,
-          keyIndex: -1, // WebSearch doesn't use keyIndex, use -1 for compatibility
+          keyIndex: -1,
+          dataSource: webSearchResult.dataSource, // Store the data source for later use
+          provider: webSearchResult.provider,
         };
       } catch (error) {
         console.warn(`Failed to search for ${commodity}:`, error);
-        return { results: [], total: 0, keyIndex: -1 };
+        return { results: [], total: 0, keyIndex: -1, dataSource: "error", provider: "none" };
       }
     }),
   );

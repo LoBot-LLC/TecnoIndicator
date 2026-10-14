@@ -2,6 +2,8 @@ import type { RegionId, Region } from "./types";
 import { tinyfishRouter } from "./tinyfishRouter";
 import { playwrightMcp } from "./playwrightMcp";
 import { duckDuckGo } from "./duckDuckGo";
+import type { PlaywrightMcpStatus } from "./playwrightMcp";
+import type { DuckDuckGoStatus } from "./duckDuckGo";
 
 export interface WebSearchOptions {
   limit?: number;
@@ -10,32 +12,8 @@ export interface WebSearchOptions {
 }
 
 export interface WebScrapeOptions {
-  url: string;
+  url?: string;
   abortSignal?: AbortSignal;
-}
-
-interface TinyFishSearchResult {
-  results: { position: number; site_name: string; title: string; snippet: string; url: string; publishedAt?: string }[];
-  total: number;
-  keyIndex: number;
-}
-
-interface PlayMcpSearchResult {
-  results: { position: number; site_name: string; title: string; snippet: string; url: string }[];
-  total: number;
-  source: "playwright-mcp";
-}
-
-interface DuckDuckGoSearchResult {
-  results: { position: number; site_name: string; title: string; snippet: string; url: string }[];
-  total: number;
-  source: "duckduckgo";
-}
-
-interface SearchProviderResult {
-  results: { position: number; site_name: string; title: string; snippet: string; url: string }[];
-  total: number;
-  source: string;
 }
 
 /**
@@ -45,8 +23,6 @@ interface SearchProviderResult {
  * The fallback is only used when the primary provider fails (no usable keys or errors).
  * Software does NOT use fallbacks by default - only when all primary options are exhausted.
  */
-
-const FALLBACK_ORDER = ["tinyfish", "playwright-mcp", "duckduckgo"] as const;
 
 /**
  * Searches the web using the fallback chain.
@@ -206,11 +182,10 @@ export async function scrape(
 export async function getSearchStatus(): Promise<{
   tinyfish: {
     available: boolean;
-    initialized: boolean;
     usableKeys: number;
     configuredKeys: number;
   };
-  playwrightMcp: PlaywrightMcpServerStatus;
+  playwrightMcp: PlaywrightMcpStatus;
   duckDuckGo: DuckDuckGoStatus;
 }> {
   const tinyfishStatus = await tinyfishRouter.getTinyfishStatus();
@@ -218,7 +193,6 @@ export async function getSearchStatus(): Promise<{
   return {
     tinyfish: {
       available: tinyfishStatus.available,
-      initialized: tinyfishStatus.initialized,
       usableKeys: tinyfishStatus.usableKeys,
       configuredKeys: tinyfishStatus.configuredKeys,
     },

@@ -25,7 +25,7 @@ interface ScrapedContent {
   text: string;
 }
 
-interface PlaywrightMcpStatus {
+export interface PlaywrightMcpStatus {
   available: boolean;
   initialized: boolean;
   browserType: "chromium" | "firefox" | "webkit";
@@ -251,7 +251,7 @@ export class PlaywrightMcpServer {
 
         // Try to find main content
         const main = document.querySelector("main, article, [role=main], .content, .post, .entry-content");
-        const text = (main ?? document.body).innerText ?? "";
+        const text = (main ?? document.body).textContent ?? "";
         const title = document.title ?? "";
 
         return { title, text: text.slice(0, 10000) };

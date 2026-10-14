@@ -18,7 +18,7 @@ interface SearchResult {
   publishedAt?: string;
 }
 
-interface DuckDuckGoStatus {
+export interface DuckDuckGoStatus {
   available: boolean;
   lastError: string | null;
   lastErrorAt: string | null;
@@ -114,7 +114,6 @@ function parseSearchResults(html: string, limit: number): SearchResult[] {
   const resultRegex = /<div class="result[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?=<div class="result|$)/g;
   const titleRegex = /<a[^>]*class="result__title"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/;
   const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/;
-  const urlRegex = /<a[^>]*class="result__url"[^>]*>([\s\S]*?)<\/a>/;
   const tagRegex = /<[^>]*>/g;
   const entityRegex = /&[a-z]+;/gi;
 
@@ -126,13 +125,11 @@ function parseSearchResults(html: string, limit: number): SearchResult[] {
     
     const titleMatch = titleRegex.exec(resultHtml);
     const snippetMatch = snippetRegex.exec(resultHtml);
-    const urlMatch = urlRegex.exec(resultHtml);
-    
     if (titleMatch) {
       const rawUrl = titleMatch[1];
       const title = titleMatch[2].replace(tagRegex, "").replace(entityRegex, "").trim();
       const snippet = snippetMatch?.[1]?.replace(tagRegex, "").replace(entityRegex, "").trim() ?? "";
-      const displayUrl = urlMatch?.[1]?.replace(tagRegex, "").replace(entityRegex, "").trim() ?? rawUrl;
+      // const _displayUrl = urlMatch?.[1]?.replace(tagRegex, "").replace(entityRegex, "").trim() ?? rawUrl;
       
       let site_name = "";
       try {

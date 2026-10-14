@@ -37,9 +37,11 @@ export async function search(
   total: number;
   dataSource: string;
   provider: string;
+  lastAttemptedProvider: string;
 }> {
   const { limit = 10, region = "global", abortSignal } = options;
   const regionNormalized = region === "global" ? undefined : (region as Region);
+  let lastAttemptedProvider = "none";
 
   // Step 1: Try TinyFish (primary - should always be tried first, not a fallback by default)
   try {
@@ -51,6 +53,7 @@ export async function search(
     // Return TinyFish results if it has usable keys (keyIndex >= 0 means keys are configured)
     // If keyIndex === -1, it means no keys configured, so fall back to next provider
     if (tinyfishResult.keyIndex >= 0) {
+      lastAttemptedProvider = "tinyfish";
       return {
         results: tinyfishResult.results.map((r) => ({
           position: r.position ?? 0,
@@ -62,6 +65,7 @@ export async function search(
         total: tinyfishResult.total,
         dataSource: "TinyFish API",
         provider: "tinyfish",
+        lastAttemptedProvider,
       };
     }
     console.warn("TinyFish has no configured keys (keyIndex=-1), falling back to Playwright MCP");
@@ -71,7 +75,8 @@ export async function search(
 
   // Step 2: Try Playwright MCP (first fallback - used when TinyFish has no usable keys or errors)
   try {
-    const ppResult = await playwrightMcp.search(query, { limit, region: regionNormalized });
+    const      ppResult = await playwrightMcp.search(query, { limit, region: regionNormalized });
+    lastAttemptedProvider = "playwright-mcp";
     if (ppResult.total > 0) {
       return {
         results: ppResult.results.map((r) => ({
@@ -84,6 +89,7 @@ export async function search(
         total: ppResult.total,
         dataSource: "Playwright MCP",
         provider: "playwright-mcp",
+        lastAttemptedProvider,
       };
     }
     console.warn("Playwright MCP search returned 0 results, falling back to DuckDuckGo HTTP");

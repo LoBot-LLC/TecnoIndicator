@@ -34,7 +34,10 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
       const stored = await readFactorWindow(region);
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
         return Response.json(
-          toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
+          toFactorsPayload(stored.factors, region, stored.aiCurated, {
+            updatedAt: stored.updatedAt,
+            ...(stored.searchProvider ? { searchProvider: stored.searchProvider } : {}),
+          }),
           { status: 200 },
         );
       }
@@ -44,9 +47,12 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     const timeoutId = setTimeout(() => abortController.abort(), 25000);
     try {
       const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
-      const stored = await writeFactorWindow(region, result.factors, result.aiCurated);
+      const stored = await writeFactorWindow(region, result.factors, result.aiCurated, result.searchProvider);
       return Response.json(
-        toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
+        toFactorsPayload(stored.factors, region, stored.aiCurated, {
+          updatedAt: stored.updatedAt,
+          ...(stored.searchProvider ? { searchProvider: stored.searchProvider } : {}),
+        }),
         { status: 200 },
       );
     } finally {
@@ -60,6 +66,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
       toFactorsPayload(factors, region, stored?.aiCurated ?? false, {
         updatedAt: stored?.updatedAt ?? new Date().toISOString(),
         error: "Regional factors temporarily unavailable; static fallbacks returned",
+        ...(stored?.searchProvider ? { searchProvider: stored.searchProvider } : {}),
       }),
       { status: 200 },
     );

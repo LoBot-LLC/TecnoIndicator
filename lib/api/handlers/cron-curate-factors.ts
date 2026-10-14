@@ -35,7 +35,7 @@ export async function handleCurateFactorsCron(req: Request): Promise<Response> {
     for (const scope of scopes) {
       try {
         const result = await runFactorAnalysis(scope);
-        await writeFactorWindow(scope, result.factors, result.aiCurated);
+        await writeFactorWindow(scope, result.factors, result.aiCurated, result.searchProvider);
         results[scope] = { success: true, count: result.factors.length };
       } catch (error) {
         results[scope] = {

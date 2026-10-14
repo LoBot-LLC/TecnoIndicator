@@ -44,7 +44,10 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
       const stored = await readFactorWindow(scope);
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
         return Response.json(
-          toFactorsPayload(stored.factors, scope, stored.aiCurated, { updatedAt: stored.updatedAt }),
+          toFactorsPayload(stored.factors, scope, stored.aiCurated, {
+            updatedAt: stored.updatedAt,
+            ...(stored.searchProvider ? { searchProvider: stored.searchProvider } : {}),
+          }),
           { status: 200 },
         );
       }
@@ -54,9 +57,12 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     const timeoutId = setTimeout(() => abortController.abort(), 25000);
     try {
       const result = await runFactorAnalysis(scope, { abortSignal: abortController.signal });
-      const stored = await writeFactorWindow(scope, result.factors, result.aiCurated);
+      const stored = await writeFactorWindow(scope, result.factors, result.aiCurated, result.searchProvider);
       return Response.json(
-        toFactorsPayload(stored.factors, scope, stored.aiCurated, { updatedAt: stored.updatedAt }),
+        toFactorsPayload(stored.factors, scope, stored.aiCurated, {
+          updatedAt: stored.updatedAt,
+          ...(stored.searchProvider ? { searchProvider: stored.searchProvider } : {}),
+        }),
         { status: 200 },
       );
     } finally {
@@ -72,6 +78,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
       toFactorsPayload(factors, scope, stored?.aiCurated ?? false, {
         updatedAt: stored?.updatedAt ?? new Date().toISOString(),
         error: "Dynamic factors temporarily unavailable; static fallbacks returned",
+        ...(stored?.searchProvider ? { searchProvider: stored.searchProvider } : {}),
       }),
       { status: 200 },
     );

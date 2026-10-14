@@ -24,6 +24,7 @@ export interface FactorWindow {
   factors: Factor[];
   aiCurated: boolean;
   updatedAt: string;
+  searchProvider?: string;
 }
 
 export interface FactorAnalysisOptions {
@@ -38,6 +39,7 @@ export interface FactorsPayload {
   aiCurated: boolean;
   cacheKey: string;
   updatedAt: string;
+  searchProvider?: string;
   error?: string;
 }
 
@@ -45,7 +47,7 @@ export function toFactorsPayload(
   factors: Factor[],
   scope: RegionId,
   aiCurated: boolean,
-  extra: { updatedAt: string; error?: string } = { updatedAt: new Date().toISOString() },
+  extra: { updatedAt: string; error?: string; searchProvider?: string } = { updatedAt: new Date().toISOString() },
 ): FactorsPayload {
   return {
     factors,
@@ -54,6 +56,7 @@ export function toFactorsPayload(
     aiCurated,
     cacheKey: factorKeyForScope(scope),
     updatedAt: extra.updatedAt,
+    ...(extra.searchProvider ? { searchProvider: extra.searchProvider } : {}),
     ...(extra.error ? { error: extra.error } : {}),
   };
 }
@@ -200,6 +203,7 @@ export async function readFactorWindow(scope: RegionId): Promise<FactorWindow | 
     factors,
     aiCurated: entry.aiCurated === true,
     updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : new Date().toISOString(),
+    ...(entry.searchProvider ? { searchProvider: entry.searchProvider } : {}),
   };
 }
 
@@ -207,8 +211,9 @@ export async function writeFactorWindow(
   scope: RegionId,
   factors: Factor[],
   aiCurated: boolean,
+  searchProvider?: string,
 ): Promise<FactorWindow> {
-  const window: FactorWindow = { factors, aiCurated, updatedAt: new Date().toISOString() };
+  const window: FactorWindow = { factors, aiCurated, updatedAt: new Date().toISOString(), ...(searchProvider ? { searchProvider } : {}) };
   await setCache(factorKeyForScope(scope), window, FACTORS_WINDOW_TTL_MS);
   return window;
 }
@@ -389,7 +394,13 @@ export async function runFactorAnalysis(
     scope === "global" ? await getGlobalAnalytics() : await getRegionalAnalytics(scope as Region);
 
   const now = new Date().toISOString();
-  const returnExisting = () => ({ factors: existing, aiCurated: carriedAiCurated, updatedAt: now });
+  let searchProvider: string | undefined = previous?.searchProvider;
+  const returnExisting = () => ({
+    factors: existing,
+    aiCurated: carriedAiCurated,
+    updatedAt: now,
+    ...(searchProvider ? { searchProvider } : {}),
+  });
 
   try {
     const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
@@ -412,10 +423,22 @@ export async function runFactorAnalysis(
             })),
             total: result.total,
             keyIndex: -1,
+            provider: result.provider,
           };
         }),
       ),
     );
+    const providersUsed = searches
+      .map((s) => s.provider)
+      .filter((p): p is string => !!p && p !== "none");
+    if (providersUsed.length > 0) {
+      const counts = new Map<string, number>();
+      for (const p of providersUsed) {
+        counts.set(p, (counts.get(p) ?? 0) + 1);
+      }
+      searchProvider = [...counts.entries()].reduce((a, b) => (a[1] > b[1] ? a : b))[0];
+      console.warn(`[dynamic-factors] search provider used: ${searchProvider} (queries: ${queries.length})`);
+    }
     const candidates = searches
       .flatMap((r) => r.results)
       .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
@@ -484,6 +507,7 @@ export async function runFactorAnalysis(
       factors: mergeRollingWindow(existing, normalized),
       aiCurated: true,
       updatedAt: new Date().toISOString(),
+      ...(searchProvider ? { searchProvider } : {}),
     };
   } catch (error) {
     // Never throw: the callers (route handlers, cron) must always be able to

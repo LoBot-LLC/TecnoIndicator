@@ -114,18 +114,32 @@ async function getBrowser(): Promise<import("playwright-core").Browser> {
     })();
   }
 
-  _browser = await _browserPromise;
-  if (!_context) {
-    _context = await _browser.newContext({
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      viewport: { width: 1280, height: 720 },
-      ignoreHTTPSErrors: true,
-      javaScriptEnabled: true,
+  try {
+    _browser = await _browserPromise;
+    if (!_context) {
+      _context = await _browser.newContext({
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        viewport: { width: 1280, height: 720 },
+        ignoreHTTPSErrors: true,
+        javaScriptEnabled: true,
+      });
+    }
+    updateStatus({ available: true, initialized: true, lastError: null, lastErrorAt: null });
+    return _browser;
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    updateStatus({ 
+      available: false, 
+      initialized: false, 
+      lastError: err.message, 
+      lastErrorAt: new Date().toISOString() 
     });
+    console.error("Playwright MCP browser initialization failed:", err.message);
+    // Reset the promise so we can retry on next call
+    _browserPromise = null;
+    throw err;
   }
-  updateStatus({ available: true, initialized: true });
-  return _browser;
 }
 
 async function getPage(): Promise<import("playwright-core").Page> {
@@ -300,6 +314,7 @@ async function extractSearchResults(
 
 export class PlaywrightMcpServer {
   private static instance: PlaywrightMcpServer;
+  private _initializationPromise: Promise<void> | null = null;
 
   private constructor() {}
 
@@ -308,6 +323,54 @@ export class PlaywrightMcpServer {
       PlaywrightMcpServer.instance = new PlaywrightMcpServer();
     }
     return PlaywrightMcpServer.instance;
+  }
+
+  /**
+   * Proactively initializes the browser instance.
+   * Call this during application startup or health checks to ensure
+   * the browser is warm and ready for the fallback chain.
+   */
+  async initialize(abortSignal?: AbortSignal): Promise<void> {
+    if (this._initializationPromise) {
+      await this._initializationPromise;
+      return;
+    }
+
+    this._initializationPromise = (async () => {
+      try {
+        await getBrowser();
+        // Browser is now initialized, status updated in getBrowser()
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        updateStatus({ 
+          lastError: `Initialization failed: ${err.message}`, 
+          lastErrorAt: new Date().toISOString(),
+          available: false,
+          initialized: false
+        });
+        console.error("Playwright MCP initialization failed:", err.message);
+        throw err;
+      }
+    })();
+
+    // Also respect abort signal
+    if (abortSignal) {
+      try {
+        await Promise.race([
+          this._initializationPromise,
+          new Promise((_, reject) => {
+            abortSignal.addEventListener("abort", () => reject(new Error("Initialization aborted")));
+          })
+        ]);
+      } catch (error) {
+        if (error instanceof Error && error.message === "Initialization aborted") {
+          throw error;
+        }
+        // Other errors already handled above
+      }
+    } else {
+      await this._initializationPromise;
+    }
   }
 
   /**

@@ -148,6 +148,14 @@ export async function handleHealth(_req: Request): Promise<Response> {
         Promise.all(REGIONS.map((region) => readFactorStatus(region))),
       ]);
 
+    // Proactively initialize Playwright MCP so it's warm for the fallback chain
+    try {
+      await playwrightMcp.initialize(abortController.signal);
+    } catch (initError) {
+      console.warn("Playwright MCP initialization failed (will retry on demand):", 
+        initError instanceof Error ? initError.message : String(initError));
+    }
+
     const playwrightMcpStatus = playwrightMcp.getStatus();
     const duckDuckGoStatus = duckDuckGo.getStatus();
 

@@ -2,7 +2,7 @@
 
 **Real-time 10-year forecasts for global oil, water & electricity prices.**
 
-<img width="1672" height="941" alt="image" src="https://github.com/user-attachments/assets/2a4fb37c-0cb4-448a-b1f7-d4c19c833f0b" />
+<img width="1984" height="992" alt="image" src="https://github.com/user-attachments/assets/ceaff96a-4022-4f32-9a8b-d194ffd9e484" />
 
 A modern, clean, professional single-page web application that delivers illustrative energy price forecasts with interactive data visualization, scenario analysis, and dynamic factor insights. Built with **Next.js (App Router)** and deployed on Vercel: the UI is a React client application, while the market data, AI curation and forecasting live in Next.js route handlers under `app/api/`.
 
@@ -192,7 +192,5 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 **Author & Maintainer**  
 [LoBot LLC](https://github.com/LoBot-LLC)
 
-Built as a demonstration project showcasing modern frontend development, data visualization, server-side AI-assisted market analytics, and forecasting techniques.
-
-Special thanks to the open-source community for Tailwind CSS and Chart.js.
+We would like to give special thanks to the open-source community for Tailwind CSS and Chart.js.
 

@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { CurrencyProvider } from "../src/context/CurrencyContext";
 import { ThemeProvider } from "../src/context/ThemeContext";
 import "./globals.css";
+import VercelAnalytics from "../src/components/VercelAnalytics";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
   title: "TecnoIndicator — Oil, Electricity & Water Price Forecasts",
@@ -73,6 +75,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ThemeProvider>
           <CurrencyProvider>{children}</CurrencyProvider>
         </ThemeProvider>
+        <VercelAnalytics />
+        <SpeedInsights />
       </body>
     </html>
   );

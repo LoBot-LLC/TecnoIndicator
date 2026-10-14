@@ -75,7 +75,7 @@ export async function search(
 
   // Step 2: Try Playwright MCP (first fallback - used when TinyFish has no usable keys or errors)
   try {
-    const      ppResult = await playwrightMcp.search(query, { limit, region: regionNormalized });
+    const ppResult = await playwrightMcp.search(query, { limit, region: regionNormalized });
     lastAttemptedProvider = "playwright-mcp";
     if (ppResult.total > 0) {
       return {
@@ -112,6 +112,7 @@ export async function search(
         total: ddgResult.total,
         dataSource: "DuckDuckGo HTTP",
         provider: "duckduckgo",
+        lastAttemptedProvider,
       };
     }
     console.warn("DuckDuckGo HTTP search returned 0 results, all providers exhausted");
@@ -120,12 +121,13 @@ export async function search(
   }
 
   // All providers failed - return empty results
-  return {
-    results: [],
-    total: 0,
-    dataSource: "No search provider available",
-    provider: "none",
-  };
+   return {
+     results: [],
+     total: 0,
+     dataSource: "No search provider available",
+     provider: "none",
+     lastAttemptedProvider,
+   };
 }
 
 /**

@@ -24,7 +24,7 @@ export interface DuckDuckGoStatus {
   lastErrorAt: string | null;
 }
 
-const DUCKDUCKGO_HTML_URL = "https://html.duckduckgo.com/html/";
+const DUCKDUCKGO_HTML_URL = "https://lite.duckduckgo.com/lite/";
 const SEARCH_TIMEOUT_MS = Number(process.env.DUCKDUCKGO_SEARCH_TIMEOUT_MS ?? 10000);
 
 let _status: DuckDuckGoStatus = {
@@ -110,7 +110,50 @@ function combineAbortSignals(signals: AbortSignal[]): AbortSignal {
 function parseSearchResults(html: string, limit: number): SearchResult[] {
   const results: SearchResult[] = [];
   
-  // DuckDuckGo HTML structure: .result class with .result__title, .result__snippet, .result__url
+  // DuckDuckGo Lite HTML structure: table rows with links
+  // Each result is in a table row: <tr> <td> <a href="...">Title</a> </td> <td>Snippet</td> </tr>
+  const rowRegex = /<tr>\s*<td[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>\s*<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<\/tr>/gi;
+  const tagRegex = /<[^>]*>/g;
+  const entityRegex = /&[a-z]+;/gi;
+
+  let match;
+  let position = 0;
+  
+  while ((match = rowRegex.exec(html)) !== null && position < limit) {
+    const rawUrl = match[1];
+    const title = match[2].replace(tagRegex, "").replace(entityRegex, "").trim();
+    const snippet = match[3].replace(tagRegex, "").replace(entityRegex, "").trim();
+    
+    if (!title) continue;
+    
+    let site_name = "";
+    try {
+      site_name = new URL(rawUrl).hostname.replace("www.", "");
+    } catch {
+      site_name = "";
+    }
+    
+    results.push({
+      position: ++position,
+      site_name,
+      title,
+      snippet,
+      url: rawUrl,
+    });
+  }
+  
+  // Fallback: try to parse classic DuckDuckGo HTML if lite returns no results
+  if (results.length === 0) {
+    return parseClassicDuckDuckGo(html, limit);
+  }
+  
+  return results;
+}
+
+function parseClassicDuckDuckGo(html: string, limit: number): SearchResult[] {
+  const results: SearchResult[] = [];
+  
+  // Classic DuckDuckGo HTML structure
   const resultRegex = /<div class="result[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?=<div class="result|$)/g;
   const titleRegex = /<a[^>]*class="result__title"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/;
   const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/;
@@ -129,7 +172,6 @@ function parseSearchResults(html: string, limit: number): SearchResult[] {
       const rawUrl = titleMatch[1];
       const title = titleMatch[2].replace(tagRegex, "").replace(entityRegex, "").trim();
       const snippet = snippetMatch?.[1]?.replace(tagRegex, "").replace(entityRegex, "").trim() ?? "";
-      // const _displayUrl = urlMatch?.[1]?.replace(tagRegex, "").replace(entityRegex, "").trim() ?? rawUrl;
       
       let site_name = "";
       try {

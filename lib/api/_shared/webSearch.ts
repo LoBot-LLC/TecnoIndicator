@@ -48,8 +48,9 @@ export async function search(
       region: regionNormalized,
     }, abortSignal);
 
-    // Return TinyFish results regardless of count (even 0 results is valid - it means "no data from TinyFish")
-    if (tinyfishResult.results.length > 0 || !tinyfishResult.keyIndex && tinyfishResult.results.length === 0) {
+    // Return TinyFish results if it has usable keys (keyIndex >= 0 means keys are configured)
+    // If keyIndex === -1, it means no keys configured, so fall back to next provider
+    if (tinyfishResult.keyIndex >= 0) {
       return {
         results: tinyfishResult.results.map((r) => ({
           position: r.position ?? 0,
@@ -63,11 +64,12 @@ export async function search(
         provider: "tinyfish",
       };
     }
+    console.warn("TinyFish has no configured keys, falling back to Playwright MCP");
   } catch (error) {
     console.warn("TinyFish search failed, falling back:", error instanceof Error ? error.message : String(error));
   }
 
-  // Step 2: Try Playwright MCP (first fallback - used only when TinyFish has no usable keys)
+  // Step 2: Try Playwright MCP (first fallback - used when TinyFish has no usable keys)
   try {
     const ppResult = await playwrightMcp.search(query, { limit, region: regionNormalized });
     if (ppResult.total > 0) {

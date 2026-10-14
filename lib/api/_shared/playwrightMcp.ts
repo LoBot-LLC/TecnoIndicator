@@ -161,35 +161,82 @@ function regionToDuckDuckGoRegion(region?: Region): string {
 }
 
 async function extractSearchResults(
-  page: import("playwright").Page,
-  limit: number
+   page: import("playwright").Page,
+   limit: number
 ): Promise<SearchResult[]> {
-  try {
-    // Wait for results to load
-    await page.waitForSelector("#links .result", { timeout: SEARCH_TIMEOUT_MS });
-  } catch {
-    // No results found
-    return [];
-  }
+   const selectors = [
+     "#links .result",           // Classic DuckDuckGo
+     "[data-testid='result']",   // New DuckDuckGo
+     ".result",                  // Generic result class
+     ".web-result",              // Alternative class
+     "article[data-layout='organic']", // Another possible structure
+   ];
 
-  const results = await page.evaluate((limit: number) => {
-    const items = Array.from(document.querySelectorAll("#links .result"));
-    return items.slice(0, limit).map((item, index) => {
-      const titleEl = item.querySelector(".result__title a, .result__snippet a, h2 a");
-      const snippetEl = item.querySelector(".result__snippet, .snippet");
-      const urlEl = item.querySelector(".result__url, .url");
+   for (const selector of selectors) {
+     try {
+       await page.waitForSelector(selector, { timeout: 5000 });
+       const results = await page.$$eval(selector, (els, limit) => {
+         return els.slice(0, limit).map((el, index) => {
+           // Try multiple possible selectors for title, snippet, URL
+           const titleSelectors = [
+             ".result__title a", ".result__snippet a", "h2 a", 
+             "[data-testid='result-title-a']", "a.result__url",
+             "h3 a", "a[data-testid='result-title']"
+           ];
+           const snippetSelectors = [
+             ".result__snippet", ".snippet", 
+             "[data-testid='result-snippet']", ".result__snippet__text"
+           ];
+           const urlSelectors = [
+             ".result__url", ".url", 
+             "[data-testid='result-url']"
+           ];
 
-      return {
-        position: index + 1,
-        title: titleEl?.textContent?.trim() ?? "",
-        url: titleEl?.getAttribute("href") ?? urlEl?.textContent?.trim() ?? "",
-        snippet: snippetEl?.textContent?.trim() ?? "",
-        site_name: new URL(titleEl?.getAttribute("href") ?? "").hostname.replace("www.", ""),
-      };
-    });
-  }, limit);
+           let titleEl: Element | null = null;
+           let snippetEl: Element | null = null;
+           let urlEl: Element | null = null;
 
-  return results.filter((r) => r.title && r.url);
+           for (const sel of titleSelectors) {
+             titleEl = el.querySelector(sel);
+             if (titleEl) break;
+           }
+           for (const sel of snippetSelectors) {
+             snippetEl = el.querySelector(sel);
+             if (snippetEl) break;
+           }
+           for (const sel of urlSelectors) {
+             urlEl = el.querySelector(sel);
+             if (urlEl) break;
+           }
+
+           const href = titleEl?.getAttribute("href") ?? urlEl?.textContent?.trim() ?? "";
+           let site_name = "";
+           try {
+             site_name = new URL(href).hostname.replace("www.", "");
+           } catch {
+             site_name = "";
+           }
+
+           return {
+             position: index + 1,
+             title: titleEl?.textContent?.trim() ?? "",
+             url: href,
+             snippet: snippetEl?.textContent?.trim() ?? "",
+             site_name,
+           };
+         });
+       }, limit);
+
+       if (results.length > 0) {
+         return results;
+       }
+     } catch {
+       // Selector not found or error, try next
+       continue;
+     }
+   }
+
+   return [];
 }
 
 export class PlaywrightMcpServer {

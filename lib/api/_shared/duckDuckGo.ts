@@ -52,6 +52,31 @@ function updateStatus(partial: Partial<DuckDuckGoStatus>): void {
   _status = { ..._status, ...partial };
 }
 
+function extractPublishedAt(snippet: string): string | undefined {
+  // Try to extract publication date from snippet text
+  // Patterns: "Feb 10, 2025 -", "January 15, 2024", "2 days ago", "3 hours ago", etc.
+  const datePatterns = [
+    /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}/i,  // "Jan 15, 2024"
+    /\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}/i,  // "15 January 2024"
+    /(?:\d+)\s+(?:days?|hours?|weeks?|months?|years?)\s+ago/i,  // "3 days ago", "2 hours ago"
+  ];
+
+  for (const pattern of datePatterns) {
+    const match = snippet.match(pattern);
+    if (match) {
+      return match[0];
+    }
+  }
+
+  // Try to find a date in ISO format or other common formats
+  const isoMatch = snippet.match(/\d{4}-\d{2}-\d{2}/);
+  if (isoMatch) {
+    return isoMatch[0];
+  }
+
+  return undefined;
+}
+
 function buildSearchUrl(query: string, region?: Region): string {
   const params = new URLSearchParams({
     q: query,
@@ -222,6 +247,7 @@ function parseSearchResults(html: string, limit: number): SearchResult[] {
       title,
       snippet,
       url: resolvedUrl,
+      publishedAt: extractPublishedAt(snippet),
     });
   }
 
@@ -283,6 +309,7 @@ function parseClassicDuckDuckGo(html: string, limit: number): SearchResult[] {
         title,
         snippet,
         url: resolvedUrl,
+        publishedAt: extractPublishedAt(snippet),
       });
     }
   }

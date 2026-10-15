@@ -427,15 +427,16 @@ await this.refreshKiloModels(true, abortSignal);
         };
       }
 
-      // Other errors - mark key as unavailable
-      keyState.available = false;
-      keyState.lastCheckedAt = new Date().toISOString();
+      // Other errors - do NOT mark key as unavailable on transient errors
+      // Only 401/403 permanently disable keys. Transient errors (5xx, timeouts, etc.)
+      // should be retried later. This prevents keys from being marked unavailable
+      // during initialization due to temporary network issues.
+      console.warn(`Kilo access probe failed for key ${keyState.keyIndex} (status ${status}): transient error, will retry later`);
       return { success: false };
     } catch (error) {
-      // Network errors or timeouts
-      console.error("Kilo access probe failed:", sanitizeError(String(error)));
-      keyState.available = false;
-      keyState.lastCheckedAt = new Date().toISOString();
+      // Network errors or timeouts - do NOT mark key as unavailable
+      // Transient network errors should not permanently disable keys
+      console.warn(`Kilo access probe failed for key ${keyState.keyIndex}: network error, will retry later:`, sanitizeError(String(error)));
       return { success: false };
     }
   }

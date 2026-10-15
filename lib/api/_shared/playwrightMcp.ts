@@ -61,17 +61,20 @@ async function getBrowser(): Promise<import("playwright-core").Browser> {
 
   if (!_browserPromise) {
     _browserPromise = (async () => {
+      // CRITICAL: Set AWS_LAMBDA_JS_RUNTIME BEFORE importing @sparticuz/chromium.
+      // The module checks environment variables at load time to determine
+      // whether to extract Lambda-compatible libraries (al2/al2023).
+      // If set after import, the detection fails and libraries aren't extracted,
+      // causing "error while loading shared libraries: libnss3.so" errors.
+      const isVercel = !!(process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME);
+      if (isVercel && !process.env.AWS_LAMBDA_JS_RUNTIME) {
+        process.env.AWS_LAMBDA_JS_RUNTIME = "nodejs22.x";
+      }
+
       const { chromium } = await import("playwright-core");
       const chromiumPack = await import("@sparticuz/chromium");
 
-      const isVercel = !!(process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME);
-
       if (isVercel) {
-        // Set runtime environment for @sparticuz/chromium
-        if (!process.env.AWS_LAMBDA_JS_RUNTIME) {
-          process.env.AWS_LAMBDA_JS_RUNTIME = "nodejs22.x";
-        }
-
         // Disable graphics mode to prevent freezing
         if (typeof (chromiumPack as any).setGraphicsMode === "function") {
           (chromiumPack as any).setGraphicsMode(false);
@@ -81,17 +84,18 @@ async function getBrowser(): Promise<import("playwright-core").Browser> {
         const execDir = (await import("path")).dirname(executablePath);
 
         // CRITICAL: Set LD_LIBRARY_PATH so Chromium can find libraries
-        // @sparticuz/chromium extracts libraries to the same directory as the executable
-        process.env.LD_LIBRARY_PATH = execDir;
-
-        // Also add common library paths
+        // @sparticuz/chromium's setupLambdaEnvironment() runs at module load
+        // and adds /tmp/al2023/lib to LD_LIBRARY_PATH. We must PRESERVE that
+        // and ADD the executable directory and common system paths.
         const additionalPaths = [
           "/lib/x86_64-linux-gnu",
           "/usr/lib/x86_64-linux-gnu",
           "/lib64",
           "/usr/lib64",
         ];
-        process.env.LD_LIBRARY_PATH = [execDir, ...additionalPaths].join(":");
+        const existingLibPath = process.env.LD_LIBRARY_PATH ?? "";
+        const newPaths = [execDir, ...additionalPaths].filter((p) => !existingLibPath.includes(p));
+        process.env.LD_LIBRARY_PATH = [existingLibPath, ...newPaths].filter(Boolean).join(":");
 
         return chromium.launch({
           args: (chromiumPack as any).args,

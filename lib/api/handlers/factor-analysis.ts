@@ -449,18 +449,30 @@ export async function runFactorAnalysis(
       return returnExisting();
     }
 
-    const excerpts = await Promise.all(
-      candidates.map(async (r) => {
-        try {
-          const scrapeResult = await webScrape(r.url, { url: r.url, abortSignal: signal });
-          return scrapeResult.data
-            ? { ...r, text: scrapeResult.data.text, title: scrapeResult.data.title || r.title }
-            : r;
-        } catch {
-          return r;
-        }
-      }),
-    );
+     const excerpts = await Promise.all(
+       candidates.map(async (r) => {
+         try {
+           const scrapeResult = await webScrape(r.url, { url: r.url, abortSignal: signal });
+           if (scrapeResult.data) {
+             // Use scraped text if available, otherwise fall back to title or snippet
+             const text = scrapeResult.data.text?.trim() 
+                 || scrapeResult.data.title?.trim() 
+                 || r.title?.trim() 
+                 || r.snippet?.trim() 
+                 || "";
+             return { ...r, text: text, title: scrapeResult.data.title || r.title };
+           } else {
+             // Fallback: use snippet or title as text when scrape fails completely
+             const text = r.title?.trim() || r.snippet?.trim() || "";
+             return { ...r, text: text, title: r.title };
+           }
+         } catch {
+           // Fallback on error: use snippet or title as text
+           const text = r.title?.trim() || r.snippet?.trim() || "";
+           return { ...r, text: text, title: r.title };
+         }
+       }),
+     );
 
     const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
     const payload = {
@@ -486,33 +498,87 @@ export async function runFactorAnalysis(
       temperature: 0.2,
     };
 
-    const response = await kiloRouter.kiloInfer(payload, signal);
+    let response;
+    try {
+      response = await kiloRouter.kiloInfer(payload, signal);
+    } catch (inferError) {
+      console.error(`Kilo inference failed for scope "${scope}":`, inferError instanceof Error ? inferError.message : String(inferError));
+      return returnExisting();
+    }
+
     const content = response.choices?.[0]?.message?.content ?? "";
+    
+    // Try to extract JSON from the response content
     const parsed = safeParseJson<{ factors?: unknown[] }>(content);
+    
     if (!parsed?.factors || !Array.isArray(parsed.factors)) {
+      // If the AI response is empty or not valid JSON, try to extract JSON from markdown code blocks
+      // Some models wrap JSON in ```json ... ``` blocks
+      const jsonMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+      if (jsonMatch) {
+        const extracted = safeParseJson<{ factors?: unknown[] }>(jsonMatch[1]);
+        if (extracted?.factors && Array.isArray(extracted.factors)) {
+          return buildFactorsFromParsed(extracted, scope, existing, searchProvider);
+        }
+      }
+      
+      // If still no valid JSON, try to find JSON object in the content
+      const jsonStart = content.indexOf("{");
+      const jsonEnd = content.lastIndexOf("}");
+      if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        const jsonStr = content.slice(jsonStart, jsonEnd + 1);
+        const extracted = safeParseJson<{ factors?: unknown[] }>(jsonStr);
+        if (extracted?.factors && Array.isArray(extracted.factors)) {
+          return buildFactorsFromParsed(extracted, scope, existing, searchProvider);
+        }
+      }
+      
+      console.warn(`AI returned invalid JSON for scope "${scope}":`, content.slice(0, 500));
       return returnExisting();
     }
 
-    const normalized = parsed.factors
-      .map((f) => normalizeFactor(f, scope))
-      .filter((f): f is Factor => f !== null)
-      .filter((f) => f.scope === scope)
-      .slice(0, FACTOR_COUNT);
-
-    if (normalized.length === 0) {
-      return returnExisting();
-    }
-
-    return {
-      factors: mergeRollingWindow(existing, normalized),
-      aiCurated: true,
-      updatedAt: new Date().toISOString(),
-      ...(searchProvider ? { searchProvider } : {}),
-    };
+    return buildFactorsFromParsed(parsed, scope, existing, searchProvider);
   } catch (error) {
     // Never throw: the callers (route handlers, cron) must always be able to
     // write a window so the health endpoint can report a real `lastRun`.
     console.error(`Factor analysis failed for scope "${scope}":`, error);
     return returnExisting();
   }
+}
+
+function buildFactorsFromParsed(
+  parsed: { factors?: unknown[] },
+  scope: RegionId,
+  existing: Factor[],
+  searchProvider?: string
+): FactorWindow {
+  if (!parsed.factors || !Array.isArray(parsed.factors)) {
+    return {
+      factors: existing,
+      aiCurated: false,
+      updatedAt: new Date().toISOString(),
+      ...(searchProvider ? { searchProvider } : {}),
+    };
+  }
+  const normalized = parsed.factors
+    .map((f) => normalizeFactor(f, scope))
+    .filter((f): f is Factor => f !== null)
+    .filter((f) => f.scope === scope)
+    .slice(0, FACTOR_COUNT);
+
+  if (normalized.length === 0) {
+    return {
+      factors: existing,
+      aiCurated: false,
+      updatedAt: new Date().toISOString(),
+      ...(searchProvider ? { searchProvider } : {}),
+    };
+  }
+
+  return {
+    factors: mergeRollingWindow(existing, normalized),
+    aiCurated: true,
+    updatedAt: new Date().toISOString(),
+    ...(searchProvider ? { searchProvider } : {}),
+  };
 }

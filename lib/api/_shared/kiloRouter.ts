@@ -644,7 +644,9 @@ const result: KiloResponse = {
           lastError = new Error(`Kilo request failed with status ${status}`);
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
-          keyState.available = false;
+          // Do NOT mark key as unavailable on transient network errors.
+          // Only mark as unavailable on auth errors (401/403) which are handled above.
+          // Network errors, timeouts, etc. should not permanently disable a key.
           keyState.lastCheckedAt = new Date().toISOString();
         }
 

@@ -11,8 +11,183 @@ import {
   sanitizeUrl,
 } from "../_shared/http";
 import { getCache, setCache } from "../_shared/cache";
-import { coerceCategory, safeParseJson } from "../_shared/validation";
+import { coerceCategory } from "../_shared/validation";
 import { VALID_CATEGORIES, type Factor, type RegionId } from "../_shared/types";
+
+/**
+ * Robust JSON parsing for LLM responses.
+ * Handles markdown code fences, trailing commas, single quotes, and embedded JSON.
+ */
+function parseLLMJson<T = unknown>(text: string): T | null {
+  if (!text || typeof text !== "string") return null;
+  
+  let cleaned = text.trim();
+  
+  // Strategy 1: Direct parse
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    // Continue to other strategies
+  }
+  
+  // Strategy 2: Extract from markdown code blocks (```json ... ``` or ``` ... ```)
+  // Handle multiple code blocks, take the first one that looks like JSON
+  const markdownMatches = cleaned.matchAll(/```(?:json|js|javascript)?\s*\n?([\s\S]*?)\n?```/g);
+  for (const match of markdownMatches) {
+    const candidate = match[1].trim();
+    if (candidate) {
+      try {
+        return JSON.parse(candidate) as T;
+      } catch {
+        // Try next match
+      }
+    }
+  }
+  
+  // Strategy 3: Find JSON object/array by balanced braces/brackets
+  // This handles JSON embedded in prose: "Here is the result: {...} hope that helps!"
+  const braceResult = extractByBalancedBraces(cleaned);
+  if (braceResult) {
+    try {
+      return JSON.parse(braceResult) as T;
+    } catch {
+      // Continue
+    }
+  }
+  
+  // Strategy 4: Repair common JSON issues and retry
+  const repaired = repairCommonJsonIssues(cleaned);
+  if (repaired !== cleaned) {
+    try {
+      return JSON.parse(repaired) as T;
+    } catch {
+      // Continue
+    }
+    
+    // Try brace extraction on repaired text
+    const repairedBraceResult = extractByBalancedBraces(repaired);
+    if (repairedBraceResult) {
+      try {
+        return JSON.parse(repairedBraceResult) as T;
+      } catch {
+        // Continue
+      }
+    }
+  }
+  
+  // Strategy 5: If the response looks like it might be a JSON array directly
+  // (some models return just the array without wrapper object)
+  const arrayMatch = cleaned.match(/^\s*\[[\s\S]*\]\s*$/);
+  if (arrayMatch) {
+    try {
+      return JSON.parse(arrayMatch[0]) as T;
+    } catch {
+      // Continue
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Extract JSON by finding balanced braces/brackets.
+ * Returns the first complete JSON object or array found.
+ */
+function extractByBalancedBraces(text: string): string | null {
+  let bestCandidate: string | null = null;
+  let bestScore = -1;
+  
+  // Look for both objects { } and arrays [ ]
+  const openChars = ['{', '['];
+  const closeChars = ['}', ']'];
+  
+  for (let i = 0; i < text.length; i++) {
+    const openChar = text[i];
+    const openIndex = openChars.indexOf(openChar);
+    if (openIndex === -1) continue;
+    
+    const closeChar = closeChars[openIndex];
+    let depth = 0;
+    let inString = false;
+    let escapeNext = false;
+    
+    for (let j = i; j < text.length; j++) {
+      const char = text[j];
+      
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      
+      if (char === '\\' && inString) {
+        escapeNext = true;
+        continue;
+      }
+      
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+      
+      if (inString) continue;
+      
+      if (char === openChar) {
+        depth++;
+      } else if (char === closeChar) {
+        depth--;
+        if (depth === 0) {
+          const candidate = text.slice(i, j + 1);
+          // Score candidates: prefer objects with "factors" key, then longer valid JSON
+          let score = candidate.length;
+          if (candidate.includes('"factors"')) score += 10000;
+          if (score > bestScore) {
+            bestScore = score;
+            bestCandidate = candidate;
+          }
+          break;
+        }
+      }
+    }
+  }
+  
+  return bestCandidate;
+}
+
+/**
+ * Repair common JSON issues from LLM outputs.
+ */
+function repairCommonJsonIssues(text: string): string {
+  let result = text;
+  
+  // Remove trailing commas before } or ]
+  result = result.replace(/,\s*}/g, '}');
+  result = result.replace(/,\s*]/g, ']');
+  
+  // Replace single quotes with double quotes (for keys and string values)
+  // This is aggressive - only do it for likely JSON structures
+  result = result.replace(/'([^']*)':/g, '"$1":');  // unquoted keys with single quotes
+  result = result.replace(/: '([^']*)'/g, ': "$1"'); // single-quoted values
+  
+  // Fix unquoted keys (simple case: {key: "value"} -> {"key": "value"})
+  result = result.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+  
+  // Remove JavaScript comments
+  result = result.replace(/\/\/.*$/gm, '');
+  result = result.replace(/\/\*[\s\S]*?\*\//g, '');
+  
+  // Fix smart quotes
+  result = result.replace(/[\u201C\u201D]/g, '"');
+  result = result.replace(/[\u2018\u2019]/g, "'");
+  
+  // Fix em dashes in strings (replace with regular dashes)
+  // This is risky, so only do it inside apparent string values
+  // Skip for now to avoid corrupting valid JSON
+  
+  // Remove trailing content after complete JSON (e.g., "Here is the result: {...} hope that helps!")
+  // This is handled by extractByBalancedBraces, but we can also try to trim here
+  
+  return result;
+}
 
 /**
  * The shape stored under the canonical `dynamic-factors:{scope}` key. Every
@@ -419,7 +594,7 @@ export async function runFactorAnalysis(
               title: r.title ?? "",
               snippet: r.snippet ?? "",
               url: r.url ?? "",
-              publishedAt: undefined,
+              publishedAt: r.publishedAt,
             })),
             total: result.total,
             keyIndex: -1,
@@ -439,11 +614,23 @@ export async function runFactorAnalysis(
       searchProvider = [...counts.entries()].reduce((a, b) => (a[1] > b[1] ? a : b))[0];
       console.warn(`[dynamic-factors] search provider used: ${searchProvider} (queries: ${queries.length})`);
     }
-    const candidates = searches
+    // First, try to filter by reputable sources
+    let candidates = searches
       .flatMap((r) => r.results)
       .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
       .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
       .slice(0, 15);
+
+    // Fallback: if no reputable sources found, use top recent results anyway
+    // This ensures AI curation can still run with available sources
+    if (candidates.length === 0) {
+      console.warn(`[dynamic-factors] No reputable sources found for scope "${scope}", falling back to top recent results`);
+      candidates = searches
+        .flatMap((r) => r.results)
+        .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+        .filter((r) => isRecentPublishedAt(r.publishedAt))
+        .slice(0, 15);
+    }
 
     if (candidates.length === 0) {
       return returnExisting();
@@ -508,32 +695,12 @@ export async function runFactorAnalysis(
 
     const content = response.choices?.[0]?.message?.content ?? "";
     
-    // Try to extract JSON from the response content
-    const parsed = safeParseJson<{ factors?: unknown[] }>(content);
+    // Use robust LLM JSON parser with multiple fallback strategies
+    const parsed = parseLLMJson<{ factors?: unknown[] }>(content);
     
     if (!parsed?.factors || !Array.isArray(parsed.factors)) {
-      // If the AI response is empty or not valid JSON, try to extract JSON from markdown code blocks
-      // Some models wrap JSON in ```json ... ``` blocks
-      const jsonMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-      if (jsonMatch) {
-        const extracted = safeParseJson<{ factors?: unknown[] }>(jsonMatch[1]);
-        if (extracted?.factors && Array.isArray(extracted.factors)) {
-          return buildFactorsFromParsed(extracted, scope, existing, searchProvider);
-        }
-      }
-      
-      // If still no valid JSON, try to find JSON object in the content
-      const jsonStart = content.indexOf("{");
-      const jsonEnd = content.lastIndexOf("}");
-      if (jsonStart >= 0 && jsonEnd > jsonStart) {
-        const jsonStr = content.slice(jsonStart, jsonEnd + 1);
-        const extracted = safeParseJson<{ factors?: unknown[] }>(jsonStr);
-        if (extracted?.factors && Array.isArray(extracted.factors)) {
-          return buildFactorsFromParsed(extracted, scope, existing, searchProvider);
-        }
-      }
-      
-      console.warn(`AI returned invalid JSON for scope "${scope}":`, content.slice(0, 500));
+      // Log the raw response for debugging (truncated)
+      console.warn(`AI returned invalid/unparseable JSON for scope "${scope}". Response preview:`, content.slice(0, 1000));
       return returnExisting();
     }
 

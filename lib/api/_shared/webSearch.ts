@@ -33,7 +33,7 @@ export async function search(
   query: string,
   options: WebSearchOptions = {}
 ): Promise<{
-  results: { position: number; site_name: string; title: string; snippet: string; url: string }[];
+  results: { position: number; site_name: string; title: string; snippet: string; url: string; publishedAt?: string }[];
   total: number;
   dataSource: string;
   provider: string;
@@ -61,6 +61,7 @@ export async function search(
           title: r.title ?? "",
           snippet: r.snippet ?? "",
           url: r.url ?? "",
+          publishedAt: r.publishedAt,
         })),
         total: tinyfishResult.total,
         dataSource: "TinyFish API",
@@ -85,6 +86,7 @@ export async function search(
           title: r.title,
           snippet: r.snippet,
           url: r.url,
+          publishedAt: r.publishedAt,
         })),
         total: ppResult.total,
         dataSource: "Playwright MCP",
@@ -108,6 +110,7 @@ export async function search(
           title: r.title,
           snippet: r.snippet,
           url: r.url,
+          publishedAt: r.publishedAt,
         })),
         total: ddgResult.total,
         dataSource: "DuckDuckGo HTTP",

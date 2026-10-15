@@ -242,7 +242,8 @@ export class TinyFishRouter {
                 title: r.title ?? "",
                 snippet: r.snippet ?? "",
                 url: r.url ?? "",
-                publishedAt: r.published_at ?? undefined,
+                // TinyFish API returns 'date' field for publication date (not 'published_at')
+                publishedAt: r.date ?? r.published_at ?? undefined,
               }))
             : [];
           const result: TinyFishSearchResponse = {

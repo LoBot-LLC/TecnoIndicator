@@ -45,14 +45,15 @@ export async function search(
 
   // Step 1: Try TinyFish (primary - should always be tried first, not a fallback by default)
   try {
-    const tinyfishResult = await tinyfishRouter.tinyfishSearch(`${query} ${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}`, {
+    const tinyfishResult = await tinyfishRouter.tinyfishSearch(query, {
       limit,
       region: regionNormalized,
     }, abortSignal);
 
-    // Return TinyFish results if it has usable keys (keyIndex >= 0 means keys are configured)
+    // Return TinyFish results if it has usable keys AND actual results
     // If keyIndex === -1, it means no keys configured, so fall back to next provider
-    if (tinyfishResult.keyIndex >= 0) {
+    // If total === 0, it means no results found, so fall back to next provider
+    if (tinyfishResult.keyIndex >= 0 && tinyfishResult.total > 0) {
       lastAttemptedProvider = "tinyfish";
       return {
         results: tinyfishResult.results.map((r) => ({

@@ -614,6 +614,9 @@ export async function runFactorAnalysis(
       searchProvider = [...counts.entries()].reduce((a, b) => (a[1] > b[1] ? a : b))[0];
       console.warn(`[dynamic-factors] search provider used: ${searchProvider} (queries: ${queries.length})`);
     }
+    // Log search results summary for debugging
+    const totalResults = searches.reduce((sum, s) => sum + s.total, 0);
+    console.warn(`[dynamic-factors] scope="${scope}" total search results: ${totalResults}, providers: ${providersUsed.join(", ")}`);
     // First, try to filter by reputable sources
     let candidates = searches
       .flatMap((r) => r.results)

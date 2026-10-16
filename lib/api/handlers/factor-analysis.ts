@@ -686,6 +686,10 @@ export async function runFactorAnalysis(
       ],
       max_tokens: 4096,
       temperature: 0.2,
+      // Guarantee valid JSON output from the Kilo Gateway. Combined with the
+      // system prompt "Return strict JSON only", this ensures the model returns
+      // parseable JSON content so parseLLMJson can extract the factors array.
+      response_format: { type: "json_object" },
     };
 
     let response;

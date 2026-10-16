@@ -70,7 +70,7 @@ export async function search(
         lastAttemptedProvider,
       };
     }
-    console.warn("TinyFish has no configured keys (keyIndex=-1), falling back to Playwright MCP");
+    console.warn("TinyFish returned no usable results (keyIndex=-1 or total=0), falling back to Playwright MCP");
   } catch (error) {
     console.warn("TinyFish search failed, falling back:", error instanceof Error ? error.message : String(error));
   }

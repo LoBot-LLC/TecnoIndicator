@@ -13,6 +13,7 @@ import {
 import { getCache, setCache } from "../_shared/cache";
 import { coerceCategory, safeParseJson } from "../_shared/validation";
 import { VALID_CATEGORIES, type Factor, type RegionId } from "../_shared/types";
+import { searchRouter } from "../_shared/searchRouter";
 
 /**
  * The shape stored under the canonical `dynamic-factors:{scope}` key. Every
@@ -391,18 +392,18 @@ export async function runFactorAnalysis(
   const now = new Date().toISOString();
   const returnExisting = () => ({ factors: existing, aiCurated: carriedAiCurated, updatedAt: now });
 
-  try {
+    try {
     const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
     const searches = await Promise.all(
       queries.map((q) =>
-        tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
+        searchRouter.search(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
       ),
     );
-    const candidates = searches
-      .flatMap((r) => r.results)
-      .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
-      .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
-      .slice(0, 15);
+     const candidates = searches
+       .flatMap((r) => r.results)
+       .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+       .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
+       .slice(0, 15);
 
     if (candidates.length === 0) {
       return returnExisting();

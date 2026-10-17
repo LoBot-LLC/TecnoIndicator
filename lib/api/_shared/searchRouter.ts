@@ -219,6 +219,12 @@ export class SearchRouter {
   private parseDuckDuckGoLiteHtml(html: string, limit: number): SearchResult[] {
     const results: SearchResult[] = [];
     
+    // Check for DuckDuckGo bot challenge page
+    if (html.includes("DuckDuckGo") && html.includes("bots use DuckDuckGo too") && html.includes("challenge")) {
+      // Bot challenge detected, return no results
+      return results;
+    }
+    
     // DuckDuckGo Lite result pattern
     const resultPattern = /<tr[^>]*class="result[^"]*"[^>]*>[\s\S]*?<\/tr>/g;
     let match;

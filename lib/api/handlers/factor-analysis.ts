@@ -399,13 +399,35 @@ export async function runFactorAnalysis(
         searchRouter.search(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
       ),
     );
-     const candidates = searches
-       .flatMap((r) => r.results)
-       .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
-       .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
-       .slice(0, 15);
+
+    // Diagnostics: log which search sources returned results and how many
+    // candidates survived the reputation/recency filters. This distinguishes a
+    // DuckDuckGo bot challenge (0 raw results) from a genuine empty result set
+    // (results exist but none pass the filters).
+    const rawTotal = searches.reduce((sum, r) => sum + r.results.length, 0);
+    const reputableCount = searches
+      .flatMap((r) => r.results)
+      .filter((r) => isReputableSource(r.url)).length;
+    const recentCount = searches
+      .flatMap((r) => r.results)
+      .filter((r) => isRecentPublishedAt(r.publishedAt)).length;
+    const bothCount = searches
+      .flatMap((r) => r.results)
+      .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt)).length;
+
+    const candidates = searches
+      .flatMap((r) => r.results)
+      .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+      .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
+      .slice(0, 15);
 
     if (candidates.length === 0) {
+      console.warn(
+        `Factor analysis for scope "${scope}" found 0 curated candidates. ` +
+          `Searches attempted: ${queries.length}; raw results returned: ${rawTotal}; ` +
+          `passing isReputableSource: ${reputableCount}; passing isRecentPublishedAt: ${recentCount}; ` +
+          `passing both: ${bothCount}. Falling back to existing factors (aiCurated=${carriedAiCurated}).`,
+      );
       return returnExisting();
     }
 

@@ -1,4 +1,4 @@
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { searchRouter } from "../_shared/searchRouter";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getCache, setCache } from "../_shared/cache";
 import { SEARCH_CACHE_MS, sanitizeUrl } from "../_shared/http";
@@ -102,12 +102,12 @@ async function resolvePrices(req: Request): Promise<Response> {
     }
   }
 
-  // Bounded live-price attempt: TinyFish search + Kilo extraction.
+  // Bounded live-price attempt: search + Kilo extraction.
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
   try {
-    const searchResults = await getLivePricesFromTinyFish(scope, abortController.signal);
+    const searchResults = await getLivePricesFromSearch(scope, abortController.signal);
 
     if (searchResults.isLive) {
       await setCache(cacheKey, searchResults, SEARCH_CACHE_MS);
@@ -163,11 +163,11 @@ function extractPriceFromText(text: string): number | null {
   return null;
 }
 
-async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
+async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
   const searchResults = await Promise.all(
     COMMODITY_QUERIES.map(async ({ commodity, queryTemplate }) => {
       try {
-        return await tinyfishRouter.tinyfishSearch(queryTemplate, {
+        return await searchRouter.search(queryTemplate, {
           limit: 10,
           region: scope === "global" ? undefined : scope,
         }, abortSignal);
@@ -177,6 +177,19 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
       }
     }),
   );
+
+  // Check if we got any results at all — if all fallbacks failed, use deterministic defaults
+  const hasAnyResults = searchResults.some(r => r.results.length > 0);
+  if (!hasAnyResults) {
+    return {
+      oil: { price: 0, unit: "USD per barrel", source: "no search results", isLive: false },
+      electricity: { price: 0, unit: "USD per MWh", source: "no search results", isLive: false },
+      water: { price: 0, unit: "USD per cubic meter", source: "no search results", isLive: false },
+      asOf: new Date().toISOString(),
+      dataSource: "No search results available (all providers failed)",
+      isLive: false,
+    };
+  }
 
   const searchResultsText = searchResults
     .map((result, index) => {

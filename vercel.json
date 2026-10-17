@@ -27,10 +27,4 @@
   "github": {
     "enabled": true
   }
-  "gitlab": {
-    "enabled": true
-  }
-  "bitbucket": {
-    "enabled": true
-  }
 }

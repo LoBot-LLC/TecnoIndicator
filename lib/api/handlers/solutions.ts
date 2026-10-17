@@ -203,7 +203,7 @@ async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Pr
   try {
     const searches = await Promise.all(
       queries.map((q) =>
-        tinyfishRouter.tinyfishSearch(
+        searchRouter.search(
           `${q} ${recentMonth()}`,
           { limit: 10, region: scope === "global" ? undefined : (scope as Region) },
           abortSignal,

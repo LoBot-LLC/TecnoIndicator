@@ -33,9 +33,7 @@ export class SearchRouter {
   async initialize(): Promise<void> {
     if (this.initialized) return;
     // Initialize TinyFish router if needed
-    if (!tinyfishRouter.initialized) {
-      await tinyfishRouter.refreshTinyfishStatus(true);
-    }
+    await tinyfishRouter.refreshTinyfishStatus(true);
     this.initialized = true;
   }
 
@@ -231,7 +229,6 @@ export class SearchRouter {
       // Extract URL and title
       const urlMatch = trHtml.match(/<a[^>]*class="result__url"[^>]*>([^<]+)<\/a>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*class="result__snippet"/);
       const titleMatch = trHtml.match(/<a[^>]*class="result__snippet"[^>]*href="([^"]*)"[^>]*>([^<]+)<\/a>/);
-      const snippetMatch = trHtml.match(/<a[^>]*class="result__snippet"[^>]*>[^<]*<\/a>[\s\S]*?<\/tr>/i);
       
       let url = "";
       let title = "";

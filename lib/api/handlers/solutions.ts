@@ -1,5 +1,5 @@
 import { kiloRouter } from "../_shared/kiloRouter";
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { searchRouter } from "../_shared/searchRouter";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
 import { MAX_SOLUTIONS, SOLUTIONS_CACHE_MS } from "../_shared/http";
 import { getCache, setCache } from "../_shared/cache";
@@ -210,11 +210,11 @@ async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Pr
         ),
       ),
     );
-    const freshEvidence = searches.flatMap((r) => r.results).slice(0, 15);
+    const freshEvidence = searches.flatMap((r: { results: unknown[] }) => r.results).slice(0, 15);
     await setCache(evidenceCacheKey, freshEvidence, EVIDENCE_CACHE_MS);
     return freshEvidence;
   } catch (error) {
-    console.error("TinyFish evidence fetch failed:", error);
+    console.error("Search evidence fetch failed:", error);
     return [];
   }
 }

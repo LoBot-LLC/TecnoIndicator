@@ -686,6 +686,7 @@ export async function runFactorAnalysis(
       ],
       max_tokens: 4096,
       temperature: 0.2,
+      response_format: { type: "json_object" },
     };
 
     let response;

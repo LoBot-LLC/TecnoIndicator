@@ -340,6 +340,11 @@ function CommodityCard({
             Live
           </span>
         )}
+        {isLive && searchSource && commodity.id !== "water" && (
+          <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+            Live · {searchSource === "tinyfish" ? "TinyFish" : searchSource === "playwright" ? "Playwright MCP" : "DuckDuckGo"}
+          </span>
+        )}
       </div>
 
       <p className={`relative mt-5 font-display text-3xl font-bold tabular-nums text-slate-900 dark:text-white ${flashCls}`}>

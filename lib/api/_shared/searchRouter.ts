@@ -300,7 +300,7 @@ private async searchViaDuckDuckGo(
     // Cloudflare 522 errors. DuckDuckGo continues to be used for subsequent requests.
     if (!response.ok) {
       console.warn(`DuckDuckGo HTTP error: ${response.status} - treating as temporarily unavailable, returning empty results`);
-      return { results: [], total: 0, keyIndex: -1 };
+      return { results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" };
     }
 
     const html = await response.text();

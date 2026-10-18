@@ -544,9 +544,8 @@ if (keys.length === 0 || models.length === 0) {
       throw new Error("No available Kilo Gateway key/model combinations");
     }
 
-    // Shuffle keys and models using crypto-secure random
-    const shuffledKeys = this.shuffle(keys);
-    const shuffledModels = this.shuffle(models);
+    // Shuffle keys and models using crypto-secure random (done inside the retry loop
+    // since available keys/models may change after rate-limit resets)
 
     let lastError: Error | null = null;
     const maxRetries = 3;

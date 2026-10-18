@@ -128,12 +128,13 @@ async function resolvePrices(req: Request): Promise<Response> {
   const defaults = getScopePriceDefaults(scope === "global" ? "global" : (scope as Region));
 
   const fallbackResult: PricesPayload = {
-    oil: { ...defaults.oil, isLive: false },
-    electricity: { ...defaults.electricity, isLive: false },
-    water: { ...defaults.water, isLive: false },
+    oil: { ...defaults.oil, isLive: false, searchSource: "duckduckgo" },
+    electricity: { ...defaults.electricity, isLive: false, searchSource: "duckduckgo" },
+    water: { ...defaults.water, isLive: false, searchSource: "duckduckgo" },
     asOf: new Date().toISOString(),
     dataSource: analytics.dataSource,
     isLive: false,
+    searchSource: "duckduckgo",
   };
 
   await setCache(cacheKey, fallbackResult, SEARCH_CACHE_MS);

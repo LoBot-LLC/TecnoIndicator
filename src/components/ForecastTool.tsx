@@ -435,6 +435,7 @@ interface ForecastToolProps {
   onToggleLive: () => void;
   region: RegionId;
   onRegion: (r: RegionId) => void;
+  searchSource?: SearchSource;
 }
 
 export default function ForecastTool({
@@ -452,6 +453,7 @@ export default function ForecastTool({
   onToggleLive,
   region,
   onRegion,
+  searchSource,
 }: ForecastToolProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const [chartType, setChartType] = useState<ChartKind>("line");

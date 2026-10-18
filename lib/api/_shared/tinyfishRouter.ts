@@ -250,6 +250,7 @@ export class TinyFishRouter {
             results,
             total: data.total_results ?? 0,
             keyIndex: keyState.keyIndex,
+            searchSource: "tinyfish",
           };
 
           keyState.lastCheckedAt = new Date().toISOString();
@@ -298,7 +299,7 @@ export class TinyFishRouter {
     if (cachedFallback) return cachedFallback;
 
     console.error("TinyFish search failed:", lastError?.message);
-    return { results: [], total: 0, keyIndex: -1 };
+    return { results: [], total: 0, keyIndex: -1, searchSource: "tinyfish" };
   }
 
   async tinyfishScrape(url: string, abortSignal?: AbortSignal): Promise<ScrapedContent | null> {

@@ -44,7 +44,7 @@ const REGION_QUERIES: Record<Region, string[]> = {
   ],
 };
 
-const SOLUTION_PROMPT = `You are a Senior Business Strategy Advisor for commodity-driven companies. Based on the following market analytics, dynamic factors, and fresh web evidence, generate exactly 3 actionable solutions for business owners and executives to manage their logistics and business decisions better. Each solution should target a different strategic aspect: operational resilience, cost optimization, and strategic positioning.
+const SOLUTION_PROMPT = `You are a Senior Business Strategy Advisor for commodity-driven companies. Based on the following market analytics, dynamic factors, and fresh web evidence, generate exactly 3 Recommended strategies for business, each targeting a different strategic aspect: operational resilience, cost optimization, and strategic positioning.
 
 Return strict JSON only with this schema:
 {

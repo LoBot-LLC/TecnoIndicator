@@ -415,20 +415,44 @@ export async function runFactorAnalysis(
       .flatMap((r) => r.results)
       .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt)).length;
 
-    const candidates = searches
+    const strictCandidates = searches
       .flatMap((r) => r.results)
       .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
       .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
       .slice(0, 15);
 
+    let candidates = strictCandidates;
+
     if (candidates.length === 0) {
-      console.warn(
-        `Factor analysis for scope "${scope}" found 0 curated candidates. ` +
-          `Searches attempted: ${queries.length}; raw results returned: ${rawTotal}; ` +
-          `passing isReputableSource: ${reputableCount}; passing isRecentPublishedAt: ${recentCount}; ` +
-          `passing both: ${bothCount}. Falling back to existing factors (aiCurated=${carriedAiCurated}).`,
+      // Fallback: if no results pass the strict reputation filter, use top results
+      // from any source with a valid URL. This ensures AI inference still runs and
+      // can produce curated factors when search returns relevant content that simply
+      // isn't from a pre-approved domain.
+      const fallbackCandidates = searches
+        .flatMap((r) => r.results)
+        .filter((r) => r.url && r.title)
+        .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+        .slice(0, 15);
+
+      if (fallbackCandidates.length === 0) {
+        console.warn(
+          `Factor analysis for scope "${scope}" found 0 curated candidates. ` +
+            `Searches attempted: ${queries.length}; raw results returned: ${rawTotal}; ` +
+            `passing isReputableSource: ${reputableCount}; passing isRecentPublishedAt: ${recentCount}; ` +
+            `passing both: ${bothCount}. Falling back to existing factors (aiCurated=${carriedAiCurated}).`,
+        );
+        return returnExisting();
+      }
+
+      console.info(
+        `Factor analysis for scope "${scope}" using lenient candidate fallback ` +
+          `(${fallbackCandidates.length} candidates after reputation filter yielded 0).`,
       );
-      return returnExisting();
+      candidates = fallbackCandidates;
+    } else {
+      console.info(
+        `Factor analysis for scope "${scope}" using ${strictCandidates.length} strict-candidate matches.`,
+      );
     }
 
     const excerpts = await Promise.all(

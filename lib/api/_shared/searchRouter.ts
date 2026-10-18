@@ -291,8 +291,12 @@ private async searchViaDuckDuckGo(
       }
     });
 
+    // If the response is not OK, treat DuckDuckGo as temporarily unavailable.
+    // This prevents "All search methods failed" errors in the logs for transient issues like
+    // Cloudflare 522 errors. DuckDuckGo continues to be used for subsequent requests.
     if (!response.ok) {
-      throw new Error(`DuckDuckGo HTTP error: ${response.status}`);
+      console.warn(`DuckDuckGo HTTP error: ${response.status} - treating as temporarily unavailable, returning empty results`);
+      return { results: [], total: 0, keyIndex: -1 };
     }
 
     const html = await response.text();

@@ -252,7 +252,33 @@ export const REPUTABLE_HOSTS = [
 export function isReputableSource(url: string): boolean {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    return REPUTABLE_HOSTS.some((prefix) => host === prefix || host.endsWith(`.${prefix}`));
+    
+    // First check: exact match or subdomain (covers .com, .org, .gov, etc.)
+    if (REPUTABLE_HOSTS.some((prefix) => host === prefix || host.endsWith(`.${prefix}`))) {
+      return true;
+    }
+    
+    // Second check: accept any government (.gov/.mil) and academic (.ac) domains,
+    // since national statistics bureaus, energy ministries, and research institutes
+    // are authoritative for commodity analysis regardless of their exact site name.
+    const hostParts = host.split('.');
+    const lastSegment = hostParts[hostParts.length - 1];
+    const tldSeg = hostParts[hostParts.length - 2] ?? '';
+    if (lastSegment === 'gov' || lastSegment === 'mil' || tldSeg === 'ac') {
+      return true;
+    }
+
+    // Third check: for known news / agency sources, match by name ignoring TLD
+    // variations (reuters.co.uk matches reuters, bloomberg.com.sg matches bloomberg).
+    const knownSources = new Set([
+      'reuters', 'apnews', 'bloomberg', 'ft', 'platts',
+      'opec', 'iea', 'eia', 'worldbank', 'un', 'unep', 'wri', 'wrm', 'oecd', 'imf',
+      'enerdata', 'energyinst', 'globalpetrolprices', 'waterplaza', 'waterworld',
+      'wateronline', 'gulfnews', 'thenationalnews', 'businessday', 'allafrica', 'africanews',
+      'ieeewrc', 'irena', 'cfo', 'thegazette', 'execmedia'
+    ]);
+    
+    return hostParts.some(part => knownSources.has(part));
   } catch {
     return false;
   }

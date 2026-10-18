@@ -43,6 +43,7 @@ export interface CommodityQuote {
   unit: string;
   source: string;
   isLive: boolean;
+  searchSource?: "tinyfish" | "playwright" | "duckduckgo";
 }
 
 export interface PricesPayload {
@@ -52,6 +53,7 @@ export interface PricesPayload {
   asOf: string;
   dataSource: string;
   isLive: boolean;
+  searchSource: "tinyfish" | "playwright" | "duckduckgo";
 }
 
 function getCommodityUnit(commodity: string): string {
@@ -173,10 +175,14 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
         }, abortSignal);
       } catch (error) {
         console.warn(`Failed to search for ${commodity}:`, error);
-        return { results: [], total: 0, keyIndex: -1 };
+        return { results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" as const };
       }
     }),
   );
+
+  // Determine the search source from the first result set that has results
+  const firstWithResults = searchResults.find((r) => r.results.length > 0);
+  const searchSource = firstWithResults?.searchSource ?? "duckduckgo";
 
   // Check if we got any results at all — if all fallbacks failed, use deterministic defaults
   const hasAnyResults = searchResults.some(r => r.results.length > 0);
@@ -188,6 +194,7 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
       asOf: new Date().toISOString(),
       dataSource: "No search results available (all providers failed)",
       isLive: false,
+      searchSource,
     };
   }
 
@@ -241,12 +248,13 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
 
       if (prices.oil && prices.electricity && prices.water) {
         return {
-          oil: { ...prices.oil, isLive: true },
-          electricity: { ...prices.electricity, isLive: true },
-          water: { ...prices.water, isLive: true },
+          oil: { ...prices.oil, isLive: true, searchSource },
+          electricity: { ...prices.electricity, isLive: true, searchSource },
+          water: { ...prices.water, isLive: true, searchSource },
           asOf: new Date().toISOString(),
-          dataSource: "Kilo AI analysis of TinyFish search results",
+          dataSource: "Kilo AI analysis of search results",
           isLive: true,
+          searchSource,
         };
       }
     }
@@ -271,23 +279,25 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
     }
   });
 
-  if (Object.values(prices).every((p) => p.price !== null)) {
-    return {
-      oil: { price: prices.oil.price as number, unit: getCommodityUnit("oil"), source: prices.oil.source, isLive: true },
-      electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true },
-      water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true },
-      asOf: new Date().toISOString(),
-      dataSource: "TinyFish search (deterministic fallback)",
-      isLive: true,
-    };
-  }
+    if (Object.values(prices).every((p) => p.price !== null)) {
+      return {
+        oil: { price: prices.oil.price as number, unit: getCommodityUnit("oil"), source: prices.oil.source, isLive: true, searchSource },
+        electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true, searchSource },
+        water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true, searchSource },
+        asOf: new Date().toISOString(),
+        dataSource: "Search (deterministic fallback)",
+        isLive: true,
+        searchSource,
+      };
+    }
 
-  return {
-    oil: { price: 0, unit: "USD per barrel", source: "insufficient data", isLive: false },
-    electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false },
-    water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false },
-    asOf: new Date().toISOString(),
-    dataSource: "TinyFish search (insufficient data)",
-    isLive: false,
-  };
+    return {
+      oil: { price: 0, unit: "USD per barrel", source: "insufficient data", isLive: false, searchSource },
+      electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false, searchSource },
+      water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false, searchSource },
+      asOf: new Date().toISOString(),
+      dataSource: "Search (insufficient data)",
+      isLive: false,
+      searchSource,
+    };
 }

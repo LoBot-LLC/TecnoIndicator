@@ -502,13 +502,16 @@ export const FACTORS: Factor[] = [
   },
 ];
 
+export type SearchSource = "tinyfish" | "playwright" | "duckduckgo";
+
 export type LivePricesResponse = {
-  oil: { price: number; unit: string; source: string; isLive: boolean };
-  electricity: { price: number; unit: string; source: string; isLive: boolean };
-  water: { price: number; unit: string; source: string; isLive: boolean };
+  oil: { price: number; unit: string; source: string; isLive: boolean; searchSource?: SearchSource };
+  electricity: { price: number; unit: string; source: string; isLive: boolean; searchSource?: SearchSource };
+  water: { price: number; unit: string; source: string; isLive: boolean; searchSource?: SearchSource };
   asOf: string;
   dataSource: string;
   isLive: boolean;
+  searchSource?: SearchSource;
 };
 
 /** The live water quote surfaced by the water card, derived from /api/prices. */

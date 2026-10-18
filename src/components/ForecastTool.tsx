@@ -47,6 +47,7 @@ import {
   type ForecastPoint,
   type LiveWaterQuote,
   type RegionId,
+  type SearchSource,
 } from "../lib/model";
 import { EVENTS } from "../lib/events";
 
@@ -287,6 +288,8 @@ interface CommodityCardProps {
   fetching: boolean;
   onFetchWater: () => void;
   regionLabel: string;
+  searchSource?: SearchSource;
+  isLive: boolean;
 }
 
 function CommodityCard({
@@ -297,6 +300,8 @@ function CommodityCard({
   fetching,
   onFetchWater,
   regionLabel,
+  searchSource,
+  isLive,
 }: CommodityCardProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const Icon = ICONS[commodity.id];
@@ -747,27 +752,29 @@ export default function ForecastTool({
 
         {/* commodity cards */}
         <div className="grid gap-4 md:grid-cols-3">
-          {COMMODITIES.map((c, i) => (
-            <Reveal key={c.id} delay={100 + i * 60}>
-              <CommodityCard
-                commodity={{
-                  ...c,
-                  name:
-                    region === "global"
-                      ? c.name
-                      : c.id === "oil"
-                        ? `${regionProfile.oilMarker} Oil`
-                        : `${regionProfile.short} ${c.short}`,
-                }}
-                today={today}
-                horizonBand={horizonBand}
-                live={waterLive}
-                fetching={waterFetching}
-                onFetchWater={onFetchWater}
-                regionLabel={regionProfile.short}
-              />
-            </Reveal>
-          ))}
+        {COMMODITIES.map((c, i) => (
+          <Reveal key={c.id} delay={100 + i * 60}>
+            <CommodityCard
+              commodity={{
+                ...c,
+                name:
+                  region === "global"
+                    ? c.name
+                    : c.id === "oil"
+                      ? `${regionProfile.oilMarker} Oil`
+                      : `${regionProfile.short} ${c.short}`,
+              }}
+              today={today}
+              horizonBand={horizonBand}
+              live={waterLive}
+              fetching={waterFetching}
+              onFetchWater={onFetchWater}
+              regionLabel={regionProfile.short}
+              searchSource={searchSource}
+              isLive={isLive}
+            />
+          </Reveal>
+        ))}
         </div>
 
         {/* chart */}

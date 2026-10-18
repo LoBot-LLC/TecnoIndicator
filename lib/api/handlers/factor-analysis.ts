@@ -381,8 +381,6 @@ export async function runFactorAnalysis(
   const signal = options.abortSignal;
   const region = scopeRegion(scope);
   const previous = await readFactorWindow(scope);
-  // The previously stored factors are the rolling window; the static fallbacks
-  // are only used when nothing has been curated yet.
   const existing = previous?.factors.length ? previous.factors : buildFallbackFactors(scope);
   const carriedAiCurated = previous?.aiCurated ?? false;
 
@@ -392,130 +390,148 @@ export async function runFactorAnalysis(
   const now = new Date().toISOString();
   const returnExisting = () => ({ factors: existing, aiCurated: carriedAiCurated, updatedAt: now });
 
+  const maxRetries = 2;
+  let attempt = 0;
+
+  while (attempt <= maxRetries) {
     try {
-    const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
-    const searches = await Promise.all(
-      queries.map((q) =>
-        searchRouter.search(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
-      ),
-    );
+      const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
+      const searches = await Promise.all(
+        queries.map((q) =>
+          searchRouter.search(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
+        ),
+      );
 
-    // Diagnostics: log which search sources returned results and how many
-    // candidates survived the reputation/recency filters. This distinguishes a
-    // DuckDuckGo bot challenge (0 raw results) from a genuine empty result set
-    // (results exist but none pass the filters).
-    const rawTotal = searches.reduce((sum, r) => sum + r.results.length, 0);
-    const reputableCount = searches
-      .flatMap((r) => r.results)
-      .filter((r) => isReputableSource(r.url)).length;
-    const recentCount = searches
-      .flatMap((r) => r.results)
-      .filter((r) => isRecentPublishedAt(r.publishedAt)).length;
-    const bothCount = searches
-      .flatMap((r) => r.results)
-      .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt)).length;
-
-    const strictCandidates = searches
-      .flatMap((r) => r.results)
-      .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
-      .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
-      .slice(0, 15);
-
-    let candidates = strictCandidates;
-
-    if (candidates.length === 0) {
-      // Fallback: if no results pass the strict reputation filter, use top results
-      // from any source with a valid URL. This ensures AI inference still runs and
-      // can produce curated factors when search returns relevant content that simply
-      // isn't from a pre-approved domain.
-      const fallbackCandidates = searches
+      const rawTotal = searches.reduce((sum, r) => sum + r.results.length, 0);
+      const reputableCount = searches
         .flatMap((r) => r.results)
-        .filter((r) => r.url && r.title)
+        .filter((r) => isReputableSource(r.url)).length;
+      const recentCount = searches
+        .flatMap((r) => r.results)
+        .filter((r) => isRecentPublishedAt(r.publishedAt)).length;
+      const bothCount = searches
+        .flatMap((r) => r.results)
+        .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt)).length;
+
+      const strictCandidates = searches
+        .flatMap((r) => r.results)
         .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+        .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
         .slice(0, 15);
 
-      if (fallbackCandidates.length === 0) {
-        console.warn(
-          `Factor analysis for scope "${scope}" found 0 curated candidates. ` +
-            `Searches attempted: ${queries.length}; raw results returned: ${rawTotal}; ` +
-            `passing isReputableSource: ${reputableCount}; passing isRecentPublishedAt: ${recentCount}; ` +
-            `passing both: ${bothCount}. Falling back to existing factors (aiCurated=${carriedAiCurated}).`,
+      let candidates = strictCandidates;
+
+      if (candidates.length === 0) {
+        const fallbackCandidates = searches
+          .flatMap((r) => r.results)
+          .filter((r) => r.url && r.title)
+          .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+          .slice(0, 15);
+
+        if (fallbackCandidates.length === 0) {
+          console.warn(
+            `Factor analysis for scope "${scope}" found 0 curated candidates. ` +
+              `Searches attempted: ${queries.length}; raw results returned: ${rawTotal}; ` +
+              `passing isReputableSource: ${reputableCount}; passing isRecentPublishedAt: ${recentCount}; ` +
+              `passing both: ${bothCount}. Falling back to existing factors (aiCurated=${carriedAiCurated}).`,
+          );
+          return returnExisting();
+        }
+
+        console.info(
+          `Factor analysis for scope "${scope}" using lenient candidate fallback ` +
+            `(${fallbackCandidates.length} candidates after reputation filter yielded 0).`,
         );
+        candidates = fallbackCandidates;
+      } else {
+        console.info(
+          `Factor analysis for scope "${scope}" using ${strictCandidates.length} strict-candidate matches.`,
+        );
+      }
+
+      const excerpts = await Promise.all(
+        candidates.map(async (r) => {
+          try {
+            const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal);
+            return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
+          } catch {
+            return r;
+          }
+        }),
+      );
+
+      const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
+      const payload = {
+        messages: [
+          { role: "system", content: prompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              analytics,
+              existingFactors: existing,
+              candidates: excerpts.map((c) => ({
+                title: c.title,
+                source: c.url,
+                snippet: c.snippet?.slice(0, 2500),
+                text: (c as { text?: string }).text?.slice(0, 8000),
+              })),
+              region,
+              month: RECENT_MONTH(),
+            }),
+          },
+        ],
+        max_tokens: 4096,
+        temperature: 0.2,
+      };
+
+      const response = await kiloRouter.kiloInfer(payload, signal);
+      const content = response.choices?.[0]?.message?.content ?? "";
+      const parsed = safeParseJson<{ factors?: unknown[] }>(content);
+      if (!parsed?.factors || !Array.isArray(parsed.factors)) {
+        if (attempt < maxRetries) {
+          attempt++;
+          const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+          console.warn(`Factor analysis kiloInfer returned no valid factors for scope "${scope}", retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          continue;
+        }
         return returnExisting();
       }
 
-      console.info(
-        `Factor analysis for scope "${scope}" using lenient candidate fallback ` +
-          `(${fallbackCandidates.length} candidates after reputation filter yielded 0).`,
-      );
-      candidates = fallbackCandidates;
-    } else {
-      console.info(
-        `Factor analysis for scope "${scope}" using ${strictCandidates.length} strict-candidate matches.`,
-      );
-    }
+      const normalized = parsed.factors
+        .map((f) => normalizeFactor(f, scope))
+        .filter((f): f is Factor => f !== null)
+        .filter((f) => f.scope === scope)
+        .slice(0, FACTOR_COUNT);
 
-    const excerpts = await Promise.all(
-      candidates.map(async (r) => {
-        try {
-          const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal);
-          return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
-        } catch {
-          return r;
+      if (normalized.length === 0) {
+        if (attempt < maxRetries) {
+          attempt++;
+          const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+          console.warn(`Factor analysis normalized 0 factors for scope "${scope}", retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          continue;
         }
-      }),
-    );
+        return returnExisting();
+      }
 
-    const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
-    const payload = {
-      messages: [
-        { role: "system", content: prompt },
-        {
-          role: "user",
-          content: JSON.stringify({
-            analytics,
-            existingFactors: existing,
-            candidates: excerpts.map((c) => ({
-              title: c.title,
-              source: c.url,
-              snippet: c.snippet?.slice(0, 2500),
-              text: (c as { text?: string }).text?.slice(0, 8000),
-            })),
-            region,
-            month: RECENT_MONTH(),
-          }),
-        },
-      ],
-      max_tokens: 4096,
-      temperature: 0.2,
-    };
-
-    const response = await kiloRouter.kiloInfer(payload, signal);
-    const content = response.choices?.[0]?.message?.content ?? "";
-    const parsed = safeParseJson<{ factors?: unknown[] }>(content);
-    if (!parsed?.factors || !Array.isArray(parsed.factors)) {
+      return {
+        factors: mergeRollingWindow(existing, normalized),
+        aiCurated: true,
+        updatedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      if (attempt < maxRetries) {
+        attempt++;
+        const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+        console.error(`Factor analysis failed for scope "${scope}" (attempt ${attempt}/${maxRetries}):`, error);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      console.error(`Factor analysis failed for scope "${scope}" after ${maxRetries} retries:`, error);
       return returnExisting();
     }
-
-    const normalized = parsed.factors
-      .map((f) => normalizeFactor(f, scope))
-      .filter((f): f is Factor => f !== null)
-      .filter((f) => f.scope === scope)
-      .slice(0, FACTOR_COUNT);
-
-    if (normalized.length === 0) {
-      return returnExisting();
-    }
-
-    return {
-      factors: mergeRollingWindow(existing, normalized),
-      aiCurated: true,
-      updatedAt: new Date().toISOString(),
-    };
-  } catch (error) {
-    // Never throw: the callers (route handlers, cron) must always be able to
-    // write a window so the health endpoint can report a real `lastRun`.
-    console.error(`Factor analysis failed for scope "${scope}":`, error);
-    return returnExisting();
   }
+
+  return returnExisting();
 }

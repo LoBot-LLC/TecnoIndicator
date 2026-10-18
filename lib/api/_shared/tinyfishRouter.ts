@@ -32,6 +32,7 @@ interface TinyFishSearchResponse {
   results: SearchResult[];
   total: number;
   keyIndex: number;
+  searchSource: "tinyfish";
 }
 
 interface ScrapedContent {

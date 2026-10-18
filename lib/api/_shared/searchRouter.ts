@@ -13,10 +13,13 @@ export interface SearchResult {
   publishedAt?: string;
 }
 
+export type SearchSource = "tinyfish" | "playwright" | "duckduckgo";
+
 export interface SearchResponse {
   results: SearchResult[];
   total: number;
   keyIndex: number; // For compatibility, will be -1 for non-TinyFish sources
+  searchSource: SearchSource; // Which search provider returned these results
 }
 
 export class SearchRouter {
@@ -169,7 +172,7 @@ export class SearchRouter {
     } catch (error) {
       console.error("All search methods failed:", error);
       // Return empty results as final fallback
-      return { results: [], total: 0, keyIndex: -1 };
+      return { results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" };
     }
   }
 
@@ -253,7 +256,8 @@ export class SearchRouter {
     return {
       results: searchResults,
       total: searchResults.length,
-      keyIndex: -1 // Indicates non-TinyFish source
+      keyIndex: -1, // Indicates non-TinyFish source
+      searchSource: "playwright",
     };
   }
 
@@ -302,10 +306,11 @@ private async searchViaDuckDuckGo(
     const html = await response.text();
     const results = this.parseDuckDuckGoLiteHtml(html, options.limit ?? 10);
 
-    return {
+return {
       results,
       total: results.length,
-      keyIndex: -1 // Indicates non-TinyFish source
+      keyIndex: -1,
+      searchSource: "duckduckgo",
     };
   }
 

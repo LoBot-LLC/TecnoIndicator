@@ -33,8 +33,10 @@ export class SearchRouter {
     // Its availability is determined by the presence of the endpoint env var
     // AND a live reachability probe (see `checkPlaywrightMcpAvailability`).
     // The env var alone is not sufficient — an unreachable endpoint must report false.
-    this.playwrightMcpAvailable = !!process.env.PLAYWRIGHT_MCP_ENDPOINT;
-    this.playwrightMcpStatusChecked = !!process.env.PLAYWRIGHT_MCP_ENDPOINT;
+    // Empty string is treated as not set.
+    const endpoint = process.env.PLAYWRIGHT_MCP_ENDPOINT;
+    this.playwrightMcpAvailable = false;
+    this.playwrightMcpStatusChecked = typeof endpoint === "string" && endpoint.length > 0;
     this.duckDuckGoAvailable = true; // DuckDuckGo Lite is always available
   }
 

@@ -24,7 +24,7 @@ A modern, clean, professional single-page web application that delivers illustra
   - Factor name + explanation
   - Impact direction & magnitude (↑/↓ High/Medium/Low)
   - Horizon-aware highlighting (longer forecasts emphasize structural drivers)
-- **Export Options** — Download chart as PNG or table as CSV.
+- **Export Options** — Download the chart as PNG or the forecast table as CSV or Markdown (`.md`), plus per-region Markdown reports from the Regional Intelligence panel.
 - **View all global continents** — One click, and you can have a glimpse on the data of all the continents on Earth - whether it's the Americans, Europe, Asia, and more!
 - **Technical Transparency** — Collapsible “Show underlying assumptions” section.
 - **Production Polish**

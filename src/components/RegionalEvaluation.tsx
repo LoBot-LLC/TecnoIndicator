@@ -16,6 +16,7 @@ import {
   ChevronUp,
   Download,
   Droplets,
+  FileCode2,
   Fuel,
   Gauge,
   Globe2,
@@ -38,6 +39,7 @@ import {
   type RegionId,
   type Factor,
 } from "../lib/model";
+import { buildRegionalMarkdown } from "../lib/markdown";
 
 // Registered on the client only; the Chart instance is built in useEffect.
 if (typeof window !== "undefined") {
@@ -487,6 +489,16 @@ export default function RegionalEvaluation({
     );
   };
 
+  const exportRegionalMd = () => {
+    downloadFile(
+      `tecnoindicator-region-${selected.region.id}-${horizon}y.md`,
+      buildRegionalMarkdown(evals, horizonYear, selected.region.id, {
+        factors: dynamicFactors[selected.region.id] ?? [],
+      }),
+      "text/markdown;charset=utf-8",
+    );
+  };
+
   const cheapestPower = [...evals].sort(
     (a, b) => a.spots.electricity - b.spots.electricity,
   )[0];
@@ -513,14 +525,24 @@ export default function RegionalEvaluation({
                 tariffs. Scores update automatically with the live feed.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={exportRegional}
-              className="inline-flex items-center gap-2 self-start rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all hover:border-teal-400/40 hover:text-slate-900 dark:text-white"
-            >
-              <Download className="h-3.5 w-3.5 text-teal-400 dark:text-teal-300" />
-              Export region CSV
-            </button>
+            <div className="flex flex-wrap items-center gap-2 self-start">
+              <button
+                type="button"
+                onClick={exportRegional}
+                className="inline-flex items-center gap-2 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all hover:border-teal-400/40 hover:text-slate-900 dark:text-white"
+              >
+                <Download className="h-3.5 w-3.5 text-teal-400 dark:text-teal-300" />
+                Export region CSV
+              </button>
+              <button
+                type="button"
+                onClick={exportRegionalMd}
+                className="inline-flex items-center gap-2 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all hover:border-teal-400/40 hover:text-slate-900 dark:text-white"
+              >
+                <FileCode2 className="h-3.5 w-3.5 text-teal-400 dark:text-teal-300" />
+                Export region MD
+              </button>
+            </div>
           </div>
         </Reveal>
 

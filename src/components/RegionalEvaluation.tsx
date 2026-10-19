@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   BarController,
   BarElement,
@@ -17,6 +18,7 @@ import {
   Download,
   Droplets,
   FileCode2,
+  FileText,
   Fuel,
   Gauge,
   Globe2,
@@ -368,15 +370,49 @@ export default function RegionalEvaluation({
     [prices, horizon, jitter],
   );
   const [focusCommodity, setFocusCommodity] = useState<CommodityId>("electricity");
+  const [exportOpen, setExportOpen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart<"bar", number[], string> | null>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
+  const exportTriggerRef = useRef<HTMLButtonElement>(null);
+  const exportItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const exportMenuId = useId();
+  const exportTriggerId = useId();
   const horizonYear = START_YEAR + horizon;
 
   const selected = evals.find((e) => e.region.id === region) ?? evals[0];
 
+  // Close the export menu on outside click or Escape, returning focus to the
+  // trigger so keyboard users never lose their place (WAI-ARIA menu button).
+  useEffect(() => {
+    if (!exportOpen) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (exportRef.current && !exportRef.current.contains(event.target as Node)) {
+        setExportOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setExportOpen(false);
+      exportTriggerRef.current?.focus();
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [exportOpen]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // jsdom/no-2D-canvas environments cannot host Chart.js — skip drawing
+    // rather than throwing during hydration.
+    if (!canvas.getContext("2d")) return;
 
     const labels = evals.map((e) => e.region.short);
     const spotData = evals.map((e) => e.spots[focusCommodity]);
@@ -481,12 +517,82 @@ export default function RegionalEvaluation({
     };
   }, []);
 
+  const closeExportMenu = (restoreFocus = false) => {
+    setExportOpen(false);
+    if (restoreFocus) exportTriggerRef.current?.focus();
+  };
+
+  const focusExportItem = (index: number) => {
+    const items = exportItemRefs.current;
+    if (items.length === 0) return;
+    const next = ((index % items.length) + items.length) % items.length;
+    items[next]?.focus();
+  };
+
+  const openExportMenu = (focusIndex: number) => {
+    setExportOpen(true);
+    // Wait for the menu to mount before moving focus into it.
+    window.requestAnimationFrame(() => focusExportItem(focusIndex));
+  };
+
+  const onExportTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        openExportMenu(0);
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        openExportMenu(-1);
+        break;
+      case "Enter":
+      case " ":
+        // Prevent the native click so focus lands on the first menu item.
+        event.preventDefault();
+        if (exportOpen) closeExportMenu(true);
+        else openExportMenu(0);
+        break;
+    }
+  };
+
+  const onExportMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const currentIndex = exportItemRefs.current.findIndex(
+      (item) => item === document.activeElement,
+    );
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        focusExportItem(currentIndex + 1);
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        focusExportItem(currentIndex <= 0 ? -1 : currentIndex - 1);
+        break;
+      case "Home":
+        event.preventDefault();
+        focusExportItem(0);
+        break;
+      case "End":
+        event.preventDefault();
+        focusExportItem(-1);
+        break;
+      case "Tab":
+        // Let focus move on naturally, but don't leave an orphaned menu open.
+        setExportOpen(false);
+        break;
+    }
+  };
+
+  // Both downloads always describe the same region: the one the user selected
+  // in the Regional Intelligence panel (falling back to the top-ranked region
+  // while the global view is active).
   const exportRegional = () => {
     downloadFile(
-      `tecnoindicator-regions-${horizon}y.csv`,
-      buildRegionalCSV(evals, horizonYear),
+      `tecnoindicator-region-${selected.region.id}-${horizon}y.csv`,
+      buildRegionalCSV(evals, horizonYear, selected.region.id),
       "text/csv;charset=utf-8",
     );
+    closeExportMenu(true);
   };
 
   const exportRegionalMd = () => {
@@ -497,7 +603,25 @@ export default function RegionalEvaluation({
       }),
       "text/markdown;charset=utf-8",
     );
+    closeExportMenu(true);
   };
+
+  const exportOptions = [
+    {
+      id: "csv",
+      label: "Export as CSV",
+      description: "Region price table (.csv)",
+      icon: FileText,
+      onSelect: exportRegional,
+    },
+    {
+      id: "md",
+      label: "Export as Markdown",
+      description: "Region report with factors (.md)",
+      icon: FileCode2,
+      onSelect: exportRegionalMd,
+    },
+  ] as const;
 
   const cheapestPower = [...evals].sort(
     (a, b) => a.spots.electricity - b.spots.electricity,
@@ -525,23 +649,74 @@ export default function RegionalEvaluation({
                 tariffs. Scores update automatically with the live feed.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 self-start">
+            <div
+              className="relative self-start"
+              ref={exportRef}
+              onBlur={(event) => {
+                // Tabbing or clicking focus out of the menu closes it, matching
+                // the disclosure/menu-button behaviour recommended by the APG.
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setExportOpen(false);
+                }
+              }}
+            >
               <button
+                ref={exportTriggerRef}
+                id={exportTriggerId}
                 type="button"
-                onClick={exportRegional}
-                className="inline-flex items-center gap-2 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all hover:border-teal-400/40 hover:text-slate-900 dark:text-white"
+                onClick={() => setExportOpen((open) => !open)}
+                onKeyDown={onExportTriggerKeyDown}
+                aria-haspopup="menu"
+                aria-expanded={exportOpen}
+                aria-controls={exportOpen ? exportMenuId : undefined}
+                className="inline-flex items-center gap-2 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all hover:border-teal-400/40 hover:text-slate-900 dark:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60"
               >
                 <Download className="h-3.5 w-3.5 text-teal-400 dark:text-teal-300" />
-                Export region CSV
+                Export region
+                <span className="inline-flex items-center gap-1 rounded-md border border-line bg-base/40 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:text-slate-300">
+                  <span aria-hidden="true">{selected.region.flag}</span>
+                  {selected.region.name}
+                </span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 text-slate-600 transition-transform dark:text-slate-300 ${
+                    exportOpen ? "rotate-180" : ""
+                  }`}
+                />
               </button>
-              <button
-                type="button"
-                onClick={exportRegionalMd}
-                className="inline-flex items-center gap-2 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all hover:border-teal-400/40 hover:text-slate-900 dark:text-white"
-              >
-                <FileCode2 className="h-3.5 w-3.5 text-teal-400 dark:text-teal-300" />
-                Export region MD
-              </button>
+
+              {exportOpen && (
+                <div
+                  id={exportMenuId}
+                  role="menu"
+                  aria-labelledby={exportTriggerId}
+                  onKeyDown={onExportMenuKeyDown}
+                  className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-xl border border-line bg-panel py-1 shadow-2xl shadow-slate-900/40"
+                >
+                  {exportOptions.map((option, index) => (
+                    <button
+                      key={option.id}
+                      ref={(element) => {
+                        exportItemRefs.current[index] = element;
+                      }}
+                      type="button"
+                      role="menuitem"
+                      tabIndex={-1}
+                      onClick={option.onSelect}
+                      className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-teal-400/10 focus:bg-teal-400/10 focus:outline-none"
+                    >
+                      <option.icon className="mt-0.5 h-4 w-4 shrink-0 text-teal-400 dark:text-teal-300" />
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-900 dark:text-white">
+                          {option.label}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] text-slate-600 dark:text-slate-400">
+                          {option.description}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </Reveal>

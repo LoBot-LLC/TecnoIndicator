@@ -9,6 +9,7 @@
 export const EVENTS = {
   EXPORT_PNG: "tecnoindicator:export-png",
   EXPORT_CSV: "tecnoindicator:export-csv",
+  EXPORT_MD: "tecnoindicator:export-md",
 } as const;
 
 export function emit(name: string) {

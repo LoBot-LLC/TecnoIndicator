@@ -1453,6 +1453,21 @@ export const hexToRgba = (hex: string, alpha: number) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
+/**
+ * Serialise a value for a comma-separated record per RFC 4180: fields that
+ * contain a comma, double quote, CR or LF are wrapped in double quotes and
+ * embedded double quotes are doubled.
+ */
+function csvField(value: string | number): string {
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/** Build an RFC 4180 CSV document (CRLF record separators). */
+function toCSV(rows: Array<Array<string | number>>): string {
+  return rows.map((row) => row.map(csvField).join(",")).join("\r\n");
+}
+
 export function buildCSV(points: ForecastPoint[], regionId: RegionId = "global"): string {
   const region = regionById(regionId);
   const header = [
@@ -1481,10 +1496,22 @@ export function buildCSV(points: ForecastPoint[], regionId: RegionId = "global")
     p.water.min,
     p.water.max,
   ]);
-  return [header, ...rows].map((r) => r.join(",")).join("\n");
+  return toCSV([header, ...rows]);
 }
 
-export function buildRegionalCSV(evals: RegionEvaluation[], horizonYear: number): string {
+/**
+ * Build the Regional Intelligence CSV export.
+ *
+ * Without `regionId` every evaluated region is emitted (one row per region).
+ * Passing a region scopes the file to that region, so the CSV and Markdown
+ * downloads triggered from the "Export region" menu always describe the same
+ * user-chosen region.
+ */
+export function buildRegionalCSV(
+  evals: RegionEvaluation[],
+  horizonYear: number,
+  regionId?: RegionId,
+): string {
   const header = [
     "Region",
     "Oil Marker",
@@ -1503,7 +1530,12 @@ export function buildRegionalCSV(evals: RegionEvaluation[], horizonYear: number)
     "Score",
     "Outlook",
   ];
-  const rows = evals.map((e) => [
+  const scoped =
+    regionId === undefined
+      ? evals
+      : evals.filter((e) => e.region.id === regionId);
+  const selected = scoped.length > 0 ? scoped : evals;
+  const rows = selected.map((e) => [
     e.region.name,
     e.region.oilMarker,
     e.spots.oil,
@@ -1521,7 +1553,7 @@ export function buildRegionalCSV(evals: RegionEvaluation[], horizonYear: number)
     e.score,
     e.outlook,
   ]);
-  return [header, ...rows].map((r) => r.join(",")).join("\n");
+  return toCSV([header, ...rows]);
 }
 
 export function downloadFile(name: string, content: string, mime: string) {

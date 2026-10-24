@@ -1,7 +1,7 @@
 import { tinyfishRouter } from "./tinyfishRouter";
 import { getCache, setCache } from "./cache";
 import { SEARCH_CACHE_MS } from "./http";
-import { readConfiguredKeys, TINYFISH_KEY_ENV_NAMES } from "./http";
+import { readConfiguredKeys, TINYFISH_KEY_ENV_NAMES, sanitizeUrl } from "./http";
 
 // Interface matching TinyFishSearchResponse for compatibility
 export interface SearchResult {
@@ -404,6 +404,152 @@ return {
     }
   }
 
+  /**
+   * Scrape a single URL for article text. Tries Playwright MCP first (if
+   * available), then falls back to DuckDuckGo HTTP. This replaces the
+   * TinyFish scrape path for factor curation — TinyFish is reserved for
+   * live price fetching only.
+   */
+  async scrapeUrl(
+    url: string,
+    abortSignal?: AbortSignal
+  ): Promise<{ title: string; text: string } | null> {
+    const safeUrl = sanitizeUrl(url);
+    if (!safeUrl) return null;
+
+    // Try Playwright MCP first.
+    if (this.playwrightMcpAvailable) {
+      try {
+        const result = await this.scrapeViaPlaywrightMcp(safeUrl, abortSignal);
+        if (result) return result;
+      } catch (error) {
+        console.warn("Playwright MCP scrape failed:", error);
+      }
+    }
+
+    // Fall back to DuckDuckGo HTTP fetch.
+    try {
+      return await this.scrapeViaDuckDuckGo(safeUrl, abortSignal);
+    } catch (error) {
+      console.warn("DuckDuckGo scrape failed:", error);
+      return null;
+    }
+  }
+
+  private async scrapeViaPlaywrightMcp(
+    url: string,
+    abortSignal?: AbortSignal
+  ): Promise<{ title: string; text: string } | null> {
+    if (!this.playwrightMcpAvailable) {
+      throw new Error("Playwright MCP not available");
+    }
+
+    const endpoint = process.env.PLAYWRIGHT_MCP_ENDPOINT;
+    if (!endpoint) {
+      throw new Error("Playwright MCP endpoint not configured");
+    }
+
+    const authToken = process.env.PLAYWRIGHT_MCP_TOKEN;
+
+    const mcpRequest = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "browser_navigate",
+        arguments: { url },
+      },
+    };
+
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+    };
+
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(mcpRequest),
+      signal: abortSignal ?? AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Playwright MCP HTTP error: ${response.status}`);
+    }
+
+    const mcpResponse = await response.json();
+
+    if (mcpResponse.error) {
+      throw new Error(`Playwright MCP error: ${mcpResponse.error.message}`);
+    }
+
+    // Extract text content from the MCP response.
+    const content = mcpResponse.result?.content;
+    if (!Array.isArray(content) || content.length === 0) return null;
+
+    const text = content
+      .map((c: any) => (typeof c.text === "string" ? c.text : ""))
+      .join("\n")
+      .trim();
+
+    if (!text) return null;
+
+    // Try to extract a title from the first line or HTML title tag.
+    let title = "";
+    const titleMatch = text.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      title = titleMatch[1].trim();
+    } else {
+      const firstLine = text.split("\n")[0]?.trim() ?? "";
+      title = firstLine.slice(0, 200);
+    }
+
+    return { title, text: text.slice(0, 10000) };
+  }
+
+  private async scrapeViaDuckDuckGo(
+    url: string,
+    abortSignal?: AbortSignal
+  ): Promise<{ title: string; text: string } | null> {
+    const response = await fetch(url, {
+      signal: abortSignal ?? AbortSignal.timeout(15000),
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`DuckDuckGo HTTP error: ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    // Extract title from <title> tag.
+    let title = "";
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      title = titleMatch[1].trim();
+    }
+
+    // Strip HTML tags to get plain text.
+    const text = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 10000);
+
+    if (!text) return null;
+
+    return { title, text };
+  }
+
   // Status method for compatibility with health checks
   async getSearchStatus(): Promise<{
     tinyfish: { available: boolean; configuredKeys: number; usableKeys: number };
@@ -411,9 +557,9 @@ return {
     duckDuckGo: { available: boolean };
   }> {
     await this.initialize();
-    
+
     const tinyfishStatus = await tinyfishRouter.getTinyfishStatus();
-    
+
     return {
       tinyfish: {
         available: tinyfishStatus.available,

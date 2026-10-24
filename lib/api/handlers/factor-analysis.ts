@@ -1,5 +1,4 @@
 import { kiloRouter } from "../_shared/kiloRouter";
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { REGION_NAMES, type Region } from "../_shared/regions";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
 import {
@@ -462,7 +461,7 @@ export async function runFactorAnalysis(
       const excerpts = await Promise.all(
         candidates.map(async (r) => {
           try {
-            const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal);
+            const scraped = await searchRouter.scrapeUrl(r.url, signal);
             return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
           } catch {
             return r;

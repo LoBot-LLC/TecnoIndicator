@@ -83,8 +83,8 @@ export default function MarketIndexStrip({ scope, analytics }: MarketIndexStripP
                     <Icon className="h-3.5 w-3.5" />
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold text-slate-600 dark:text-slate-500">{t.label}</p>
-                    <p className="truncate text-[10px] text-slate-600 dark:text-slate-500">{t.hint}</p>
+                    <p className="truncate sm:overflow-visible sm:whitespace-normal sm:text-clip text-xs font-semibold text-slate-600 dark:text-slate-500">{t.label}</p>
+                    <p className="truncate sm:overflow-visible sm:whitespace-normal sm:text-clip text-[10px] text-slate-600 dark:text-slate-500">{t.hint}</p>
                   </div>
                 </div>
 <span

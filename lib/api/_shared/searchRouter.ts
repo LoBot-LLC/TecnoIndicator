@@ -1,7 +1,7 @@
 import { tinyfishRouter } from "./tinyfishRouter";
 import { getCache, setCache } from "./cache";
 import { SEARCH_CACHE_MS } from "./http";
-import { readConfiguredKeys, TINYFISH_KEY_ENV_NAMES, sanitizeUrl } from "./http";
+import { sanitizeUrl } from "./http";
 
 // Interface matching TinyFishSearchResponse for compatibility
 export interface SearchResult {
@@ -118,13 +118,15 @@ export class SearchRouter {
     }
   }
 
-  /**
-   * Main search method with fallback chain:
-   * 1. TinyFish (if API keys available)
-   * 2. Playwright MCP (if configured)
-   * 3. DuckDuckGo HTTP (always available)
-   */
-  async search(
+    /**
+     * Main search method with fallback chain:
+     * 1. Playwright MCP (if configured / available)
+     * 2. DuckDuckGo HTTP (always available)
+     *
+     * NOTE: TinyFish is intentionally excluded from the research/search chain.
+     * It is reserved for live price fetching only, per the project's design.
+     */
+    async search(
     query: string,
     options: { limit?: number; region?: string } = {},
     abortSignal?: AbortSignal
@@ -133,27 +135,12 @@ export class SearchRouter {
 
     const { limit = 10, region } = options;
     const cacheKey = `search:${query}:${region ?? "global"}:${limit}`;
-    
+
     // Check cache first
     const cached = await getCache<SearchResponse>(cacheKey, SEARCH_CACHE_MS);
     if (cached) return cached;
 
-    // Try TinyFish first (if we have API keys)
-    const tinyfishKeys = readConfiguredKeys(TINYFISH_KEY_ENV_NAMES);
-    if (tinyfishKeys.length > 0) {
-      try {
-        const result = await tinyfishRouter.tinyfishSearch(query, { limit, region: region as any }, abortSignal);
-        if (result.results.length > 0) {
-          await setCache(cacheKey, result, SEARCH_CACHE_MS);
-          return result;
-        }
-      } catch (error) {
-        console.warn("TinyFish search failed:", error);
-        // Continue to fallback
-      }
-    }
-
-    // Try Playwright MCP second
+    // Try Playwright MCP first (primary research source)
     if (this.playwrightMcpAvailable) {
       try {
         const result = await this.searchViaPlaywrightMcp(query, { limit, region }, abortSignal);
@@ -167,7 +154,7 @@ export class SearchRouter {
       }
     }
 
-    // Fallback to DuckDuckGo HTTP
+    // Fallback to DuckDuckGo HTTP search
     try {
       const result = await this.searchViaDuckDuckGo(query, { limit, region }, abortSignal);
       await setCache(cacheKey, result, SEARCH_CACHE_MS);

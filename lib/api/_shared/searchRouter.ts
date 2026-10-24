@@ -524,9 +524,13 @@ return {
     }
 
     // Strip HTML tags to get plain text.
+    // Use robust regexes that handle whitespace in closing tags (e.g., </script >)
+    // and remove any remaining <script or <style tags that weren't matched.
     const text = html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[^>]*>[\s\S]*?<\/script\s*>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style\s*>/gi, "")
+      .replace(/<script[^>]*>[\s\S]*$/gi, "")
+      .replace(/<style[^>]*>[\s\S]*$/gi, "")
       .replace(/<[^>]*>/g, " ")
       .replace(/\s+/g, " ")
       .trim()

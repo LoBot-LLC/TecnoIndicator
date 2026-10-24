@@ -524,15 +524,16 @@ return {
     }
 
     // Strip HTML tags to get plain text.
-    // Use robust regexes that handle whitespace and extra characters in
-    // closing tags (e.g., </script\t\n bar>), and remove unclosed script/style
-    // tags anywhere in the document (not just at end of string).
+    // Use a comprehensive approach: remove all script/style blocks first,
+    // then strip any remaining HTML tags, and finally remove any stray `<`
+    // characters to prevent HTML element injection.
     const text = html
       .replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/gi, "")
       .replace(/<style\b[^>]*>[\s\S]*?<\/style\b[^>]*>/gi, "")
       .replace(/<\/?script\b[^>]*>/gi, "")
       .replace(/<\/?style\b[^>]*>/gi, "")
       .replace(/<[^>]*>/g, " ")
+      .replace(/</g, "")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 10000);

@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   ChevronRight,
   Droplets,
+  FileCode2,
   FileText,
   Fuel,
   Image as ImageIcon,
@@ -49,6 +50,7 @@ import {
   type RegionId,
   type SearchSource,
 } from "../lib/model";
+import { buildMarkdown } from "../lib/markdown";
 import { EVENTS } from "../lib/events";
 
 // Chart.js is only ever instantiated inside useEffect against a real canvas,
@@ -531,11 +533,19 @@ export default function ForecastTool({
         buildCSV(points, region),
         "text/csv;charset=utf-8",
       );
+    const onMd = () =>
+      downloadFile(
+        `tecnoindicator-forecast-${region}-${horizon}y.md`,
+        buildMarkdown(points, region),
+        "text/markdown;charset=utf-8",
+      );
     window.addEventListener(EVENTS.EXPORT_PNG, onPng);
     window.addEventListener(EVENTS.EXPORT_CSV, onCsv);
+    window.addEventListener(EVENTS.EXPORT_MD, onMd);
     return () => {
       window.removeEventListener(EVENTS.EXPORT_PNG, onPng);
       window.removeEventListener(EVENTS.EXPORT_CSV, onCsv);
+      window.removeEventListener(EVENTS.EXPORT_MD, onMd);
     };
   }, [points, horizon, region]);
 
@@ -575,6 +585,13 @@ export default function ForecastTool({
       `tecnoindicator-forecast-${region}-${horizon}y.csv`,
       buildCSV(points, region),
       "text/csv;charset=utf-8",
+    );
+
+  const exportMd = () =>
+    downloadFile(
+      `tecnoindicator-forecast-${region}-${horizon}y.md`,
+      buildMarkdown(points, region),
+      "text/markdown;charset=utf-8",
     );
 
   const fillPct = ((horizon - 1) / 9) * 100;
@@ -857,14 +874,24 @@ export default function ForecastTool({
                   Yearly average / low / high scenarios in {selectedCurrency} · {regionProfile.name}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={exportCsv}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel/5 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 transition-colors hover:border-water/40 hover:text-water"
-              >
-                <FileText className="h-3.5 w-3.5" />
-                CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={exportCsv}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel/5 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 transition-colors hover:border-water/40 hover:text-water"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={exportMd}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel/5 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 transition-colors hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-300"
+                >
+                  <FileCode2 className="h-3.5 w-3.5" />
+                  MD
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-sm">

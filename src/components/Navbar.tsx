@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Download, FileImage, FileText, Menu, Moon, Sun, X } from "lucide-react";
+import { ChevronDown, Download, FileCode2, FileImage, FileText, Menu, Moon, Sun, X } from "lucide-react";
 import Logo from "./Logo";
 import { GithubIcon } from "./icons";
 import { EVENTS, emit } from "../lib/events";
@@ -49,8 +49,14 @@ export default function Navbar() {
     };
   }, []);
 
-  const doExport = (kind: "png" | "csv") => {
-    emit(kind === "png" ? EVENTS.EXPORT_PNG : EVENTS.EXPORT_CSV);
+  const doExport = (kind: "png" | "csv" | "md") => {
+    emit(
+      kind === "png"
+        ? EVENTS.EXPORT_PNG
+        : kind === "csv"
+          ? EVENTS.EXPORT_CSV
+          : EVENTS.EXPORT_MD,
+    );
     setExportOpen(false);
     setMobileOpen(false);
   };
@@ -117,6 +123,14 @@ export default function Navbar() {
                   <FileText className="h-4 w-4 text-water" />
                   Data as CSV
                 </button>
+                <button
+                  type="button"
+                  onClick={() => doExport("md")}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-800 transition-colors hover:bg-teal-400/10 hover:text-teal-600 dark:text-slate-100 dark:hover:bg-teal-400/10 dark:hover:text-teal-200"
+                >
+                  <FileCode2 className="h-4 w-4 text-teal-400 dark:text-teal-300" />
+                  Data as MD
+                </button>
               </div>
             )}
           </div>
@@ -177,25 +191,36 @@ export default function Navbar() {
           <div className="mt-3 flex justify-end">
             <CurrencySelector />
           </div>
-<div className="mt-2 flex gap-2">
+<div className="mt-2 grid grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={() => doExport("png")}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100"
+                aria-label="Download chart as PNG"
+                className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
               >
                 <FileImage className="h-4 w-4" /> PNG
               </button>
               <button
                 type="button"
                 onClick={() => doExport("csv")}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100"
+                aria-label="Download data as CSV"
+                className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
               >
                 <FileText className="h-4 w-4" /> CSV
               </button>
               <button
                 type="button"
+                onClick={() => doExport("md")}
+                aria-label="Download data as Markdown"
+                className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
+              >
+                <FileCode2 className="h-4 w-4" /> MD
+              </button>
+              <button
+                type="button"
                 onClick={() => toggleTheme()}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100"
+                aria-label="Toggle theme"
+                className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
               >
                 {theme === "dark" ? (
                   <Moon className="h-4 w-4" />

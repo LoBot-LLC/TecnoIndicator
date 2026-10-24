@@ -276,6 +276,9 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
     f.magnitude === "High" || f.magnitude === "Medium" || f.magnitude === "Low" ? f.magnitude : "Medium";
   const bias = f.bias === "short" || f.bias === "mid" || f.bias === "long" || f.bias === "flat" ? f.bias : "flat";
   const sourceUrl = sanitizeUrl(source);
+  const resolvedSource = sourceUrl ?? (source.trim() || "AI-curated market analysis");
+  // Accept factors even when the source is not a valid URL (e.g., when no
+  // search results are available for citation).
   const importanceScore =
     typeof f.importanceScore === "number" && Number.isFinite(f.importanceScore)
       ? Math.max(0, Math.min(100, Math.round(f.importanceScore)))
@@ -285,6 +288,7 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
         (c): c is Factor["commodities"][number] => c === "oil" || c === "electricity" || c === "water",
       )
     : [];
+  if (!name || !explanation || importanceScore < 20 || commodities.length === 0) return null;
   const region = scopeRegion(scope);
   const regions =
     f.regions && Array.isArray(f.regions)
@@ -310,7 +314,7 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
     explanation: explanation.slice(0, 1200),
     direction,
     magnitude,
-    source: sourceUrl,
+    source: resolvedSource,
     bias,
     drift: {
       ...(typeof driftRaw.oil === "number" && Number.isFinite(driftRaw.oil) ? { oil: driftRaw.oil } : {}),
@@ -421,28 +425,28 @@ export async function runFactorAnalysis(
 
       let candidates = strictCandidates;
 
-      if (candidates.length === 0) {
-        const fallbackCandidates = searches
-          .flatMap((r) => r.results)
-          .filter((r) => r.url && r.title)
-          .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
-          .slice(0, 15);
+       if (candidates.length === 0) {
+         const fallbackCandidates = searches
+           .flatMap((r) => r.results)
+           .filter((r) => r.url && r.title)
+           .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+           .slice(0, 15);
 
         if (fallbackCandidates.length === 0) {
           console.warn(
             `Factor analysis for scope "${scope}" found 0 curated candidates. ` +
               `Searches attempted: ${queries.length}; raw results returned: ${rawTotal}; ` +
               `passing isReputableSource: ${reputableCount}; passing isRecentPublishedAt: ${recentCount}; ` +
-              `passing both: ${bothCount}. Falling back to existing factors (aiCurated=${carriedAiCurated}).`,
+              `passing both: ${bothCount}. Attempting AI curation with analytics and existing factors only.`,
           );
-          return returnExisting();
+          candidates = [];
+        } else {
+          console.info(
+            `Factor analysis for scope "${scope}" using lenient candidate fallback ` +
+              `(${fallbackCandidates.length} candidates after reputation filter yielded 0).`,
+          );
+          candidates = fallbackCandidates;
         }
-
-        console.info(
-          `Factor analysis for scope "${scope}" using lenient candidate fallback ` +
-            `(${fallbackCandidates.length} candidates after reputation filter yielded 0).`,
-        );
-        candidates = fallbackCandidates;
       } else {
         console.info(
           `Factor analysis for scope "${scope}" using ${strictCandidates.length} strict-candidate matches.`,

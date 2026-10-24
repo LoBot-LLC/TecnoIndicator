@@ -98,6 +98,34 @@ export class KiloRouter {
   private initializing: Promise<void> | null = null;
   private catalogLastRefresh: string | null = null;
 
+  /**
+   * Check for and reset any expired rate limits on keys and models.
+   * This allows retries after rate limit windows have expired.
+   */
+  private resetExpiredRateLimits(): void {
+    const now = Date.now();
+    for (const keyState of this.keyStates) {
+      if (keyState.rateLimited && keyState.rateLimitResetAt) {
+        const resetTime = Date.parse(keyState.rateLimitResetAt);
+        if (Number.isFinite(resetTime) && now >= resetTime) {
+          keyState.rateLimited = false;
+          keyState.rateLimitScope = null;
+          keyState.rateLimitResetAt = null;
+          keyState.rateLimitRemaining = null;
+        }
+      }
+    }
+    for (const model of this.modelCandidates) {
+      if (model.rateLimited && model.rateLimitResetAt) {
+        const resetTime = Date.parse(model.rateLimitResetAt);
+        if (Number.isFinite(resetTime) && now >= resetTime) {
+          model.rateLimited = false;
+          model.rateLimitScope = null;
+        }
+      }
+    }
+  }
+
   async initKiloRouter(abortSignal?: AbortSignal): Promise<void> {
     if (this.initialized) return;
     if (this.initializing) {
@@ -478,12 +506,16 @@ await this.refreshKiloModels(true, abortSignal);
       await this.initializing;
     }
 
+    // Reset any expired rate limits before checking usability
+    this.resetExpiredRateLimits();
+
     // Force refresh before returning complete Kilo-unavailable
     const hasAnyUsableKeys = this.keyStates.some(k => k.available && !k.rateLimited);
     const hasAnyUsableModels = this.modelCandidates.some(m => m.available && !m.rateLimited);
 
     if (!hasAnyUsableKeys || !hasAnyUsableModels) {
       await this.refreshKiloModels(true, abortSignal);
+      this.resetExpiredRateLimits();
     }
 
     const keys = this.keyStates
@@ -503,7 +535,7 @@ await this.refreshKiloModels(true, abortSignal);
         .map((_m, i) => i);
     }
 
-    if (keys.length === 0 || models.length === 0) {
+if (keys.length === 0 || models.length === 0) {
       const availableKeys = this.keyStates.filter(k => k.available && !k.rateLimited);
       const configuredKeys = this.keyStates.filter(k => k.keyIndex !== undefined);
       if (availableKeys.length > 0 && configuredKeys.length > 0) {
@@ -512,150 +544,187 @@ await this.refreshKiloModels(true, abortSignal);
       throw new Error("No available Kilo Gateway key/model combinations");
     }
 
-    // Shuffle keys and models using crypto-secure random
-    const shuffledKeys = this.shuffle(keys);
-    const shuffledModels = this.shuffle(models);
+    // Shuffle keys and models using crypto-secure random (done inside the retry loop
+    // since available keys/models may change after rate-limit resets)
 
     let lastError: Error | null = null;
+    const maxRetries = 3;
+    let retryCount = 0;
 
-    for (const keyIndex of shuffledKeys) {
-      const keyState = this.keyStates[keyIndex];
-      for (const modelIndex of shuffledModels) {
-        const modelCandidate = this.modelCandidates[modelIndex];
+    while (retryCount <= maxRetries) {
+      this.resetExpiredRateLimits();
 
-        try {
-          const response = await fetch(KILO_GATEWAY_CHAT_URL, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${keyState.keyValue}`,
-            },
-            body: JSON.stringify({
-              model: modelCandidate.modelId,
-              messages: payload.messages ?? [],
-              max_tokens: payload.max_tokens ?? 2048,
-              temperature: payload.temperature ?? 0.7,
-              response_format: payload.response_format ?? undefined,
-            }),
-            signal: abortSignal ?? AbortSignal.timeout(10000),
-          });
+      // Re-evaluate available keys/models after resetting expired rate limits
+      const currentKeys = this.keyStates
+        .filter(k => k.available && !k.rateLimited)
+        .map((_k, i) => i);
+      const currentModels = this.modelCandidates
+        .filter(m => m.available && !m.rateLimited)
+        .map((_m, i) => i);
 
-          const status = response.status;
+      if (currentKeys.length === 0 || currentModels.length === 0) {
+        if (retryCount >= maxRetries) {
+          throw lastError ?? new Error("No available Kilo Gateway key/model combinations after retries");
+        }
+        // Wait before retry with exponential backoff
+        const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 5000);
+        console.info(`Kilo inference: all keys/models rate-limited, retrying in ${backoffMs}ms (attempt ${retryCount + 1}/${maxRetries})`);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        retryCount++;
+        continue;
+      }
 
-          if (status === 200) {
-            const data = await response.json();
-const result: KiloResponse = {
-               id: data.id ?? makeId(),
-               object: data.object ?? "chat.completion",
-              created: data.created ?? Math.floor(Date.now() / 1000),
-              model: data.model ?? modelCandidate.modelId,
-              choices: Array.isArray(data.choices) && data.choices.length > 0
-                ? data.choices.map((choice: any) => ({
-                    index: choice.index ?? 0,
-                    message: {
-                      role: choice.message?.role ?? "assistant",
-                      content: choice.message?.content ?? "",
-                    },
-                    logprobs: choice.logprobs ?? null,
-                    finish_reason: choice.finish_reason ?? "stop",
-                  }))
-                : [],
-              usage: {
-                prompt_tokens: data.usage?.prompt_tokens ?? 0,
-                completion_tokens: data.usage?.completion_tokens ?? 0,
-                total_tokens: data.usage?.total_tokens ?? 0,
+      const currentShuffledKeys = this.shuffle(currentKeys);
+      const currentShuffledModels = this.shuffle(currentModels);
+
+      for (const keyIndex of currentShuffledKeys) {
+        const keyState = this.keyStates[keyIndex];
+        for (const modelIndex of currentShuffledModels) {
+          const modelCandidate = this.modelCandidates[modelIndex];
+
+          try {
+            const response = await fetch(KILO_GATEWAY_CHAT_URL, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${keyState.keyValue}`,
               },
-            };
+              body: JSON.stringify({
+                model: modelCandidate.modelId,
+                messages: payload.messages ?? [],
+                max_tokens: payload.max_tokens ?? 2048,
+                temperature: payload.temperature ?? 0.7,
+                response_format: payload.response_format ?? undefined,
+              }),
+              signal: abortSignal ?? AbortSignal.timeout(10000),
+            });
 
-            keyState.lastCheckedAt = new Date().toISOString();
-            keyState.lastSuccessAt = keyState.lastCheckedAt;
-            keyState.rateLimited = false;
-            modelCandidate.lastCheckedAt = new Date().toISOString();
-            modelCandidate.lastSuccessAt = modelCandidate.lastCheckedAt;
-            modelCandidate.rateLimited = false;
+            const status = response.status;
 
-            return result;
-          }
+            if (status === 200) {
+              const data = await response.json();
+              const result: KiloResponse = {
+                id: data.id ?? makeId(),
+                object: data.object ?? "chat.completion",
+                created: data.created ?? Math.floor(Date.now() / 1000),
+                model: data.model ?? modelCandidate.modelId,
+                choices: Array.isArray(data.choices) && data.choices.length > 0
+                  ? data.choices.map((choice: any) => ({
+                      index: choice.index ?? 0,
+                      message: {
+                        role: choice.message?.role ?? "assistant",
+                        content: choice.message?.content ?? "",
+                      },
+                      logprobs: choice.logprobs ?? null,
+                      finish_reason: choice.finish_reason ?? "stop",
+                    }))
+                  : [],
+                usage: {
+                  prompt_tokens: data.usage?.prompt_tokens ?? 0,
+                  completion_tokens: data.usage?.completion_tokens ?? 0,
+                  total_tokens: data.usage?.total_tokens ?? 0,
+                },
+              };
 
-          if (status === 401 || status === 403) {
-            keyState.available = false;
-            keyState.lastCheckedAt = new Date().toISOString();
-            continue;
-          }
+              keyState.lastCheckedAt = new Date().toISOString();
+              keyState.lastSuccessAt = keyState.lastCheckedAt;
+              keyState.rateLimited = false;
+              modelCandidate.lastCheckedAt = new Date().toISOString();
+              modelCandidate.lastSuccessAt = modelCandidate.lastCheckedAt;
+              modelCandidate.rateLimited = false;
 
-          if (status === 429 || isGlobalRateLimitStatus(status)) {
-            const body = await response.text();
-            const code = this.extractRateLimitCode(body);
-            const retryAfter = response.headers.get("retry-after");
-            const rateLimitRemaining = response.headers.get("x-ratelimit-remaining");
-            const rateLimitReset = response.headers.get("x-ratelimit-reset");
-            let scope: "key" | "model" | "global" | "unknown" | null = "unknown";
-
-            if (code.includes("key") || code.includes("rate_limit_key")) {
-              scope = "key";
-            } else if (code.includes("model") || code.includes("rate_limit_model")) {
-              scope = "model";
-            } else if (code.includes("global") || code.includes("ip")) {
-              scope = "global";
+              return result;
             }
 
-            const resetAt = this.parseResetAt(retryAfter, rateLimitReset);
+            if (status === 401 || status === 403) {
+              keyState.available = false;
+              keyState.lastCheckedAt = new Date().toISOString();
+              continue;
+            }
 
-            if (scope === "global") {
-              for (const key of this.keyStates) {
-                key.rateLimited = true;
-                key.rateLimitScope = "global";
-                key.rateLimitResetAt = resetAt;
-                key.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
-                key.lastCheckedAt = new Date().toISOString();
+            if (status === 429 || isGlobalRateLimitStatus(status)) {
+              const body = await response.text();
+              const code = this.extractRateLimitCode(body);
+              const retryAfter = response.headers.get("retry-after");
+              const rateLimitRemaining = response.headers.get("x-ratelimit-remaining");
+              const rateLimitReset = response.headers.get("x-ratelimit-reset");
+              let scope: "key" | "model" | "global" | "unknown" | null = "unknown";
+
+              if (code.includes("key") || code.includes("rate_limit_key")) {
+                scope = "key";
+              } else if (code.includes("model") || code.includes("rate_limit_model")) {
+                scope = "model";
+              } else if (code.includes("global") || code.includes("ip")) {
+                scope = "global";
               }
-              for (const model of this.modelCandidates) {
-                model.rateLimited = true;
-                model.rateLimitScope = "global";
-                model.rateLimitResetAt = resetAt;
+
+              const resetAt = this.parseResetAt(retryAfter, rateLimitReset);
+
+              if (scope === "global") {
+                for (const key of this.keyStates) {
+                  key.rateLimited = true;
+                  key.rateLimitScope = "global";
+                  key.rateLimitResetAt = resetAt;
+                  key.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
+                  key.lastCheckedAt = new Date().toISOString();
+                }
+                for (const model of this.modelCandidates) {
+                  model.rateLimited = true;
+                  model.rateLimitScope = "global";
+                  model.rateLimitResetAt = resetAt;
+                }
+                throw new Error("Global Kilo rate limit detected");
+              } else if (scope === "key") {
+                keyState.rateLimited = true;
+                keyState.rateLimitScope = "key";
+                keyState.rateLimitResetAt = resetAt;
+                keyState.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
+                keyState.lastCheckedAt = new Date().toISOString();
+              } else if (scope === "model") {
+                modelCandidate.rateLimited = true;
+                modelCandidate.rateLimitScope = "model";
+                modelCandidate.rateLimitResetAt = resetAt;
+                modelCandidate.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
+                modelCandidate.lastCheckedAt = new Date().toISOString();
+              } else {
+                keyState.rateLimited = true;
+                keyState.rateLimitScope = "unknown";
+                keyState.rateLimitResetAt = resetAt;
+                keyState.lastCheckedAt = new Date().toISOString();
+                modelCandidate.rateLimited = true;
+                modelCandidate.rateLimitScope = "unknown";
+                modelCandidate.lastCheckedAt = new Date().toISOString();
               }
-              throw new Error("Global Kilo rate limit detected");
-            } else if (scope === "key") {
-              keyState.rateLimited = true;
-              keyState.rateLimitScope = "key";
-              keyState.rateLimitResetAt = resetAt;
-              keyState.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
-              keyState.lastCheckedAt = new Date().toISOString();
-            } else if (scope === "model") {
-              modelCandidate.rateLimited = true;
-              modelCandidate.rateLimitScope = "model";
-              modelCandidate.rateLimitResetAt = resetAt;
-              modelCandidate.rateLimitRemaining = this.parseRateLimitRemaining(rateLimitRemaining);
-              modelCandidate.lastCheckedAt = new Date().toISOString();
-            } else {
-              keyState.rateLimited = true;
-              keyState.rateLimitScope = "unknown";
-              keyState.rateLimitResetAt = resetAt;
-              keyState.lastCheckedAt = new Date().toISOString();
-              modelCandidate.rateLimited = true;
-              modelCandidate.rateLimitScope = "unknown";
-              modelCandidate.lastCheckedAt = new Date().toISOString();
+
+              lastError = new Error(`Kilo request failed with status ${status}`);
+              continue;
             }
 
             lastError = new Error(`Kilo request failed with status ${status}`);
-            continue;
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            keyState.available = false;
+            keyState.lastCheckedAt = new Date().toISOString();
           }
 
-          lastError = new Error(`Kilo request failed with status ${status}`);
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          keyState.available = false;
-          keyState.lastCheckedAt = new Date().toISOString();
-        }
-
-        // If the abort signal has been fired, stop retrying
-        if (abortSignal && abortSignal.aborted) {
-          throw new Error("Kilo inference aborted");
+          // If the abort signal has been fired, stop retrying
+          if (abortSignal && abortSignal.aborted) {
+            throw new Error("Kilo inference aborted");
+          }
         }
       }
+
+      // If we exhausted all key/model combinations without success, retry
+      if (retryCount >= maxRetries) {
+        break;
+      }
+      const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 5000);
+      console.info(`Kilo inference: all combinations failed, retrying in ${backoffMs}ms (attempt ${retryCount + 1}/${maxRetries})`);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      retryCount++;
     }
 
-    throw lastError ?? new Error("No available Kilo Gateway key/model combinations");
+    throw lastError ?? new Error("No available Kilo Gateway key/model combinations after retries");
   }
 
   async getKiloStatus(abortSignal?: AbortSignal, quick: boolean = false): Promise<KiloStatus> {

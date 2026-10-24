@@ -1,4 +1,4 @@
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { searchRouter } from "../_shared/searchRouter";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getCache, setCache } from "../_shared/cache";
 import { SEARCH_CACHE_MS, sanitizeUrl } from "../_shared/http";
@@ -43,6 +43,7 @@ export interface CommodityQuote {
   unit: string;
   source: string;
   isLive: boolean;
+  searchSource?: "tinyfish" | "playwright" | "duckduckgo";
 }
 
 export interface PricesPayload {
@@ -52,6 +53,7 @@ export interface PricesPayload {
   asOf: string;
   dataSource: string;
   isLive: boolean;
+  searchSource: "tinyfish" | "playwright" | "duckduckgo";
 }
 
 function getCommodityUnit(commodity: string): string {
@@ -102,12 +104,12 @@ async function resolvePrices(req: Request): Promise<Response> {
     }
   }
 
-  // Bounded live-price attempt: TinyFish search + Kilo extraction.
+  // Bounded live-price attempt: search + Kilo extraction.
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
   try {
-    const searchResults = await getLivePricesFromTinyFish(scope, abortController.signal);
+    const searchResults = await getLivePricesFromSearch(scope, abortController.signal);
 
     if (searchResults.isLive) {
       await setCache(cacheKey, searchResults, SEARCH_CACHE_MS);
@@ -126,12 +128,13 @@ async function resolvePrices(req: Request): Promise<Response> {
   const defaults = getScopePriceDefaults(scope === "global" ? "global" : (scope as Region));
 
   const fallbackResult: PricesPayload = {
-    oil: { ...defaults.oil, isLive: false },
-    electricity: { ...defaults.electricity, isLive: false },
-    water: { ...defaults.water, isLive: false },
+    oil: { ...defaults.oil, isLive: false, searchSource: "duckduckgo" },
+    electricity: { ...defaults.electricity, isLive: false, searchSource: "duckduckgo" },
+    water: { ...defaults.water, isLive: false, searchSource: "duckduckgo" },
     asOf: new Date().toISOString(),
     dataSource: analytics.dataSource,
     isLive: false,
+    searchSource: "duckduckgo",
   };
 
   await setCache(cacheKey, fallbackResult, SEARCH_CACHE_MS);
@@ -163,20 +166,38 @@ function extractPriceFromText(text: string): number | null {
   return null;
 }
 
-async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
+async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
   const searchResults = await Promise.all(
     COMMODITY_QUERIES.map(async ({ commodity, queryTemplate }) => {
       try {
-        return await tinyfishRouter.tinyfishSearch(queryTemplate, {
+        return await searchRouter.search(queryTemplate, {
           limit: 10,
           region: scope === "global" ? undefined : scope,
         }, abortSignal);
       } catch (error) {
         console.warn(`Failed to search for ${commodity}:`, error);
-        return { results: [], total: 0, keyIndex: -1 };
+        return { results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" as const };
       }
     }),
   );
+
+  // Determine the search source from the first result set that has results
+  const firstWithResults = searchResults.find((r) => r.results.length > 0);
+  const searchSource = firstWithResults?.searchSource ?? "duckduckgo";
+
+  // Check if we got any results at all — if all fallbacks failed, use deterministic defaults
+  const hasAnyResults = searchResults.some(r => r.results.length > 0);
+  if (!hasAnyResults) {
+    return {
+      oil: { price: 0, unit: "USD per barrel", source: "no search results", isLive: false },
+      electricity: { price: 0, unit: "USD per MWh", source: "no search results", isLive: false },
+      water: { price: 0, unit: "USD per cubic meter", source: "no search results", isLive: false },
+      asOf: new Date().toISOString(),
+      dataSource: "No search results available (all providers failed)",
+      isLive: false,
+      searchSource,
+    };
+  }
 
   const searchResultsText = searchResults
     .map((result, index) => {
@@ -228,12 +249,13 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
 
       if (prices.oil && prices.electricity && prices.water) {
         return {
-          oil: { ...prices.oil, isLive: true },
-          electricity: { ...prices.electricity, isLive: true },
-          water: { ...prices.water, isLive: true },
+          oil: { ...prices.oil, isLive: true, searchSource },
+          electricity: { ...prices.electricity, isLive: true, searchSource },
+          water: { ...prices.water, isLive: true, searchSource },
           asOf: new Date().toISOString(),
-          dataSource: "Kilo AI analysis of TinyFish search results",
+          dataSource: "Kilo AI analysis of search results",
           isLive: true,
+          searchSource,
         };
       }
     }
@@ -258,23 +280,25 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
     }
   });
 
-  if (Object.values(prices).every((p) => p.price !== null)) {
-    return {
-      oil: { price: prices.oil.price as number, unit: getCommodityUnit("oil"), source: prices.oil.source, isLive: true },
-      electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true },
-      water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true },
-      asOf: new Date().toISOString(),
-      dataSource: "TinyFish search (deterministic fallback)",
-      isLive: true,
-    };
-  }
+    if (Object.values(prices).every((p) => p.price !== null)) {
+      return {
+        oil: { price: prices.oil.price as number, unit: getCommodityUnit("oil"), source: prices.oil.source, isLive: true, searchSource },
+        electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true, searchSource },
+        water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true, searchSource },
+        asOf: new Date().toISOString(),
+        dataSource: "Search (deterministic fallback)",
+        isLive: true,
+        searchSource,
+      };
+    }
 
-  return {
-    oil: { price: 0, unit: "USD per barrel", source: "insufficient data", isLive: false },
-    electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false },
-    water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false },
-    asOf: new Date().toISOString(),
-    dataSource: "TinyFish search (insufficient data)",
-    isLive: false,
-  };
+    return {
+      oil: { price: 0, unit: "USD per barrel", source: "insufficient data", isLive: false, searchSource },
+      electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false, searchSource },
+      water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false, searchSource },
+      asOf: new Date().toISOString(),
+      dataSource: "Search (insufficient data)",
+      isLive: false,
+      searchSource,
+    };
 }

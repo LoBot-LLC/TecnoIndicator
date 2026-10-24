@@ -48,6 +48,7 @@ import {
   type ForecastPoint,
   type LiveWaterQuote,
   type RegionId,
+  type SearchSource,
 } from "../lib/model";
 import { buildMarkdown } from "../lib/markdown";
 import { EVENTS } from "../lib/events";
@@ -289,6 +290,8 @@ interface CommodityCardProps {
   fetching: boolean;
   onFetchWater: () => void;
   regionLabel: string;
+  searchSource?: SearchSource;
+  isLive: boolean;
 }
 
 function CommodityCard({
@@ -299,6 +302,8 @@ function CommodityCard({
   fetching,
   onFetchWater,
   regionLabel,
+  searchSource,
+  isLive,
 }: CommodityCardProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const Icon = ICONS[commodity.id];
@@ -335,6 +340,11 @@ function CommodityCard({
         {isWater && live && (
           <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-300">
             Live
+          </span>
+        )}
+        {isLive && searchSource && commodity.id !== "water" && (
+          <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+            Live · {searchSource === "tinyfish" ? "TinyFish" : searchSource === "playwright" ? "Playwright MCP" : "DuckDuckGo"}
           </span>
         )}
       </div>
@@ -427,6 +437,7 @@ interface ForecastToolProps {
   onToggleLive: () => void;
   region: RegionId;
   onRegion: (r: RegionId) => void;
+  searchSource?: SearchSource;
 }
 
 export default function ForecastTool({
@@ -444,6 +455,7 @@ export default function ForecastTool({
   onToggleLive,
   region,
   onRegion,
+  searchSource,
 }: ForecastToolProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const [chartType, setChartType] = useState<ChartKind>("line");
@@ -764,27 +776,29 @@ export default function ForecastTool({
 
         {/* commodity cards */}
         <div className="grid gap-4 md:grid-cols-3">
-          {COMMODITIES.map((c, i) => (
-            <Reveal key={c.id} delay={100 + i * 60}>
-              <CommodityCard
-                commodity={{
-                  ...c,
-                  name:
-                    region === "global"
-                      ? c.name
-                      : c.id === "oil"
-                        ? `${regionProfile.oilMarker} Oil`
-                        : `${regionProfile.short} ${c.short}`,
-                }}
-                today={today}
-                horizonBand={horizonBand}
-                live={waterLive}
-                fetching={waterFetching}
-                onFetchWater={onFetchWater}
-                regionLabel={regionProfile.short}
-              />
-            </Reveal>
-          ))}
+        {COMMODITIES.map((c, i) => (
+          <Reveal key={c.id} delay={100 + i * 60}>
+            <CommodityCard
+              commodity={{
+                ...c,
+                name:
+                  region === "global"
+                    ? c.name
+                    : c.id === "oil"
+                      ? `${regionProfile.oilMarker} Oil`
+                      : `${regionProfile.short} ${c.short}`,
+              }}
+              today={today}
+              horizonBand={horizonBand}
+              live={waterLive}
+              fetching={waterFetching}
+              onFetchWater={onFetchWater}
+              regionLabel={regionProfile.short}
+              searchSource={searchSource}
+              isLive={isLive}
+            />
+          </Reveal>
+        ))}
         </div>
 
         {/* chart */}

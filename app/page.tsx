@@ -43,6 +43,7 @@ export default function HomePage() {
     waterFetching,
     isLive,
     streaming,
+    searchSource,
     refresh,
     fetchWater,
     toggleLive,
@@ -290,7 +291,7 @@ export default function HomePage() {
         <main>
           <Hero prices={prices} deltas={deltas} />
           <MarketIndexStrip scope={scope} analytics={scopeAnalytics} />
-          <ForecastTool
+<ForecastTool
             horizon={horizon}
             onHorizon={setHorizon}
             prices={prices}
@@ -305,6 +306,7 @@ export default function HomePage() {
             onToggleLive={toggleLive}
             region={region}
             onRegion={setRegion}
+            searchSource={searchSource}
           />
           <SolutionsSection
             fallbackFactors={scopeFactors}

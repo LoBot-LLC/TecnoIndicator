@@ -1,6 +1,7 @@
 import { REGIONS, type Region } from "../_shared/regions";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { searchRouter } from "../_shared/searchRouter";
 import { analyticsCacheKey } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
@@ -23,6 +24,12 @@ interface HealthResponse {
     available: boolean;
     usableKeys: number;
     configuredKeys: number;
+  };
+  playwrightMcp: {
+    available: boolean;
+  };
+  duckDuckGo: {
+    available: boolean;
   };
   onlineModelConnected: boolean;
   analytics: {
@@ -123,10 +130,11 @@ export async function handleHealth(_req: Request): Promise<Response> {
   const totalTimeoutId = setTimeout(() => abortController.abort(), 10000);
 
   try {
-    const [kiloStatus, tinyfishStatus, globalAnalytics, regionalAnalytics, globalFactors, regionalFactors] =
+    const [kiloStatus, tinyfishStatus, searchStatus, globalAnalytics, regionalAnalytics, globalFactors, regionalFactors] =
       await Promise.all([
         kiloRouter.getKiloStatus(abortController.signal),
         tinyfishRouter.getTinyfishStatus(abortController.signal),
+        searchRouter.getSearchStatus(),
         readAnalyticsStatus("global"),
         Promise.all(REGIONS.map((region) => readAnalyticsStatus(region))),
         readFactorStatus("global"),
@@ -152,6 +160,12 @@ export async function handleHealth(_req: Request): Promise<Response> {
         usableKeys: tinyfishStatus.usableKeys,
         configuredKeys: tinyfishStatus.configuredKeys,
       },
+      playwrightMcp: {
+        available: searchStatus.playwrightMcp.available,
+      },
+      duckDuckGo: {
+        available: searchStatus.duckDuckGo.available,
+      },
       onlineModelConnected,
       analytics: {
         global: globalAnalytics,
@@ -176,6 +190,8 @@ export async function handleHealth(_req: Request): Promise<Response> {
         onlineModelConnected: false,
         kiloGateway: { available: false, usableKeys: 0, configuredKeys: 0, keyFormats: { jwt: 0, opaque: 0, unrecognized: 0 } },
         tinyfish: { available: false, usableKeys: 0, configuredKeys: 0 },
+        playwrightMcp: { available: false },
+        duckDuckGo: { available: false },
       },
       { status: 200 },
     );

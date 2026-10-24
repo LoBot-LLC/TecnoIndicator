@@ -1,4 +1,5 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
@@ -18,5 +19,12 @@
   },
   "crons": [
     { "path": "/api/cron/curate-factors", "schedule": "0 2 * * *" }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": true,
+    "previewBranch": "*"
+  },
+  "github": {
+    "enabled": true
+  }
 }

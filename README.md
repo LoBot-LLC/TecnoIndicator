@@ -4,7 +4,7 @@
 
 <img width="1984" height="992" alt="image" src="https://github.com/user-attachments/assets/ceaff96a-4022-4f32-9a8b-d194ffd9e484" />
 
-A modern, clean, professional single-page web application that delivers illustrative energy price forecasts with interactive data visualization, scenario analysis, and dynamic factor insights. Built with **Next.js (App Router)** and deployed on Vercel: the UI is a React client application, while the market data, AI curation and forecasting live in Next.js route handlers under `app/api/`.
+A modern, clean, professional single-page web application that delivers illustrative energy price forecasts with interactive data visualization, scenario analysis, and **AI-powered** dynamic factor insights and recommendations. Built with **Next.js (App Router)** and deployed on Vercel: the UI is a React client application, while the market data, AI curation and forecasting live in Next.js route handlers under `app/api/`.
 
 **Live demo:** [https://tecnoindicator.vercel.app/](https://tecnoindicator.vercel.app/)
 
@@ -24,7 +24,7 @@ A modern, clean, professional single-page web application that delivers illustra
   - Factor name + explanation
   - Impact direction & magnitude (↑/↓ High/Medium/Low)
   - Horizon-aware highlighting (longer forecasts emphasize structural drivers)
-- **Export Options** — Download chart as PNG or table as CSV.
+- **Export Options** — Download the chart as PNG or the forecast table as CSV or Markdown (`.md`). In **Regional Intelligence**, select a region then open the **Export region** menu to download that same region as a CSV table or a Markdown (`.md`) report.
 - **View all global continents** — One click, and you can have a glimpse on the data of all the continents on Earth - whether it's the Americans, Europe, Asia, and more!
 - **Technical Transparency** — Collapsible “Show underlying assumptions” section.
 - **Production Polish**
@@ -67,7 +67,7 @@ A modern, clean, professional single-page web application that delivers illustra
 5. View results in the cards, table, and interactive chart.
 6. Click **Refresh Data** to simulate live market updates.
 7. Scroll to the **Key Factors** section — relevance updates automatically with the horizon.
-8. Use the **Export** buttons in the navbar to download data.
+8. Use the **Export** button in the navbar to download forecast data, or select a region in **Regional Intelligence** and use **Export region** to download its CSV table or Markdown report.
 
 For a production build:
 

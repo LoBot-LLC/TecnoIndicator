@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   ChevronRight,
   Droplets,
+  FileCode2,
   FileText,
   Fuel,
   Image as ImageIcon,
@@ -47,7 +48,9 @@ import {
   type ForecastPoint,
   type LiveWaterQuote,
   type RegionId,
+  type SearchSource,
 } from "../lib/model";
+import { buildMarkdown } from "../lib/markdown";
 import { EVENTS } from "../lib/events";
 
 // Chart.js is only ever instantiated inside useEffect against a real canvas,
@@ -287,6 +290,8 @@ interface CommodityCardProps {
   fetching: boolean;
   onFetchWater: () => void;
   regionLabel: string;
+  searchSource?: SearchSource;
+  isLive: boolean;
 }
 
 function CommodityCard({
@@ -297,6 +302,8 @@ function CommodityCard({
   fetching,
   onFetchWater,
   regionLabel,
+  searchSource,
+  isLive,
 }: CommodityCardProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const Icon = ICONS[commodity.id];
@@ -333,6 +340,11 @@ function CommodityCard({
         {isWater && live && (
           <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-300">
             Live
+          </span>
+        )}
+        {isLive && searchSource && commodity.id !== "water" && (
+          <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+            Live · {searchSource === "tinyfish" ? "TinyFish" : searchSource === "playwright" ? "Playwright MCP" : "DuckDuckGo"}
           </span>
         )}
       </div>
@@ -425,6 +437,7 @@ interface ForecastToolProps {
   onToggleLive: () => void;
   region: RegionId;
   onRegion: (r: RegionId) => void;
+  searchSource?: SearchSource;
 }
 
 export default function ForecastTool({
@@ -442,6 +455,7 @@ export default function ForecastTool({
   onToggleLive,
   region,
   onRegion,
+  searchSource,
 }: ForecastToolProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const [chartType, setChartType] = useState<ChartKind>("line");
@@ -519,11 +533,19 @@ export default function ForecastTool({
         buildCSV(points, region),
         "text/csv;charset=utf-8",
       );
+    const onMd = () =>
+      downloadFile(
+        `tecnoindicator-forecast-${region}-${horizon}y.md`,
+        buildMarkdown(points, region),
+        "text/markdown;charset=utf-8",
+      );
     window.addEventListener(EVENTS.EXPORT_PNG, onPng);
     window.addEventListener(EVENTS.EXPORT_CSV, onCsv);
+    window.addEventListener(EVENTS.EXPORT_MD, onMd);
     return () => {
       window.removeEventListener(EVENTS.EXPORT_PNG, onPng);
       window.removeEventListener(EVENTS.EXPORT_CSV, onCsv);
+      window.removeEventListener(EVENTS.EXPORT_MD, onMd);
     };
   }, [points, horizon, region]);
 
@@ -563,6 +585,13 @@ export default function ForecastTool({
       `tecnoindicator-forecast-${region}-${horizon}y.csv`,
       buildCSV(points, region),
       "text/csv;charset=utf-8",
+    );
+
+  const exportMd = () =>
+    downloadFile(
+      `tecnoindicator-forecast-${region}-${horizon}y.md`,
+      buildMarkdown(points, region),
+      "text/markdown;charset=utf-8",
     );
 
   const fillPct = ((horizon - 1) / 9) * 100;
@@ -747,27 +776,29 @@ export default function ForecastTool({
 
         {/* commodity cards */}
         <div className="grid gap-4 md:grid-cols-3">
-          {COMMODITIES.map((c, i) => (
-            <Reveal key={c.id} delay={100 + i * 60}>
-              <CommodityCard
-                commodity={{
-                  ...c,
-                  name:
-                    region === "global"
-                      ? c.name
-                      : c.id === "oil"
-                        ? `${regionProfile.oilMarker} Oil`
-                        : `${regionProfile.short} ${c.short}`,
-                }}
-                today={today}
-                horizonBand={horizonBand}
-                live={waterLive}
-                fetching={waterFetching}
-                onFetchWater={onFetchWater}
-                regionLabel={regionProfile.short}
-              />
-            </Reveal>
-          ))}
+        {COMMODITIES.map((c, i) => (
+          <Reveal key={c.id} delay={100 + i * 60}>
+            <CommodityCard
+              commodity={{
+                ...c,
+                name:
+                  region === "global"
+                    ? c.name
+                    : c.id === "oil"
+                      ? `${regionProfile.oilMarker} Oil`
+                      : `${regionProfile.short} ${c.short}`,
+              }}
+              today={today}
+              horizonBand={horizonBand}
+              live={waterLive}
+              fetching={waterFetching}
+              onFetchWater={onFetchWater}
+              regionLabel={regionProfile.short}
+              searchSource={searchSource}
+              isLive={isLive}
+            />
+          </Reveal>
+        ))}
         </div>
 
         {/* chart */}
@@ -843,14 +874,24 @@ export default function ForecastTool({
                   Yearly average / low / high scenarios in {selectedCurrency} · {regionProfile.name}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={exportCsv}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel/5 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 transition-colors hover:border-water/40 hover:text-water"
-              >
-                <FileText className="h-3.5 w-3.5" />
-                CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={exportCsv}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel/5 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 transition-colors hover:border-water/40 hover:text-water"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={exportMd}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel/5 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 transition-colors hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-300"
+                >
+                  <FileCode2 className="h-3.5 w-3.5" />
+                  MD
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-sm">

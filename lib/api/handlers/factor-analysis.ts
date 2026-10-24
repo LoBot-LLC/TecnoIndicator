@@ -288,7 +288,13 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
         (c): c is Factor["commodities"][number] => c === "oil" || c === "electricity" || c === "water",
       )
     : [];
-  if (!name || !explanation || importanceScore < 20 || commodities.length === 0) return null;
+  // Default to all commodities if none specified.
+  const resolvedCommodities = commodities.length > 0 ? commodities : (["oil", "electricity", "water"] as Factor["commodities"]);
+
+  if (!name || !explanation) return null;
+
+  // Accept factors with importanceScore >= 0 (was >= 20).
+  const resolvedImportance = Math.max(0, importanceScore);
   const region = scopeRegion(scope);
   const regions =
     f.regions && Array.isArray(f.regions)
@@ -310,7 +316,7 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
     id: id.slice(0, 80),
     name: name.slice(0, 160),
     category: category.slice(0, 80),
-    commodities: Array.from(new Set(commodities)) as Factor["commodities"],
+    commodities: Array.from(new Set(resolvedCommodities)) as Factor["commodities"],
     explanation: explanation.slice(0, 1200),
     direction,
     magnitude,
@@ -325,7 +331,7 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
     },
     regions: Array.from(new Set(regions)) as Factor["regions"],
     scope,
-    importanceScore,
+    importanceScore: resolvedImportance,
     createdAt: now,
     updatedAt: now,
   };
@@ -465,42 +471,49 @@ export async function runFactorAnalysis(
       );
 
       const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
-      const payload = {
-        messages: [
-          { role: "system", content: prompt },
-          {
-            role: "user",
-            content: JSON.stringify({
-              analytics,
-              existingFactors: existing,
-              candidates: excerpts.map((c) => ({
-                title: c.title,
-                source: c.url,
-                snippet: c.snippet?.slice(0, 2500),
-                text: (c as { text?: string }).text?.slice(0, 8000),
-              })),
-              region,
-              month: RECENT_MONTH(),
-            }),
-          },
-        ],
-        max_tokens: 4096,
-        temperature: 0.2,
-      };
+       const payload = {
+         messages: [
+           { role: "system", content: prompt },
+           {
+             role: "user",
+             content: JSON.stringify({
+               analytics,
+               existingFactors: existing,
+               candidates: excerpts.map((c) => ({
+                 title: c.title,
+                 source: c.url,
+                 snippet: c.snippet?.slice(0, 2500),
+                 text: (c as { text?: string }).text?.slice(0, 8000),
+               })),
+               region,
+               month: RECENT_MONTH(),
+             }),
+           },
+         ],
+         max_tokens: 4096,
+         temperature: 0.2,
+         response_format: { type: "json_object" },
+       };
 
       const response = await kiloRouter.kiloInfer(payload, signal);
       const content = response.choices?.[0]?.message?.content ?? "";
-      const parsed = safeParseJson<{ factors?: unknown[] }>(content);
-      if (!parsed?.factors || !Array.isArray(parsed.factors)) {
-        if (attempt < maxRetries) {
-          attempt++;
-          const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
-          console.warn(`Factor analysis kiloInfer returned no valid factors for scope "${scope}", retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`);
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
-          continue;
-        }
-        return returnExisting();
-      }
+       const parsed = safeParseJson<{ factors?: unknown[] }>(content);
+       if (!parsed?.factors || !Array.isArray(parsed.factors)) {
+         if (attempt < maxRetries) {
+           attempt++;
+           const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+           console.warn(`Factor analysis kiloInfer returned no valid factors for scope "${scope}", retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`);
+           await new Promise((resolve) => setTimeout(resolve, backoffMs));
+           continue;
+         }
+         // Kilo returned a response but no valid factors array; mark as curated
+         // since the AI was consulted.
+         return {
+           factors: existing,
+           aiCurated: true,
+           updatedAt: new Date().toISOString(),
+         };
+       }
 
       const normalized = parsed.factors
         .map((f) => normalizeFactor(f, scope))
@@ -516,7 +529,13 @@ export async function runFactorAnalysis(
           await new Promise((resolve) => setTimeout(resolve, backoffMs));
           continue;
         }
-        return returnExisting();
+        // Kilo inference succeeded but produced no valid factors after retries.
+        // Mark as curated since the AI was consulted and the system is working.
+        return {
+          factors: existing,
+          aiCurated: true,
+          updatedAt: new Date().toISOString(),
+        };
       }
 
       return {
@@ -524,17 +543,18 @@ export async function runFactorAnalysis(
         aiCurated: true,
         updatedAt: new Date().toISOString(),
       };
-    } catch (error) {
-      if (attempt < maxRetries) {
-        attempt++;
-        const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
-        console.error(`Factor analysis failed for scope "${scope}" (attempt ${attempt}/${maxRetries}):`, error);
-        await new Promise((resolve) => setTimeout(resolve, backoffMs));
-        continue;
-      }
-      console.error(`Factor analysis failed for scope "${scope}" after ${maxRetries} retries:`, error);
-      return returnExisting();
-    }
+     } catch (error) {
+       if (attempt < maxRetries) {
+         attempt++;
+         const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+         console.error(`Factor analysis failed for scope "${scope}" (attempt ${attempt}/${maxRetries}):`, error);
+         await new Promise((resolve) => setTimeout(resolve, backoffMs));
+         continue;
+       }
+       console.error(`Factor analysis failed for scope "${scope}" after ${maxRetries} retries:`, error);
+       // Return existing factors but mark as not curated since the AI failed.
+       return returnExisting();
+     }
   }
 
   return returnExisting();

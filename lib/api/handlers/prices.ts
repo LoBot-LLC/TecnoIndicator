@@ -243,6 +243,10 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
     temperature: 0.1,
   };
 
+  // AI-extracted prices, hoisted so they can be merged with deterministic
+  // extraction results below when the AI only returns a subset of commodities.
+  let aiPrices: Record<string, { price: number; unit: string; source: string }> | null = null;
+
   try {
     const response = await kiloRouter.kiloInfer(payload, abortSignal);
     const content = response.choices?.[0]?.message?.content ?? "";
@@ -262,18 +266,18 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
         })
         .filter((p) => p.commodity && p.price !== null && p.price > 0 && p.confidence >= 50);
 
-      const prices: Record<string, { price: number; unit: string; source: string }> = {};
+      aiPrices = {};
       for (const item of extracted) {
         if (item.commodity === "oil" || item.commodity === "electricity" || item.commodity === "water") {
-          prices[item.commodity] = { price: item.price as number, unit: item.unit, source: item.source };
+          aiPrices[item.commodity] = { price: item.price as number, unit: item.unit, source: item.source };
         }
       }
 
-      if (prices.oil && prices.electricity && prices.water) {
+      if (aiPrices.oil && aiPrices.electricity && aiPrices.water) {
         return {
-          oil: { ...prices.oil, isLive: true, searchSource },
-          electricity: { ...prices.electricity, isLive: true, searchSource },
-          water: { ...prices.water, isLive: true, searchSource },
+          oil: { ...aiPrices.oil, isLive: true, searchSource },
+          electricity: { ...aiPrices.electricity, isLive: true, searchSource },
+          water: { ...aiPrices.water, isLive: true, searchSource },
           asOf: new Date().toISOString(),
           dataSource: "Kilo AI analysis of search results",
           isLive: true,
@@ -285,7 +289,7 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
     console.warn("Kilo AI price analysis failed, falling back to deterministic extraction:", error);
   }
 
-  const prices: Record<string, { price: number | null; source: string }> = {
+  const deterministicPrices: Record<string, { price: number | null; source: string }> = {
     oil: { price: null, source: "" },
     electricity: { price: null, source: "" },
     water: { price: null, source: "" },
@@ -293,34 +297,49 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
 
   searchResults.forEach((result, index) => {
     const commodity = COMMODITY_QUERIES[index].commodity;
+    // Skip commodities already covered by AI extraction.
+    if (aiPrices?.[commodity]) return;
     for (const res of result.results ?? []) {
       const price = extractPriceFromText(`${res.title} ${res.snippet}`);
       if (price !== null) {
-        prices[commodity] = { price, source: sanitizeUrl(res.url) || res.url };
+        deterministicPrices[commodity] = { price, source: sanitizeUrl(res.url) || res.url };
         break;
       }
     }
   });
 
-    if (Object.values(prices).every((p) => p.price !== null)) {
-      return {
-        oil: { price: prices.oil.price as number, unit: getCommodityUnit("oil"), source: prices.oil.source, isLive: true, searchSource },
-        electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true, searchSource },
-        water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true, searchSource },
-        asOf: new Date().toISOString(),
-        dataSource: "Search (deterministic fallback)",
+  // Build per-commodity result: AI prices take priority, deterministic fills gaps.
+  const result: PricesPayload = {
+    oil: { price: 0, unit: "USD per barrel", source: "insufficient data", isLive: false, searchSource },
+    electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false, searchSource },
+    water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false, searchSource },
+    asOf: new Date().toISOString(),
+    dataSource: aiPrices ? "Kilo AI analysis of search results" : "Search (deterministic fallback)",
+    isLive: false,
+    searchSource,
+  };
+
+  let anyLive = false;
+  for (const commodity of ["oil", "electricity", "water"] as const) {
+    if (aiPrices?.[commodity]) {
+      result[commodity] = {
+        ...aiPrices[commodity],
         isLive: true,
         searchSource,
       };
+      anyLive = true;
+    } else if (deterministicPrices[commodity].price !== null) {
+      result[commodity] = {
+        price: deterministicPrices[commodity].price as number,
+        unit: getCommodityUnit(commodity),
+        source: deterministicPrices[commodity].source,
+        isLive: true,
+        searchSource,
+      };
+      anyLive = true;
     }
+  }
 
-    return {
-      oil: { price: 0, unit: "USD per barrel", source: "insufficient data", isLive: false, searchSource },
-      electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false, searchSource },
-      water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false, searchSource },
-      asOf: new Date().toISOString(),
-      dataSource: "Search (insufficient data)",
-      isLive: false,
-      searchSource,
-    };
+  result.isLive = anyLive;
+  return result;
 }

@@ -825,16 +825,40 @@ if (keys.length === 0 || models.length === 0) {
   private shuffle<T>(array: T[]): T[] {
     const result = [...array];
     for (let i = result.length - 1; i > 0; i--) {
-      let cryptoArray: Uint32Array;
-      try {
-        cryptoArray = crypto.getRandomValues(new Uint32Array(1));
-      } catch {
-        cryptoArray = new Uint32Array([Math.floor(Math.random() * 0xFFFFFFFF)]);
-      }
-      const j = cryptoArray[0] % (i + 1);
+      const j = this.getRandomInt(i + 1);
       [result[i], result[j]] = [result[j], result[i]];
     }
     return result;
+  }
+
+  private getRandomInt(maxExclusive: number): number {
+    // Generate a uniformly random integer in [0, maxExclusive) using rejection sampling
+    // to eliminate modulo bias when using a cryptographically secure random number generator.
+    const range = maxExclusive;
+    const limit = 0xFFFFFFFF - (0xFFFFFFFF % range);
+    const buf = new Uint32Array(1);
+    
+    // Get cryptographically secure random value
+    let randomValue: number;
+    try {
+      crypto.getRandomValues(buf);
+      randomValue = buf[0];
+    } catch {
+      // Fallback to Math.random if crypto is not available
+      randomValue = Math.floor(Math.random() * 0xFFFFFFFF);
+    }
+    
+    // Rejection sampling to eliminate modulo bias
+    while (randomValue >= limit) {
+      try {
+        crypto.getRandomValues(buf);
+        randomValue = buf[0];
+      } catch {
+        randomValue = Math.floor(Math.random() * 0xFFFFFFFF);
+      }
+    }
+    
+    return randomValue % range;
   }
 }
 

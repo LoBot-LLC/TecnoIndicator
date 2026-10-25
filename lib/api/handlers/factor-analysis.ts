@@ -505,8 +505,9 @@ export async function runFactorAnalysis(
            await new Promise((resolve) => setTimeout(resolve, backoffMs));
            continue;
          }
-         // Kilo returned a response but no valid factors array; mark as curated
-         // since the AI was consulted.
+         // Kilo inference succeeded (returned valid JSON response) but produced
+         // no factors array after all retries. Mark as curated since the AI was
+         // consulted and the system is working.
          return {
            factors: existing,
            aiCurated: true,

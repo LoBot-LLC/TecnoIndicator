@@ -306,7 +306,7 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
           ? [region]
           : [];
 
-  if (!name || !explanation || !sourceUrl || importanceScore < 20 || commodities.length === 0) return null;
+  if (!name || !explanation || resolvedImportance < 20 || resolvedCommodities.length === 0) return null;
 
   const now = new Date().toISOString();
   const driftRaw = (f.drift ?? {}) as Record<string, unknown>;

@@ -180,6 +180,24 @@ await this.refreshKiloModels(true, abortSignal);
     if (eligibleModels.length === 0) {
       eligibleModels = this.modelCandidates.filter(m => m.available && !m.rateLimited);
     }
+    // If the model catalog is unreachable or returned no models, fall back to the
+    // default model ID so keys can still be probed. Without this, a failed catalog
+    // refresh leaves every key permanently unavailable because probing never runs.
+    if (eligibleModels.length === 0) {
+      eligibleModels = [{
+        modelId: DEFAULT_KILO_MODEL_ID,
+        inputPrice: null,
+        outputPrice: null,
+        zeroCostVerified: false,
+        available: true,
+        rateLimited: false,
+        rateLimitScope: null,
+        rateLimitRemaining: null,
+        rateLimitResetAt: null,
+        lastCheckedAt: null,
+        lastSuccessAt: null,
+      }];
+    }
     if (eligibleModels.length > 0) {
       // Combine the passed abort signal with our 5s internal timeout. The caller's
       // signal is still honoured, so /api/health's 4s budget continues to bound this.
@@ -516,6 +534,45 @@ await this.refreshKiloModels(true, abortSignal);
     if (!hasAnyUsableKeys || !hasAnyUsableModels) {
       await this.refreshKiloModels(true, abortSignal);
       this.resetExpiredRateLimits();
+
+      // Re-probe keys against newly available models when no keys were usable
+      // during init (e.g., model catalog was empty and the fallback probe failed).
+      if (!this.keyStates.some(k => k.available && !k.rateLimited)) {
+        const usableModels = this.modelCandidates.filter(m => m.available && !m.rateLimited);
+        if (usableModels.length > 0) {
+          const probeController = new AbortController();
+          const combinedSignal = abortSignal
+            ? combineAbortSignals(abortSignal, probeController.signal)
+            : probeController.signal;
+          const probeTimeout = setTimeout(() => probeController.abort(), 5000);
+          try {
+            const probeResults = await Promise.all(
+              this.keyStates.map(async (keyState) => {
+                try {
+                  return await this.probeKeyModel(keyState, usableModels[0], combinedSignal);
+                } catch {
+                  return { success: false };
+                }
+              }),
+            );
+            for (let i = 0; i < this.keyStates.length; i++) {
+              const keyState = this.keyStates[i];
+              const probe = probeResults[i];
+              if (probe.success) {
+                keyState.available = true;
+                keyState.inputPrice = probe.inputPrice ?? null;
+                keyState.outputPrice = probe.outputPrice ?? null;
+                keyState.zeroCostVerified = probe.zeroCostVerified ?? false;
+                keyState.lastCheckedAt = new Date().toISOString();
+                keyState.lastSuccessAt = keyState.lastCheckedAt;
+              }
+            }
+          } finally {
+            clearTimeout(probeTimeout);
+            probeController.abort();
+          }
+        }
+      }
     }
 
     const keys = this.keyStates

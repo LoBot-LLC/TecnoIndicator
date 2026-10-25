@@ -21,6 +21,9 @@ export interface UseLiveMarketReturn {
   isLive: boolean;
   streaming: boolean;
   searchSource: SearchSource | undefined;
+  oilSource: string | undefined;
+  electricitySource: string | undefined;
+  waterSource: string | undefined;
   refresh: () => void;
   fetchWater: () => Promise<void>;
   toggleLive: () => void;
@@ -36,6 +39,9 @@ export function useLiveMarket(): UseLiveMarketReturn {
   const [isLive, setIsLive] = useState(true);
   const [streaming, setStreaming] = useState(true);
   const [searchSource, setSearchSource] = useState<SearchSource | undefined>(undefined);
+  const [oilSource, setOilSource] = useState<string | undefined>(undefined);
+  const [electricitySource, setElectricitySource] = useState<string | undefined>(undefined);
+  const [waterSource, setWaterSource] = useState<string | undefined>(undefined);
   const tickRef = useRef<number | null>(null);
   const prevPricesRef = useRef<Record<CommodityId, number>>(getDefaultPrices());
 
@@ -62,6 +68,9 @@ export function useLiveMarket(): UseLiveMarketReturn {
       setIsLive(data.isLive);
       setLastUpdated(new Date(data.asOf));
       setSearchSource(data.searchSource ?? data.oil.searchSource);
+      setOilSource(data.oil.source || undefined);
+      setElectricitySource(data.electricity.source || undefined);
+      setWaterSource(data.water.source || undefined);
     } catch {
       setPrices(getDefaultPrices());
       setIsLive(false);
@@ -102,6 +111,9 @@ export function useLiveMarket(): UseLiveMarketReturn {
       setIsLive(data.isLive);
       setLastUpdated(new Date(data.asOf));
       setSearchSource(data.searchSource ?? data.water.searchSource);
+      setOilSource(data.oil.source || undefined);
+      setElectricitySource(data.electricity.source || undefined);
+      setWaterSource(data.water.source || undefined);
     } catch {
       setWaterLive(null);
     } finally {
@@ -172,6 +184,9 @@ export function useLiveMarket(): UseLiveMarketReturn {
     isLive,
     streaming,
     searchSource,
+    oilSource,
+    electricitySource,
+    waterSource,
     refresh,
     fetchWater,
     toggleLive,

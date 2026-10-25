@@ -505,14 +505,14 @@ export async function runFactorAnalysis(
            await new Promise((resolve) => setTimeout(resolve, backoffMs));
            continue;
          }
-         // Kilo inference succeeded (returned valid JSON response) but produced
-         // no factors array after all retries. Mark as curated since the AI was
-         // consulted and the system is working.
-         return {
-           factors: existing,
-           aiCurated: true,
-           updatedAt: new Date().toISOString(),
-         };
+        // Kilo inference succeeded (returned valid JSON response) but produced
+        // no factors array after all retries. Do not mark as curated — the
+        // factors returned are fallback/static, not AI-curated.
+        return {
+          factors: existing,
+          aiCurated: false,
+          updatedAt: new Date().toISOString(),
+        };
        }
 
       const normalized = parsed.factors
@@ -530,10 +530,11 @@ export async function runFactorAnalysis(
           continue;
         }
         // Kilo inference succeeded but produced no valid factors after retries.
-        // Mark as curated since the AI was consulted and the system is working.
+        // Do not mark as curated — the factors returned are fallback/static,
+        // not AI-curated.
         return {
           factors: existing,
-          aiCurated: true,
+          aiCurated: false,
           updatedAt: new Date().toISOString(),
         };
       }

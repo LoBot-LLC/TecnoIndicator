@@ -44,6 +44,9 @@ export default function HomePage() {
     isLive,
     streaming,
     searchSource,
+    oilSource,
+    electricitySource,
+    waterSource,
     refresh,
     fetchWater,
     toggleLive,
@@ -52,6 +55,8 @@ export default function HomePage() {
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("Initializing AI");
   const [globalFactors, setGlobalFactors] = useState<Factor[]>([]);
   const [regionalFactors, setRegionalFactors] = useState<Record<string, Factor[]>>({});
+  const [globalFactorsAiCurated, setGlobalFactorsAiCurated] = useState(false);
+  const [regionalFactorsAiCurated, setRegionalFactorsAiCurated] = useState<Record<string, boolean>>({});
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [analytics, setAnalytics] = useState<Record<string, AnalyticsSnapshot>>({});
 
@@ -154,6 +159,7 @@ export default function HomePage() {
           const data = await res.json();
           if (active && Array.isArray(data.factors) && data.factors.length > 0) {
             setGlobalFactors(data.factors);
+            setGlobalFactorsAiCurated(!!data.aiCurated);
           }
         }
       } catch { /* ignore */ }
@@ -164,6 +170,7 @@ export default function HomePage() {
             const data = await res.json();
             if (active && Array.isArray(data.factors) && data.factors.length > 0) {
               setRegionalFactors((prev) => ({ ...prev, [r.id]: data.factors }));
+              setRegionalFactorsAiCurated((prev) => ({ ...prev, [r.id]: !!data.aiCurated }));
             }
           }
         } catch { /* ignore */ }
@@ -292,22 +299,25 @@ export default function HomePage() {
           <Hero prices={prices} deltas={deltas} />
           <MarketIndexStrip scope={scope} analytics={scopeAnalytics} />
 <ForecastTool
-            horizon={horizon}
-            onHorizon={setHorizon}
-            prices={prices}
-            points={points}
-            lastUpdated={lastUpdated}
-            onRefresh={refresh}
-            onFetchWater={handleFetchWater}
-            waterFetching={waterFetching}
-            waterLive={waterLive}
-            isLive={isLive}
-            streaming={streaming}
-            onToggleLive={toggleLive}
-            region={region}
-            onRegion={setRegion}
-            searchSource={searchSource}
-          />
+  horizon={horizon}
+  onHorizon={setHorizon}
+  prices={prices}
+  points={points}
+  lastUpdated={lastUpdated}
+  onRefresh={refresh}
+  onFetchWater={handleFetchWater}
+  waterFetching={waterFetching}
+  waterLive={waterLive}
+  isLive={isLive}
+  streaming={streaming}
+  onToggleLive={toggleLive}
+  region={region}
+  onRegion={setRegion}
+  searchSource={searchSource}
+  oilSource={oilSource}
+  electricitySource={electricitySource}
+  waterSource={waterSource}
+/>
           <SolutionsSection
             fallbackFactors={scopeFactors}
             healthStatus={healthStatus}
@@ -316,6 +326,7 @@ export default function HomePage() {
           <FactorsSection
             horizon={horizon}
             dynamicFactors={globalFactors}
+            dynamicFactorsAiCurated={globalFactorsAiCurated}
             healthStatus={healthStatus}
           />
           <RegionalEvaluation

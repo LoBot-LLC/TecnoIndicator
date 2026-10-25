@@ -292,6 +292,9 @@ interface CommodityCardProps {
   regionLabel: string;
   searchSource?: SearchSource;
   isLive: boolean;
+  oilSource?: string;
+  electricitySource?: string;
+  waterSource?: string;
 }
 
 function CommodityCard({
@@ -304,6 +307,9 @@ function CommodityCard({
   regionLabel,
   searchSource,
   isLive,
+  oilSource,
+  electricitySource,
+  waterSource,
 }: CommodityCardProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const Icon = ICONS[commodity.id];
@@ -389,6 +395,13 @@ function CommodityCard({
         <span className="text-slate-600">±{(commodity.maxVol * 100).toFixed(0)}% vol @10y</span>
       </div>
 
+      {isLive && !isWater && (
+        <p className="mt-2 text-[11px] leading-relaxed text-slate-700 dark:text-slate-400">
+          <span className="font-semibold text-emerald-300">Source:</span>{" "}
+          {commodity.id === "oil" ? oilSource : electricitySource}
+        </p>
+      )}
+
       {isWater && (
         <div className="relative mt-4 border-t border-line pt-4">
           <button
@@ -438,6 +451,9 @@ interface ForecastToolProps {
   region: RegionId;
   onRegion: (r: RegionId) => void;
   searchSource?: SearchSource;
+  oilSource?: string;
+  electricitySource?: string;
+  waterSource?: string;
 }
 
 export default function ForecastTool({
@@ -456,6 +472,9 @@ export default function ForecastTool({
   region,
   onRegion,
   searchSource,
+  oilSource,
+  electricitySource,
+  waterSource,
 }: ForecastToolProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const [chartType, setChartType] = useState<ChartKind>("line");
@@ -796,6 +815,9 @@ export default function ForecastTool({
               regionLabel={regionProfile.short}
               searchSource={searchSource}
               isLive={isLive}
+              oilSource={oilSource}
+              electricitySource={electricitySource}
+              waterSource={waterSource}
             />
           </Reveal>
         ))}

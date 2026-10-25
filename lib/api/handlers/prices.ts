@@ -1,4 +1,5 @@
 import { searchRouter } from "../_shared/searchRouter";
+import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getCache, setCache } from "../_shared/cache";
 import { SEARCH_CACHE_MS, sanitizeUrl } from "../_shared/http";
@@ -167,16 +168,37 @@ function extractPriceFromText(text: string): number | null {
 }
 
 async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
+  const regionalScope = scope === "global" ? undefined : scope;
+
+  // Attempt search via the primary search chain (Playwright MCP → DuckDuckGo)
+  // then fall back to TinyFish for each commodity when no results are returned.
   const searchResults = await Promise.all(
     COMMODITY_QUERIES.map(async ({ commodity, queryTemplate }) => {
       try {
-        return await searchRouter.search(queryTemplate, {
+        const result = await searchRouter.search(queryTemplate, {
           limit: 10,
-          region: scope === "global" ? undefined : scope,
+          region: regionalScope,
+        }, abortSignal);
+        if (result.results.length > 0) return result;
+
+        // Primary search chain returned no results — try TinyFish directly.
+        console.warn(`Primary search returned no results for ${commodity}, trying TinyFish...`);
+        return await tinyfishRouter.tinyfishSearch(queryTemplate, {
+          limit: 10,
+          region: regionalScope,
         }, abortSignal);
       } catch (error) {
         console.warn(`Failed to search for ${commodity}:`, error);
-        return { results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" as const };
+        // As a last resort, try TinyFish directly even if the primary search threw.
+        try {
+          return await tinyfishRouter.tinyfishSearch(queryTemplate, {
+            limit: 10,
+            region: regionalScope,
+          }, abortSignal);
+        } catch (tinyfishError) {
+          console.warn(`TinyFish fallback also failed for ${commodity}:`, tinyfishError);
+          return { results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" as const };
+        }
       }
     }),
   );

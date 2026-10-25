@@ -30,13 +30,13 @@ export class SearchRouter {
 
   constructor() {
     // Playwright MCP runs as a separate, always-on service over HTTP/SSE.
-    // Its availability is determined by the presence of the endpoint env var
-    // AND a live reachability probe (see `checkPlaywrightMcpAvailability`).
-    // The env var alone is not sufficient — an unreachable endpoint must report false.
-    // Empty string is treated as not set.
-    // When an endpoint IS configured, assume Playwright MCP is available.
-    // When no endpoint is configured, it degrades gracefully to DuckDuckGo.
-    this.playwrightMcpAvailable = !!process.env.PLAYWRIGHT_MCP_ENDPOINT;
+    // It is expected to be available 24/7, so we default to `true` and rely on
+    // on-demand search calls to surface any genuine unavailability via their
+    // own per-call timeouts and fallback to DuckDuckGo.
+    // The reachability probe in `initialize()` is informational-only: it never
+    // flips availability to `false` so a transient early probe can't permanently
+    // mark the service down.
+    this.playwrightMcpAvailable = true;
     this.playwrightMcpStatusChecked = false;
     this.duckDuckGoAvailable = true; // DuckDuckGo Lite is always available
   }
@@ -60,16 +60,17 @@ export class SearchRouter {
    * Perform a lightweight JSON-RPC reachability probe to the Playwright MCP
    * endpoint. The probe sends a minimal `tools/list` request with a short
    * timeout (2–3 seconds). If the endpoint responds with a 2xx status and a
-   * valid JSON-RPC response (no `error` field), the MCP service is considered
-   * reachable and `playwrightMcpAvailable` is set to `true`. On any error or
-   * timeout, it is set to `false`. This method is fail-soft and non-blocking:
-   * if it fails, the system falls back to DuckDuckGo, but on-demand `search()`
-   * calls will still attempt the MCP path with their own per-call timeouts.
+   * valid JSON-RPC response (no `error` field), the MCP service is confirmed
+   * reachable. On any error or timeout, a warning is logged but
+   * `playwrightMcpAvailable` is left unchanged — the service is considered
+   * always-on, and on-demand `search()` calls will surface genuine
+   * unavailability via their own per-call timeouts and DuckDuckGo fallback.
+   * This method is fail-soft and non-blocking.
    */
   private async checkPlaywrightMcpAvailability(): Promise<void> {
     const endpoint = process.env.PLAYWRIGHT_MCP_ENDPOINT;
     if (!endpoint) {
-      this.playwrightMcpAvailable = false;
+      console.warn("Playwright MCP endpoint not configured; skipping reachability probe");
       return;
     }
 
@@ -106,16 +107,16 @@ export class SearchRouter {
       if (response.ok) {
         const data = await response.json();
         if (!data.error) {
-          this.playwrightMcpAvailable = true;
+          console.info("Playwright MCP reachability probe succeeded");
         } else {
-          this.playwrightMcpAvailable = false;
+          console.warn("Playwright MCP reachability probe returned an error:", data.error);
         }
       } else {
-        this.playwrightMcpAvailable = false;
+        console.warn(`Playwright MCP reachability probe returned HTTP ${response.status}`);
       }
     } catch (err) {
-      // Any error / timeout / network issue → not available.
-      this.playwrightMcpAvailable = false;
+      // Any error / timeout / network issue — log but don't flip availability.
+      console.warn("Playwright MCP reachability probe failed (service considered still-on):", err);
     }
   }
 

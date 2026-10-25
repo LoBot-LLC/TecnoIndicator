@@ -34,9 +34,9 @@ export class SearchRouter {
     // AND a live reachability probe (see `checkPlaywrightMcpAvailability`).
     // The env var alone is not sufficient — an unreachable endpoint must report false.
     // Empty string is treated as not set.
-    // Playwright MCP is always available as a search provider (24/7).
-    // When no endpoint is configured it degrades gracefully to DuckDuckGo.
-    this.playwrightMcpAvailable = true;
+    // When an endpoint IS configured, assume Playwright MCP is available.
+    // When no endpoint is configured, it degrades gracefully to DuckDuckGo.
+    this.playwrightMcpAvailable = !!process.env.PLAYWRIGHT_MCP_ENDPOINT;
     this.playwrightMcpStatusChecked = false;
     this.duckDuckGoAvailable = true; // DuckDuckGo Lite is always available
   }
@@ -50,8 +50,9 @@ export class SearchRouter {
     // Perform a lightweight reachability check on the Playwright MCP endpoint
     // (if an endpoint was configured). This runs only once and uses a short
     // timeout so it does not block initialization or subsequent calls.
-    if (this.playwrightMcpStatusChecked) {
+    if (!this.playwrightMcpStatusChecked) {
       await this.checkPlaywrightMcpAvailability();
+      this.playwrightMcpStatusChecked = true;
     }
   }
 

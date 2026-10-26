@@ -252,7 +252,6 @@ export default function Hero({
                   <>
                     <path
                       d={forecastPath(forecastPoints, "oil", 560, 180, yMin, yMax)}
-                      className="draw-line"
                       fill="none"
                       stroke="#f5b840"
                       strokeWidth="2.4"
@@ -260,7 +259,6 @@ export default function Hero({
                     />
                     <path
                       d={forecastPath(forecastPoints, "electricity", 560, 180, yMin, yMax)}
-                      className="draw-line"
                       fill="none"
                       stroke="#2dd4bf"
                       strokeWidth="2.2"
@@ -269,7 +267,6 @@ export default function Hero({
                     />
                     <path
                       d={forecastPath(forecastPoints, "water", 560, 180, yMin, yMax)}
-                      className="draw-line"
                       fill="none"
                       stroke="#38bdf8"
                       strokeWidth="2"

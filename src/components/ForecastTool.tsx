@@ -294,7 +294,6 @@ interface CommodityCardProps {
   isLive: boolean;
   oilSource?: string;
   electricitySource?: string;
-  waterSource?: string;
 }
 
 function CommodityCard({
@@ -309,7 +308,6 @@ function CommodityCard({
   isLive,
   oilSource,
   electricitySource,
-  waterSource,
 }: CommodityCardProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const Icon = ICONS[commodity.id];
@@ -453,7 +451,6 @@ interface ForecastToolProps {
   searchSource?: SearchSource;
   oilSource?: string;
   electricitySource?: string;
-  waterSource?: string;
 }
 
 export default function ForecastTool({
@@ -474,7 +471,6 @@ export default function ForecastTool({
   searchSource,
   oilSource,
   electricitySource,
-  waterSource,
 }: ForecastToolProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const [chartType, setChartType] = useState<ChartKind>("line");
@@ -817,7 +813,6 @@ export default function ForecastTool({
               isLive={isLive}
               oilSource={oilSource}
               electricitySource={electricitySource}
-              waterSource={waterSource}
             />
           </Reveal>
         ))}

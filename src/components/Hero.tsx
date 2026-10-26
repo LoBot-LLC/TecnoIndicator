@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ArrowRight,
   CalendarDays,
@@ -12,17 +14,33 @@ import Reveal from "./Reveal";
 import Ticker from "./Ticker";
 import { useFlash } from "../hook/useFlash";
 import { useCurrency } from "../context/CurrencyContext";
-import { fmtFullDate, type CommodityId } from "../lib/model";
+import {
+  COMMODITIES,
+  fmtFullDate,
+  generateForecast,
+  START_YEAR,
+  type CommodityId,
+  type ForecastPoint,
+} from "../lib/model";
 
-function sparkPath(seed: number, width = 560, height = 180): string {
-  let y = height * 0.62;
-  let d = `M 0 ${y.toFixed(1)}`;
-  let drift = 0;
-  for (let i = 1; i <= 28; i++) {
-    const x = (i / 28) * width;
-    drift += Math.sin(i * 0.55 + seed) * 3.2 + Math.cos(i * 0.31 + seed * 1.7) * 1.8;
-    y = Math.min(height * 0.88, Math.max(height * 0.12, height * 0.62 - i * 2.1 + drift));
-    d += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+function forecastPath(
+  points: ForecastPoint[],
+  id: CommodityId,
+  width: number,
+  height: number,
+  yMin: number,
+  yMax: number,
+): string {
+  const padTop = height * 0.12;
+  const padBottom = height * 0.14;
+  const plotHeight = height - padTop - padBottom;
+  const range = yMax - yMin || 1;
+  const last = Math.max(points.length - 1, 1);
+  let d = "";
+  for (let i = 0; i < points.length; i++) {
+    const x = (i / last) * width;
+    const y = height - padBottom - ((points[i][id].avg - yMin) / range) * plotHeight;
+    d += `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
   }
   return d;
 }
@@ -47,12 +65,37 @@ const STATS = [
 interface HeroProps {
   prices: Record<CommodityId, number>;
   deltas: Record<CommodityId, number>;
+  /** Optional pre-computed forecast series; when omitted a default 10-year series is generated. */
+  points?: ForecastPoint[];
+  /** Forecast horizon in years; drives the x-axis extent and trajectory label. */
+  horizon?: number;
 }
 
-export default function Hero({ prices, deltas }: HeroProps) {
+export default function Hero({
+  prices,
+  deltas,
+  points: pointsProp,
+  horizon: horizonProp,
+}: HeroProps) {
   const { selectedCurrency } = useCurrency();
 
   const today = new Date();
+  const horizon = horizonProp ?? 10;
+  const forecastPoints =
+    pointsProp ?? generateForecast(prices, horizon, 0, "global");
+  const allAvgs: number[] = [];
+  for (const p of forecastPoints) {
+    for (const c of COMMODITIES) {
+      const avg = p[c.id].avg;
+      if (Number.isFinite(avg)) {
+        allAvgs.push(avg);
+      }
+    }
+  }
+  const yMin = allAvgs.length ? Math.min(...allAvgs) : 0;
+  const yMax = allAvgs.length ? Math.max(...allAvgs) : 1;
+  const hasData = allAvgs.length > 0 && Number.isFinite(yMin) && Number.isFinite(yMax);
+
   const commodityRows: Array<{
     id: CommodityId;
     name: string;
@@ -191,7 +234,7 @@ export default function Hero({ prices, deltas }: HeroProps) {
               </div>
             </div>
 
-            {/* sparkline */}
+            {/* projected chart */}
             <div className="mt-5 overflow-hidden rounded-2xl border border-line bg-base/60 p-3">
               <svg viewBox="0 0 560 180" className="h-36 w-full" aria-hidden="true">
                 {[36, 72, 108, 144].map((gy) => (
@@ -205,37 +248,38 @@ export default function Hero({ prices, deltas }: HeroProps) {
                     className="dark:stroke-slate-700/20"
                   />
                 ))}
-                <path
-                  d={sparkPath(1.2)}
-                  className="draw-line"
-                  fill="none"
-                  stroke="#f5b840"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                />
-                <path
-                  d={sparkPath(2.7)}
-                  className="draw-line"
-                  fill="none"
-                  stroke="#2dd4bf"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  opacity="0.9"
-                />
-                <path
-                  d={sparkPath(4.1)}
-                  className="draw-line"
-                  fill="none"
-                  stroke="#38bdf8"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  opacity="0.85"
-                />
+                {hasData && (
+                  <>
+                    <path
+                      d={forecastPath(forecastPoints, "oil", 560, 180, yMin, yMax)}
+                      fill="none"
+                      stroke="#f5b840"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d={forecastPath(forecastPoints, "electricity", 560, 180, yMin, yMax)}
+                      fill="none"
+                      stroke="#2dd4bf"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      opacity="0.9"
+                    />
+                    <path
+                      d={forecastPath(forecastPoints, "water", 560, 180, yMin, yMax)}
+                      fill="none"
+                      stroke="#38bdf8"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      opacity="0.85"
+                    />
+                  </>
+                )}
               </svg>
               <div className="mt-1 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-500">
-                <span suppressHydrationWarning>{new Date().getFullYear()}</span>
-                <span>10-year trajectory</span>
-                <span suppressHydrationWarning>{new Date().getFullYear() + 10}</span>
+                <span suppressHydrationWarning>{START_YEAR}</span>
+                <span>{horizon}-year trajectory</span>
+                <span suppressHydrationWarning>{START_YEAR + horizon}</span>
               </div>
             </div>
 

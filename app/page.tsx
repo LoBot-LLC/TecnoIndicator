@@ -169,7 +169,6 @@ export default function HomePage() {
             if (active && Array.isArray(data.factors) && data.factors.length > 0) {
               setRegionalFactors((prev) => ({ ...prev, [r.id]: data.factors }));
             }
-            }
           }
         } catch { /* ignore */ }
         await new Promise((resolve) => setTimeout(resolve, REGION_STAGGER_MS));

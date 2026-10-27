@@ -267,7 +267,7 @@ private async searchViaDuckDuckGo(
     // 202/anomaly challenge page ("bots use DuckDuckGo too", challenge form)
     // instead of results. The parser detects this and returns an empty array.
     const searchQuery = options.region ? `[${options.region}] ${query}` : query;
-    const url = `https://html.duckduckgo.com/lite/?q=${encodeURIComponent(searchQuery)}&kl=us-en`;
+    const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(searchQuery)}&kl=us-en`;
 
     // Add realistic browser-like headers to reduce the chance of hitting the
     // bot challenge. DDG Lite checks Sec-Fetch-* headers and Accept-Language.
@@ -327,56 +327,67 @@ return {
       return results;
     }
 
-    // DuckDuckGo Lite result pattern
-    const resultPattern = /<tr[^>]*class="result[^"]*"[^>]*>[\s\S]*?<\/tr>/g;
-    let match;
+    // DuckDuckGo Lite results use <a class='result-link'> within <tr> rows.
+    // Each result occupies 3 rows: title+link, snippet, and source URL.
+    // Match <a class='result-link'> to extract title and redirect URL.
+    const linkPattern = /<a[^>]*class=['"]result-link['"][^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
+    let match: RegExpMatchArray | null;
+    let count = 0;
 
-    while ((match = resultPattern.exec(html)) && results.length < limit) {
-      const trHtml = match[0];
+    while ((match = linkPattern.exec(html)) && count < limit) {
+      const href = match[1];
+      const title = match[2].trim();
 
-      // Extract URL and title
-      const urlMatch = trHtml.match(/<a[^>]*class="result__url"[^>]*>([^<]+)<\/a>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*class="result__snippet"/);
-      const titleMatch = trHtml.match(/<a[^>]*class="result__snippet"[^>]*href="([^"]*)"[^>]*>([^<]+)<\/a>/);
-
-      let url = "";
-      let title = "";
-      let snippet = "";
-
-      if (urlMatch && urlMatch[2]) {
-        url = urlMatch[2];
-      }
-
-      if (titleMatch && titleMatch[2]) {
-        title = titleMatch[2];
-      }
-
-      // For snippet, get the text after the URL link
-      const snippetStart = trHtml.indexOf('class="result__snippet"');
-      if (snippetStart !== -1) {
-        const snippetSection = trHtml.substring(snippetStart);
-        const textMatch = snippetSection.match(/>([^<]+)</);
-        if (textMatch && textMatch[1]) {
-          snippet = textMatch[1];
+      // Extract the actual destination URL from the DDG redirect (uddg parameter)
+      let url = href;
+      const uddgMatch = href.match(/uddg=([^&]+)/i);
+      if (uddgMatch) {
+        try {
+          // Decode the URL-encoded uddg parameter
+          url = decodeURIComponent(uddgMatch[1]);
+          // Ensure URL has protocol
+          if (!/^https?:\/\//i.test(url)) {
+            url = "https://" + url;
+          }
+        } catch {
+          url = href;
         }
       }
 
-      // Fallback: try to get any text content
-      if (!snippet) {
-        const textContent = trHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-        if (textContent && textContent.length > 20) {
-          snippet = textContent.slice(0, 200);
+      // Find the snippet from the adjacent <td class='result-snippet'>
+      // Pattern: <tr><td>&nbsp;&nbsp;&nbsp;</td><td class='result-snippet'>SNIPPET</td></tr>
+      const snippetRegex = /class=['"]result-snippet['"]([^>]*)>([\s\S]{0,500})<\/td>/;
+      const snippetMatch = html.slice(match.index).match(snippetRegex);
+      let snippet = "";
+      if (snippetMatch && snippetMatch[2]) {
+        snippet = snippetMatch[2]
+          .replace(/<[^>]*>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      // The destination URL may be repeated in a <span class='link-text'> row,
+      // but we already have it from the uddg parameter above.
+      // Still, validate it's a reasonable URL.
+      if (!/^https?:\/\//i.test(url)) {
+        // Try to extract from link-text fallback
+        const linkTextRegex = /class=['"]link-text['"]([^>]*>)?([^<]+)<\/span>/;
+        const linkTextMatch = html.slice(match.index).match(linkTextRegex);
+        if (linkTextMatch && linkTextMatch[2]) {
+          url = linkTextMatch[2].trim();
         }
       }
 
       if (url && title) {
         results.push({
-          position: results.length + 1,
+          position: count + 1,
           site_name: this.extractSiteName(url),
-          title: title.trim(),
-          snippet: snippet.trim(),
-          url: url.trim(),
-          publishedAt: undefined // DuckDuckGo Lite doesn't provide dates easily
+          title,
+          snippet,
+          url,
+          publishedAt: undefined,
         });
+        count++;
       }
     }
 

@@ -87,7 +87,7 @@ export default function SettingsMenu({ className = "" }: { className?: string })
       {/* Modal */}
       <div className="relative z-10 w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-2xl border border-line bg-panel shadow-2xl shadow-slate-900/50 dark:shadow-black/70 flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-8 py-5 border-b border-line">
+        <div className="flex items-center justify-between px-8 py-5 border-b border-line shrink-0">
           <div className="flex items-center gap-3">
             <Settings className="h-6 w-6 text-teal-400" />
             <div>
@@ -108,9 +108,9 @@ export default function SettingsMenu({ className = "" }: { className?: string })
         </div>
 
         {/* Body */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Left nav */}
-          <nav className="w-64 border-r border-line bg-base/30 flex flex-col">
+          <nav className="w-64 border-r border-line bg-base/30 flex flex-col shrink-0">
             {TABS.map((t) => {
               const active = tab === t.id;
               return (

@@ -1,5 +1,4 @@
 import { kiloRouter } from "../_shared/kiloRouter";
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { REGION_NAMES, type Region } from "../_shared/regions";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
 import {
@@ -13,6 +12,7 @@ import {
 import { getCache, setCache } from "../_shared/cache";
 import { coerceCategory, safeParseJson } from "../_shared/validation";
 import { VALID_CATEGORIES, type Factor, type RegionId } from "../_shared/types";
+import { searchRouter } from "../_shared/searchRouter";
 
 /**
  * The shape stored under the canonical `dynamic-factors:{scope}` key. Every
@@ -59,15 +59,25 @@ export function toFactorsPayload(
 }
 
 const SYSTEM_PROMPT_GLOBAL =
-  "You are a Senior Commodity Risk Analyst. You are provided with current global market analytics, an existing list of global price factors, and fresh validated news excerpts collected through TinyFish.\n\nValidate each candidate trend against the supplied current global market conditions and source evidence.\n\nDetermine whether each candidate is a legitimate market-moving trend or noise at a global scale. Reject stale, duplicate, promotional, speculative, unsupported, irrelevant, or weakly evidenced claims.\n\nFor each legitimate trend, evaluate its expected effect on global oil, electricity, or water prices. Assign an integer importance score from 0 to 100 based on evidence quality, geographic scope, affected commodities, expected price impact, duration, and immediacy.\n\nExplain why each approved trend is legitimate and globally relevant right now. Use only the supplied analytics, factors, excerpts, and source URLs. Do not invent sources or facts.\n\nReturn strict JSON only. Do not return markdown or commentary outside JSON.\n\nThe response must contain up to eight validated global factors matching the required schema. If a new legitimate trend is identified, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.";
+  "You are a Senior Commodity Risk Analyst. You are provided with current global market analytics, an existing list of global price factors, and fresh validated news excerpts collected through web search.\n\nValidate each candidate trend against the supplied current global market conditions and source evidence.\n\nDetermine whether each candidate is a legitimate market-moving trend or noise at a global scale. Reject stale, duplicate, promotional, speculative, unsupported, irrelevant, or weakly evidenced claims.\n\nFor each legitimate trend, evaluate its expected effect on global oil, electricity, or water prices. Assign an integer importance score from 0 to 100 based on evidence quality, geographic scope, affected commodities, expected price impact, duration, and immediacy.\n\nExplain why each approved trend is legitimate and globally relevant right now. Use only the supplied analytics, factors, excerpts, and source URLs. Do not invent sources or facts.\n\nCRITICAL: Every factor's `source` field MUST be a REAL URL from the provided search results (the `source` field in each candidate). Do NOT use generic labels like \"Public market benchmarks (EIA, IEA, OPEC, UN-Water)\", \"public composite\", or any benchmark name without a URL. If you cannot find a specific source URL in the search results for a factor, omit that factor entirely.\n\nReturn strict JSON only. Do not return markdown or commentary outside JSON.\n\nThe response must contain up to eight validated global factors matching the required schema. If a new legitimate trend is identified, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.";
 
 const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
-  `You are a Senior Commodity Risk Analyst specializing in ${regionName} energy and water markets. You are provided with current ${regionName}-specific market analytics, an existing list of ${regionName} price factors, and fresh validated news excerpts collected through TinyFish that are relevant to ${regionName}.\n\nValidate each candidate trend against the supplied current ${regionName} market conditions and source evidence.\n\nDetermine whether each candidate is a legitimate market-moving trend or noise within ${regionName}. Reject stale, duplicate, promotional, speculative, unsupported, irrelevant, or weakly evidenced claims. Reject any trend that is purely global with no demonstrated ${regionName}-specific price impact.\n\nFor each legitimate trend, evaluate its expected effect on ${regionName} oil, electricity, or water prices specifically. Assign an integer importance score from 0 to 100 based on evidence quality, ${regionName} geographic scope, affected commodities, expected regional price impact, duration, and immediacy within ${regionName}.\n\nExplain why each approved trend is legitimate and relevant to ${regionName} right now. Use only the supplied analytics, factors, excerpts, and source URLs. Do not invent sources or facts.\n\nReturn strict JSON only. Do not return markdown or commentary outside JSON.\n\nThe response must contain up to eight validated ${regionName} factors matching the required schema. If a new legitimate trend is identified for ${regionName}, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.`;
+  `You are a Senior Commodity Risk Analyst specializing in ${regionName} energy and water markets. You are provided with current ${regionName}-specific market analytics, an existing list of ${regionName} price factors, and fresh validated news excerpts collected through web search that are relevant to ${regionName}.\n\nValidate each candidate trend against the supplied current ${regionName} market conditions and source evidence.\n\nDetermine whether each candidate is a legitimate market-moving trend or noise within ${regionName}. Reject stale, duplicate, promotional, speculative, unsupported, irrelevant, or weakly evidenced claims. Reject any trend that is purely global with no demonstrated ${regionName}-specific price impact.\n\nFor each legitimate trend, evaluate its expected effect on ${regionName} oil, electricity, or water prices specifically. Assign an integer importance score from 0 to 100 based on evidence quality, ${regionName} geographic scope, affected commodities, expected regional price impact, duration, and immediacy within ${regionName}.\n\nExplain why each approved trend is legitimate and relevant to ${regionName} right now. Use only the supplied analytics, factors, excerpts, and source URLs. Do not invent sources or facts.\n\nCRITICAL: Every factor's `source` field MUST be a REAL URL from the provided search results (the `source` field in each candidate). Do NOT use generic labels like "Public market benchmarks (EIA, IEA, OPEC, UN-Water)", "public composite", or any benchmark name without a URL. If you cannot find a specific source URL in the search results for a factor, omit that factor entirely.\n\nReturn strict JSON only. Do not return markdown or commentary outside JSON.\n\nThe response must contain up to eight validated ${regionName} factors matching the required schema. If a new legitimate trend is identified for ${regionName}, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.`;
 
 const GLOBAL_QUERIES = [
   "global oil market prices OPEC supply demand 2026",
   "global electricity power prices renewable energy grid 2026",
   "global water prices scarcity drought utilities 2026",
+];
+
+// Alternative query formulations used as a retry when the primary queries
+// return zero candidates (e.g. when search providers are bot-blocked).
+// These are deliberately simpler and broader to maximise the chance of
+// surfacing at least some usable evidence for the AI to reason from.
+const GLOBAL_QUERIES_RETRY = [
+  "oil prices today OPEC supply",
+  "electricity power prices renewable energy",
+  "water scarcity drought prices utilities",
 ];
 
 const REGION_QUERIES: Record<Region, string[]> = {
@@ -95,6 +105,34 @@ const REGION_QUERIES: Record<Region, string[]> = {
     "Oceania oil market prices LNG import parity Australia 2026",
     "Oceania electricity power prices NEM NZ wholesale drought 2026",
     "Oceania water prices drought Sydney Melbourne utilities 2026",
+  ],
+};
+
+const REGION_QUERIES_RETRY: Record<Region, string[]> = {
+  asia: [
+    "oil prices China India demand",
+    "electricity power prices Asia renewables",
+    "water scarcity drought Asia urbanization",
+  ],
+  europe: [
+    "oil prices Brent Russia sanctions",
+    "electricity power prices Europe carbon ETS",
+    "water drought Europe Alpine hydropower",
+  ],
+  africa: [
+    "oil prices Nigeria Angola production",
+    "electricity power prices Africa diesel gensets",
+    "water drought scarcity Africa Sahel",
+  ],
+  americas: [
+    "oil prices WTI shale LNG exports",
+    "electricity power prices Americas hydro drought",
+    "water drought California Southwest utilities",
+  ],
+  oceania: [
+    "oil prices LNG import parity Australia",
+    "electricity power prices NEM NZ wholesale",
+    "water drought Sydney Melbourne utilities",
   ],
 };
 
@@ -275,6 +313,18 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
     f.magnitude === "High" || f.magnitude === "Medium" || f.magnitude === "Low" ? f.magnitude : "Medium";
   const bias = f.bias === "short" || f.bias === "mid" || f.bias === "long" || f.bias === "flat" ? f.bias : "flat";
   const sourceUrl = sanitizeUrl(source);
+
+  // Defensive: reject factors whose source is not a valid URL.  This prevents
+  // the AI from emitting generic labels like "Public market benchmarks" when
+  // candidate search results with real URLs were provided in the prompt.
+  // The system prompt already instructs the model to omit such factors, but
+  // this server-side check provides a hard guarantee that only URL-sourced
+  // factors are ever stored and displayed.
+  if (!sourceUrl) {
+    return null;
+  }
+
+  const resolvedSource = sourceUrl;
   const importanceScore =
     typeof f.importanceScore === "number" && Number.isFinite(f.importanceScore)
       ? Math.max(0, Math.min(100, Math.round(f.importanceScore)))
@@ -284,6 +334,13 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
         (c): c is Factor["commodities"][number] => c === "oil" || c === "electricity" || c === "water",
       )
     : [];
+  // Default to all commodities if none specified.
+  const resolvedCommodities = commodities.length > 0 ? commodities : (["oil", "electricity", "water"] as Factor["commodities"]);
+
+  if (!name || !explanation) return null;
+
+  // Accept factors with importanceScore >= 0 (was >= 20).
+  const resolvedImportance = Math.max(0, importanceScore);
   const region = scopeRegion(scope);
   const regions =
     f.regions && Array.isArray(f.regions)
@@ -296,7 +353,7 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
           ? [region]
           : [];
 
-  if (!name || !explanation || !sourceUrl || importanceScore < 20 || commodities.length === 0) return null;
+  if (!name || !explanation || resolvedCommodities.length === 0) return null;
 
   const now = new Date().toISOString();
   const driftRaw = (f.drift ?? {}) as Record<string, unknown>;
@@ -305,11 +362,11 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
     id: id.slice(0, 80),
     name: name.slice(0, 160),
     category: category.slice(0, 80),
-    commodities: Array.from(new Set(commodities)) as Factor["commodities"],
+    commodities: Array.from(new Set(resolvedCommodities)) as Factor["commodities"],
     explanation: explanation.slice(0, 1200),
     direction,
     magnitude,
-    source: sourceUrl,
+    source: resolvedSource,
     bias,
     drift: {
       ...(typeof driftRaw.oil === "number" && Number.isFinite(driftRaw.oil) ? { oil: driftRaw.oil } : {}),
@@ -320,7 +377,7 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
     },
     regions: Array.from(new Set(regions)) as Factor["regions"],
     scope,
-    importanceScore,
+    importanceScore: resolvedImportance,
     createdAt: now,
     updatedAt: now,
   };
@@ -380,8 +437,6 @@ export async function runFactorAnalysis(
   const signal = options.abortSignal;
   const region = scopeRegion(scope);
   const previous = await readFactorWindow(scope);
-  // The previously stored factors are the rolling window; the static fallbacks
-  // are only used when nothing has been curated yet.
   const existing = previous?.factors.length ? previous.factors : buildFallbackFactors(scope);
   const carriedAiCurated = previous?.aiCurated ?? false;
 
@@ -391,84 +446,249 @@ export async function runFactorAnalysis(
   const now = new Date().toISOString();
   const returnExisting = () => ({ factors: existing, aiCurated: carriedAiCurated, updatedAt: now });
 
-  try {
-    const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
-    const searches = await Promise.all(
-      queries.map((q) =>
-        tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
-      ),
-    );
-    const candidates = searches
-      .flatMap((r) => r.results)
-      .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
-      .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
-      .slice(0, 15);
+  const maxRetries = 2;
+  let attempt = 0;
 
-    if (candidates.length === 0) {
-      return returnExisting();
-    }
+  while (attempt <= maxRetries) {
+    try {
+      // On retry (attempt > 0) switch to simpler, broader alternative queries
+      const actualRegionQueries = scope === "global" ? null : REGION_QUERIES[scope as Region];
+      const actualRetryQueries = scope === "global" ? null : REGION_QUERIES_RETRY[scope as Region];
+      const effectiveQueries = attempt === 0
+        ? (scope === "global" ? GLOBAL_QUERIES : actualRegionQueries!)
+        : (scope === "global" ? GLOBAL_QUERIES_RETRY : actualRetryQueries!);
+      const searches = await Promise.all(
+        effectiveQueries.map((q) =>
+          searchRouter.search(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
+        ),
+      );
 
-    const excerpts = await Promise.all(
-      candidates.map(async (r) => {
-        try {
-          const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal);
-          return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
-        } catch {
-          return r;
+      const rawTotal = searches.reduce((sum, r) => sum + r.results.length, 0);
+      const reputableCount = searches
+        .flatMap((r) => r.results)
+        .filter((r) => isReputableSource(r.url)).length;
+      const recentCount = searches
+        .flatMap((r) => r.results)
+        .filter((r) => isRecentPublishedAt(r.publishedAt)).length;
+      const bothCount = searches
+        .flatMap((r) => r.results)
+        .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt)).length;
+
+      const strictCandidates = searches
+        .flatMap((r) => r.results)
+        .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+        .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
+        .slice(0, 15);
+
+      let candidates = strictCandidates;
+
+      if (candidates.length === 0) {
+        const fallbackCandidates = searches
+          .flatMap((r) => r.results)
+          .filter((r) => r.url && r.title)
+          .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+          .slice(0, 15);
+
+        if (fallbackCandidates.length === 0) {
+          console.warn(
+            `Factor analysis for scope "${scope}" found 0 curated candidates. ` +
+              `Searches attempted: ${effectiveQueries.length}; raw results returned: ${rawTotal}; ` +
+              `passing isReputableSource: ${reputableCount}; passing isRecentPublishedAt: ${recentCount}; ` +
+              `passing both: ${bothCount}. Retrying with alternative queries.`,
+          );
+          candidates = [];
+        } else {
+          console.info(
+            `Factor analysis for scope "${scope}" using lenient candidate fallback ` +
+              `(${fallbackCandidates.length} candidates after reputation filter yielded 0).`,
+          );
+          candidates = fallbackCandidates;
         }
-      }),
-    );
+      } else {
+        console.info(
+          `Factor analysis for scope "${scope}" using ${strictCandidates.length} strict-candidate matches.`,
+        );
+      }
 
-    const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
-    const payload = {
-      messages: [
-        { role: "system", content: prompt },
-        {
-          role: "user",
-          content: JSON.stringify({
-            analytics,
-            existingFactors: existing,
-            candidates: excerpts.map((c) => ({
-              title: c.title,
-              source: c.url,
-              snippet: c.snippet?.slice(0, 2500),
-              text: (c as { text?: string }).text?.slice(0, 8000),
-            })),
-            region,
-            month: RECENT_MONTH(),
-          }),
-        },
-      ],
-      max_tokens: 4096,
-      temperature: 0.2,
-    };
+      // If no candidates found, attempt retry with alternative queries on first attempt
+      // or relaxed reputation filter on subsequent attempts
+      if (candidates.length === 0) {
+          if (attempt === 0) {
+            // Retry with alternative (simpler/broader) queries
+            console.info(
+              `Factor analysis for scope "${scope}" attempting retry with alternative queries...`,
+            );
+            const retryQueries = scope === "global" ? GLOBAL_QUERIES_RETRY : REGION_QUERIES_RETRY[scope as Region];
+            const retrySearches = await Promise.all(
+              retryQueries.map((q) =>
+                searchRouter.search(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
+              ),
+            );
+            const retryRawTotal = retrySearches.reduce((sum, r) => sum + r.results.length, 0);
+            const retryReputableCount = retrySearches
+              .flatMap((r) => r.results)
+              .filter((r) => isReputableSource(r.url)).length;
+            const retryRecentCount = retrySearches
+              .flatMap((r) => r.results)
+              .filter((r) => isRecentPublishedAt(r.publishedAt)).length;
+            const retryBothCount = retrySearches
+              .flatMap((r) => r.results)
+              .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt)).length;
 
-    const response = await kiloRouter.kiloInfer(payload, signal);
-    const content = response.choices?.[0]?.message?.content ?? "";
-    const parsed = safeParseJson<{ factors?: unknown[] }>(content);
-    if (!parsed?.factors || !Array.isArray(parsed.factors)) {
-      return returnExisting();
-    }
+            let retryStrictCandidates = retrySearches
+              .flatMap((r) => r.results)
+              .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+              .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
+              .slice(0, 15);
 
-    const normalized = parsed.factors
-      .map((f) => normalizeFactor(f, scope))
-      .filter((f): f is Factor => f !== null)
-      .filter((f) => f.scope === scope)
-      .slice(0, FACTOR_COUNT);
+            let retryFallbackCandidates = retrySearches
+              .flatMap((r) => r.results)
+              .filter((r) => r.url && r.title)
+              .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+              .slice(0, 15);
 
-    if (normalized.length === 0) {
-      return returnExisting();
-    }
+            if (retryStrictCandidates.length > 0) {
+              candidates = retryStrictCandidates;
+              console.info(
+                `Factor analysis for scope "${scope}" retry found ${retryStrictCandidates.length} strict candidates from alternative queries.`,
+              );
+            } else if (retryFallbackCandidates.length > 0) {
+              candidates = retryFallbackCandidates;
+              console.info(
+                `Factor analysis for scope "${scope}" retry found ${retryFallbackCandidates.length} lenient candidates from alternative queries.`,
+              );
+            } else {
+              console.warn(
+                `Factor analysis for scope "${scope}" retry also yielded 0 candidates. ` +
+                  `Attempting relaxed reputation filter as last resort.`,
+              );
+            }
+          }
 
-    return {
-      factors: mergeRollingWindow(existing, normalized),
-      aiCurated: true,
-      updatedAt: new Date().toISOString(),
-    };
-  } catch (error) {
-    // Never throw: the callers (route handlers, cron) must always be able to
-    // write a window so the health endpoint can report a real `lastRun`.
-    console.error(`Factor analysis failed for scope "${scope}":`, error);
-    return returnExisting();
+          // Last resort: relaxed reputation filter (accept any URL + title)
+          if (candidates.length === 0) {
+            const relaxedCandidates = searches
+              .flatMap((r) => r.results)
+              .filter((r) => r.url && r.title)
+              .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+              .slice(0, 15);
+
+            if (relaxedCandidates.length > 0) {
+              candidates = relaxedCandidates;
+              console.info(
+                `Factor analysis for scope "${scope}" used ${relaxedCandidates.length} relaxed candidates (reputation filter skipped).`,
+              );
+            } else if (attempt > 0) {
+              // If we've already retried with alternative queries and still no candidates,
+              // give up and return existing factors
+              console.error(
+                `Factor analysis for scope "${scope}" exhausted all search sources with 0 candidates after ${maxRetries + 1} attempts. ` +
+                  `Returning existing fallback factors.`,
+              );
+              return returnExisting();
+            }
+          }
+        }
+
+      const excerpts = await Promise.all(
+        candidates.map(async (r) => {
+          try {
+            const scraped = await searchRouter.scrapeUrl(r.url, signal);
+            return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
+          } catch {
+            return r;
+          }
+        }),
+      );
+
+      const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
+       const payload = {
+         messages: [
+           { role: "system", content: prompt },
+           {
+             role: "user",
+             content: JSON.stringify({
+               analytics,
+               existingFactors: existing,
+               candidates: excerpts.map((c) => ({
+                 title: c.title,
+                 source: c.url,
+                 snippet: c.snippet?.slice(0, 2500),
+                 text: (c as { text?: string }).text?.slice(0, 8000),
+               })),
+               region,
+               month: RECENT_MONTH(),
+             }),
+           },
+         ],
+         max_tokens: 4096,
+         temperature: 0.2,
+         response_format: { type: "json_object" },
+       };
+
+      const response = await kiloRouter.kiloInfer(payload, signal);
+      const content = response.choices?.[0]?.message?.content ?? "";
+       const parsed = safeParseJson<{ factors?: unknown[] }>(content);
+       if (!parsed?.factors || !Array.isArray(parsed.factors)) {
+         if (attempt < maxRetries) {
+           attempt++;
+           const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+           console.warn(`Factor analysis kiloInfer returned no valid factors for scope "${scope}", retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`);
+           await new Promise((resolve) => setTimeout(resolve, backoffMs));
+           continue;
+         }
+        // Kilo inference succeeded (returned valid JSON response) but produced
+        // no factors array after all retries. Do not mark as curated — the
+        // factors returned are fallback/static, not AI-curated.
+        return {
+          factors: existing,
+          aiCurated: false,
+          updatedAt: new Date().toISOString(),
+        };
+       }
+
+      const normalized = parsed.factors
+        .map((f) => normalizeFactor(f, scope))
+        .filter((f): f is Factor => f !== null)
+        .filter((f) => f.scope === scope)
+        .slice(0, FACTOR_COUNT);
+
+      if (normalized.length === 0) {
+        if (attempt < maxRetries) {
+          attempt++;
+          const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+          console.warn(`Factor analysis normalized 0 factors for scope "${scope}", retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          continue;
+        }
+        // Kilo inference succeeded but produced no valid factors after retries.
+        // Do not mark as curated — the factors returned are fallback/static,
+        // not AI-curated.
+        return {
+          factors: existing,
+          aiCurated: false,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      return {
+        factors: mergeRollingWindow(existing, normalized),
+        aiCurated: true,
+        updatedAt: new Date().toISOString(),
+      };
+     } catch (error) {
+       if (attempt < maxRetries) {
+         attempt++;
+         const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+         console.error(`Factor analysis failed for scope "${scope}" (attempt ${attempt}/${maxRetries}):`, error);
+         await new Promise((resolve) => setTimeout(resolve, backoffMs));
+         continue;
+       }
+       console.error(`Factor analysis failed for scope "${scope}" after ${maxRetries} retries:`, error);
+       // Return existing factors but mark as not curated since the AI failed.
+       return returnExisting();
+     }
   }
+
+  return returnExisting();
 }

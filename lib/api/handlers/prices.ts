@@ -22,6 +22,8 @@ const PRICE_EXTRACTION_PROMPT = `You are an expert financial data analyst specia
 
 From the provided search results, identify the most recent, reliable price figures for each commodity (oil, electricity, water) with their sources.
 
+IMPORTANT: You must extract REAL URLs from the search results as the source for each price. Look at the "URL:" field in each search result. Do NOT use generic labels like "Global crude oil benchmark (public composite)" or "public composite" — you must use the actual URL from the search results. The URL should be a real, specific webpage (e.g., "https://www.iea.org/reports/oil-market-report" or "https://tradingeconomics.com/energy/oil"). If you cannot find a specific URL in the search results, omit that commodity.
+
 Return strict JSON only with this schema:
 {
   "prices": [
@@ -29,13 +31,17 @@ Return strict JSON only with this schema:
       "commodity": "oil" | "electricity" | "water",
       "price": number (USD),
       "unit": "string (e.g., 'USD per barrel', 'USD per MWh', 'USD per cubic meter')",
-      "source": "string (URL to the source)",
+      "source": "string (REAL URL from search results, must be an actual webpage URL)",
       "confidence": number (0-100)
     }
   ]
 }
 
 Search results may contain prices in various formats ($XX.XX, XX.XX USD, etc.). Extract the most plausible price from the most reliable source. Prioritize recent, authoritative sources. If a price cannot be clearly identified, set confidence to 0 and omit that commodity. Do not invent prices.
+
+For oil: Look for Brent crude, WTI, or OPEC prices. Typical range: $60-$150 per barrel.
+For electricity: Look for wholesale/day-ahead electricity prices. Typical range: $20-$300 per MWh.
+For water: Look for municipal water tariffs. Typical range: $0.50-$10 per cubic meter.
 
 Do not include any text outside the JSON.`;
 
@@ -142,7 +148,7 @@ async function resolvePrices(req: Request): Promise<Response> {
   return Response.json(fallbackResult, { status: 200 });
 }
 
-function extractPriceFromText(text: string): number | null {
+function extractPriceFromText(text: string, commodity?: string): number | null {
   const pricePatterns = [
     /\$(\d+(?:\.\d+)?)/g,
     /(\d+(?:\.\d+)?)\s*USD/g,
@@ -165,18 +171,51 @@ function extractPriceFromText(text: string): number | null {
     /(\d+(?:\.\d+)?)\s*(?:SEK|NOK|DKK)/gi,
   ];
 
+  const candidates: { price: number; text: string }[] = [];
+
   for (const pattern of pricePatterns) {
     const matches = [...text.matchAll(pattern)];
     if (matches.length > 0) {
       for (const match of matches) {
         const price = parseFloat(match[1]);
         if (price >= 0.01 && price <= 10000) {
-          return price;
+          candidates.push({ price, text: match[0] });
         }
       }
     }
   }
-  return null;
+
+  if (candidates.length === 0) return null;
+
+  // Sort by confidence: prefer prices that appear in the title, in currency symbols
+  candidates.sort((a, b) => {
+    const aTitleMatch = a.text.includes("$") || a.text.includes("USD");
+    const bTitleMatch = b.text.includes("$") || b.text.includes("USD");
+    if (aTitleMatch && !bTitleMatch) return -1;
+    if (!aTitleMatch && bTitleMatch) return 1;
+
+    // Then sort by proximity to commodity-appropriate range
+    if (commodity) {
+      const getCommodityRange = (c: string): { min: number; max: number } => {
+        switch (c) {
+          case "oil": return { min: 50, max: 150 };   // $50-$150/barrel
+          case "electricity": return { min: 20, max: 300 }; // $20-$300/MWh
+          case "water": return { min: 0.5, max: 10 }; // $0.50-$10/m³
+          default: return { min: 0.01, max: 10000 };
+        }
+      };
+      const range = getCommodityRange(commodity);
+      const aInRange = a.price >= range.min && a.price <= range.max;
+      const bInRange = b.price >= range.min && b.price <= range.max;
+      if (aInRange && !bInRange) return -1;
+      if (!aInRange && bInRange) return 1;
+    }
+
+    // Then sort by descending value (higher prices often more significant)
+    return b.price - a.price;
+  });
+
+  return candidates[0].price;
 }
 
 async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
@@ -303,7 +342,7 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
     // Skip commodities already covered by AI extraction.
     if (aiPrices?.[commodity]) return;
     for (const res of result.results ?? []) {
-      const price = extractPriceFromText(`${res.title} ${res.snippet}`);
+      const price = extractPriceFromText(`${res.title} ${res.snippet}`, commodity);
       if (price !== null) {
         deterministicPrices[commodity] = { price, source: sanitizeUrl(res.url) || res.url };
         break;
@@ -359,21 +398,30 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
       if (abortSignal?.aborted) break;
       try {
         console.warn(`Water price not live, retrying with query: ${retryQuery}`);
-        const waterResult = await searchRouter.search(retryQuery, {
-          limit: 10,
-          region: regionalScope,
-        }, abortSignal);
-        if (waterResult.results.length > 0) {
-          for (const res of waterResult.results) {
-            const price = extractPriceFromText(`${res.title} ${res.snippet}`);
+
+        // Try searchRouter (Playwright → DDG) and TinyFish in parallel
+        const [searchResult, tinyfishResult] = await Promise.all([
+          searchRouter.search(retryQuery, { limit: 10, region: regionalScope }, abortSignal)
+            .catch(() => ({ results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" as const })),
+          tinyfishRouter.tinyfishSearch(retryQuery, { limit: 10, region: regionalScope }, abortSignal)
+            .catch(() => ({ results: [], total: 0, keyIndex: -1, searchSource: "tinyfish" as const })),
+        ]);
+
+        // Try searchRouter results first, then TinyFish
+        for (const resultSet of [searchResult, tinyfishResult]) {
+          if (result.water.isLive) break;
+          if (resultSet.results.length === 0) continue;
+
+          for (const res of resultSet.results) {
+            const price = extractPriceFromText(`${res.title} ${res.snippet}`, "water");
             if (price !== null && price > 0 && price <= 100) {
-              // Water prices are typically in the $1-$10/m³ range
+              // Water prices are typically in the $0.50-$10/m³ range
               result.water = {
                 price,
                 unit: "USD per cubic meter",
                 source: sanitizeUrl(res.url) || res.url,
                 isLive: true,
-                searchSource: waterResult.searchSource,
+                searchSource: resultSet.searchSource,
               };
               result.isLive = true;
               result.dataSource = "Kilo AI analysis of search results (water retry)";
@@ -381,6 +429,7 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
             }
           }
         }
+
         if (result.water.isLive) break;
       } catch (retryError) {
         console.warn(`Water retry failed for "${retryQuery}":`, retryError);

@@ -151,6 +151,18 @@ function extractPriceFromText(text: string): number | null {
     /(\d+(?:\.\d+)?)\s*EUR/g,
     /(\d+(?:\.\d+)?)\s*¥/g,
     /(\d+(?:\.\d+)?)\s*元/g,
+    /£(\d+(?:\.\d+)?)/g,
+    /(\d+(?:\.\d+)?)\s*GBP/g,
+    /(\d+(?:\.\d+)?)\s*pounds?/gi,
+    /₱(\d+(?:\.\d+)?)/g,
+    /(\d+(?:\.\d+)?)\s*PHP/g,
+    /(\d+(?:\.\d+)?)\s*pesos?/gi,
+    /₹(\d+(?:\.\d+)?)/g,
+    /(\d+(?:\.\d+)?)\s*INR/g,
+    /R(\d+(?:\.\d+)?)/g,
+    /(\d+(?:\.\d+)?)\s*ZAR/g,
+    /kr\s*(\d+(?:\.\d+)?)/gi,
+    /(\d+(?:\.\d+)?)\s*(?:SEK|NOK|DKK)/gi,
   ];
 
   for (const pattern of pricePatterns) {

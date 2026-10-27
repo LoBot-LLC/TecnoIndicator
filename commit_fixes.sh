@@ -26,6 +26,11 @@ Root causes fixed:
 3. kiloRouter.ts: Fixed array index mapping after filtering
 4. factor-analysis.ts: Removed importanceScore < 20 threshold that rejected
    all AI factors (default importance was 0)
+5. DuckDuckGo referer header: html.duckduckgo.com/ -> lite.duckduckgo.com/
+   (cross-origin referer caused DDG to reject requests)
+6. extractPriceFromText: Added currency patterns for GBP (£), PHP (₱),
+   INR (₹), ZAR (R), SEK/NOK/DKK (kr) so water prices in non-USD
+   currencies are extracted from search snippets
 
 These fixes restore live water price fetching via tinyfish, playwright,
 and DuckDuckGo HTTP search instead of falling back to static benchmarks."

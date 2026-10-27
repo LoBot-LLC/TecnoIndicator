@@ -17,7 +17,7 @@ git add -A
 
 echo ""
 echo "=== Committing ==="
-git commit -m "Fix water price live fetching via DuckDuckGo search and AI model routing
+git commit -m "Fix water price live fetching and AI dynamic factor curation
 
 Root causes fixed:
 1. DuckDuckGo URL: html.duckduckgo.com/lite/ -> lite.duckduckgo.com/lite/
@@ -31,9 +31,16 @@ Root causes fixed:
 6. extractPriceFromText: Added currency patterns for GBP (£), PHP (₱),
    INR (₹), ZAR (R), SEK/NOK/DKK (kr) so water prices in non-USD
    currencies are extracted from search snippets
+7. DuckDuckGo Lite parser regex: Fixed class-before-href attribute order
+   assumption that caused silent zero-results when DDG emits href before
+   class. Now matches <a> tags with class='result-link' regardless of
+   attribute order, restoring search results for factor curation news
+   queries so Kilo AI can generate 8 dynamic reasons instead of static
+   hard-coded fallbacks.
 
-These fixes restore live water price fetching via tinyfish, playwright,
-and DuckDuckGo HTTP search instead of falling back to static benchmarks."
+These fixes restore live water price fetching and AI-curated dynamic
+factors via tinyfish, playwright, and DuckDuckGo HTTP search instead of
+falling back to static benchmarks."
 
 echo ""
 echo "=== Pushing to remote ==="

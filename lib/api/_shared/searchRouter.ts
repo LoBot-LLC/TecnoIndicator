@@ -329,14 +329,21 @@ return {
 
     // DuckDuckGo Lite results use <a class='result-link'> within <tr> rows.
     // Each result occupies 3 rows: title+link, snippet, and source URL.
-    // Match <a class='result-link'> to extract title and redirect URL.
-    const linkPattern = /<a[^>]*class=['"]result-link['"][^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
+    // Match <a> tags with class='result-link' regardless of attribute order
+    // (DDG may emit href before class or class before href).
+    const aTagPattern = /<a\s+([^>]*?)href="([^"]+)"([^>]*)>([^<]+)<\/a>/gi;
     let match: RegExpMatchArray | null;
     let count = 0;
 
-    while ((match = linkPattern.exec(html)) && count < limit) {
-      const href = match[1];
-      const title = match[2].trim();
+    while ((match = aTagPattern.exec(html)) && count < limit) {
+      const attrsBefore = match[1];
+      const href = match[2];
+      const attrsAfter = match[3];
+      const title = match[4].trim();
+
+      // Only process <a> tags that have class='result-link' or class="result-link"
+      const allAttrs = attrsBefore + attrsAfter;
+      if (!/class=['"]result-link['"]/.test(allAttrs)) continue;
 
       // Extract the actual destination URL from the DDG redirect (uddg parameter)
       let url = href;

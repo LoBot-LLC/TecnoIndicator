@@ -576,20 +576,20 @@ await this.refreshKiloModels(true, abortSignal);
     }
 
     const keys = this.keyStates
-      .filter(k => k.available && !k.rateLimited)
-      .map((_k, i) => i);
+      .map((k, i) => (k.available && !k.rateLimited) ? i : -1)
+      .filter(i => i !== -1);
 
     // First try zero-cost models only
     let models = this.modelCandidates
-      .filter(m => m.zeroCostVerified && m.available && !m.rateLimited)
-      .map((_m, i) => i);
+      .map((m, i) => (m.zeroCostVerified && m.available && !m.rateLimited) ? i : -1)
+      .filter(i => i !== -1);
 
     // If no zero-cost models available, fall back to any available model
     if (models.length === 0) {
       console.warn("No zero-cost Kilo models available; falling back to any available model");
       models = this.modelCandidates
-        .filter(m => m.available && !m.rateLimited)
-        .map((_m, i) => i);
+        .map((m, i) => (m.available && !m.rateLimited) ? i : -1)
+        .filter(i => i !== -1);
     }
 
 if (keys.length === 0 || models.length === 0) {
@@ -613,11 +613,11 @@ if (keys.length === 0 || models.length === 0) {
 
       // Re-evaluate available keys/models after resetting expired rate limits
       const currentKeys = this.keyStates
-        .filter(k => k.available && !k.rateLimited)
-        .map((_k, i) => i);
+        .map((k, i) => (k.available && !k.rateLimited) ? i : -1)
+        .filter(i => i !== -1);
       const currentModels = this.modelCandidates
-        .filter(m => m.available && !m.rateLimited)
-        .map((_m, i) => i);
+        .map((m, i) => (m.available && !m.rateLimited) ? i : -1)
+        .filter(i => i !== -1);
 
       if (currentKeys.length === 0 || currentModels.length === 0) {
         if (retryCount >= maxRetries) {

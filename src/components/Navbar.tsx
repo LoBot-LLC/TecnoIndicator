@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Download, FileCode2, FileImage, FileText, Menu, Moon, Sun, X } from "lucide-react";
+import { ChevronDown, Download, FileCode2, FileImage, FileText, Menu, X } from "lucide-react";
 import Logo from "./Logo";
 import { GithubIcon } from "./icons";
 import { EVENTS, emit } from "../lib/events";
-import CurrencySelector from "./CurrencySelector";
-import { useTheme } from "../context/ThemeContext";
+import SettingsMenu from "./SettingsMenu";
 
 const LINKS = [
   { href: "#forecast", label: "Forecast" },
@@ -20,7 +19,6 @@ export default function Navbar() {
   const [exportOpen, setExportOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
-  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -87,8 +85,8 @@ export default function Navbar() {
         </nav>
 
         <div className="hidden items-center gap-2.5 md:flex">
-          {/* Currency selector */}
-          <CurrencySelector className="mr-2" />
+          {/* Settings menu (currency, theme, fonts, unit conversion) */}
+          <SettingsMenu className="mr-2" />
 
           {/* Export dropdown */}
           <div className="relative" ref={exportRef}>
@@ -146,19 +144,6 @@ export default function Navbar() {
           <GithubIcon className="h-4.5 w-4.5" />
         </a>
 
-        {/* Theme toggle */}
-        <button
-          type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-panel/5 text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
-          onClick={() => toggleTheme()}
-          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-        >
-          {theme === "dark" ? (
-            <Moon className="h-4.5 w-4.5" />
-          ) : (
-            <Sun className="h-4.5 w-4.5" />
-          )}
-        </button>
         </div>
 
         {/* Mobile toggle */}
@@ -189,9 +174,9 @@ export default function Navbar() {
             ))}
           </nav>
           <div className="mt-3 flex justify-end">
-            <CurrencySelector />
+            <SettingsMenu />
           </div>
-<div className="mt-2 grid grid-cols-4 gap-2">
+          <div className="mt-2 grid grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={() => doExport("png")}
@@ -216,19 +201,7 @@ export default function Navbar() {
               >
                 <FileCode2 className="h-4 w-4" /> MD
               </button>
-              <button
-                type="button"
-                onClick={() => toggleTheme()}
-                aria-label="Toggle theme"
-                className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
-              >
-                {theme === "dark" ? (
-                  <Moon className="h-4 w-4" />
-                ) : (
-                  <Sun className="h-4 w-4" />
-                )}
-              </button>
-            </div>
+          </div>
         </div>
       )}
     </header>

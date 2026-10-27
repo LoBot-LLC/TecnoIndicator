@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { CurrencyProvider } from "../src/context/CurrencyContext";
+import { SettingsProvider } from "../src/context/SettingsContext";
 import { ThemeProvider } from "../src/context/ThemeContext";
 import "./globals.css";
 import VercelAnalytics from "../src/components/VercelAnalytics";
@@ -73,7 +74,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <ThemeProvider>
-          <CurrencyProvider>{children}</CurrencyProvider>
+          <SettingsProvider>
+            <CurrencyProvider>{children}</CurrencyProvider>
+          </SettingsProvider>
         </ThemeProvider>
         <VercelAnalytics />
         <SpeedInsights />

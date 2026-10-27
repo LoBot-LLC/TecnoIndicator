@@ -14,6 +14,7 @@ import Reveal from "./Reveal";
 import Ticker from "./Ticker";
 import { useFlash } from "../hook/useFlash";
 import { useCurrency } from "../context/CurrencyContext";
+import { useSettings } from "../context/SettingsContext";
 import {
   COMMODITIES,
   fmtFullDate,
@@ -77,7 +78,8 @@ export default function Hero({
   points: pointsProp,
   horizon: horizonProp,
 }: HeroProps) {
-  const { selectedCurrency } = useCurrency();
+  const { selectedCurrency, convertPrice } = useCurrency();
+  const { convertEnergy, convertLengthVolume, energyUnitLabel, lengthUnitLabel } = useSettings();
 
   const today = new Date();
   const horizon = horizonProp ?? 10;
@@ -108,7 +110,7 @@ export default function Hero({
     {
       id: "electricity",
       name: "Electricity",
-      unit: `${selectedCurrency}/MWh`,
+      unit: `${selectedCurrency}/${energyUnitLabel()}`,
       icon: Zap,
       color: "#2dd4bf",
       decimals: 1,
@@ -116,7 +118,7 @@ export default function Hero({
     {
       id: "water",
       name: "Water",
-      unit: `${selectedCurrency}/m³`,
+      unit: `${selectedCurrency}/${lengthUnitLabel()}`,
       icon: Droplets,
       color: "#38bdf8",
       decimals: 2,

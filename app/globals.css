@@ -311,7 +311,32 @@ input[type="range"].slider:focus-visible {
   border-radius: 999px;
 }
 
-/* ---------- scrollbar ---------- */
+/* ---------- modal backdrop ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.modal-backdrop .backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.modal-backdrop .modal {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 768px;
+  max-height: 92vh;
+  overflow: hidden;
+  border-radius: 16px;
+}
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

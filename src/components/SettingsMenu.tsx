@@ -78,14 +78,14 @@ export default function SettingsMenu({ className = "" }: { className?: string })
   }
 
   return (
-    <div className={`fixed inset-0 z-[100] flex items-center justify-center ${className}`}>
+    <div className={`fixed inset-0 z-[100] flex items-center justify-center p-4 ${className}`}>
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
         onClick={() => setOpen(false)}
       />
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-2xl border border-line bg-panel shadow-2xl shadow-slate-900/50 dark:shadow-black/70 flex flex-col">
+      <div className="relative z-10 w-full max-w-3xl max-h-[92vh] overflow-hidden rounded-2xl border border-line bg-panel shadow-2xl shadow-slate-900/50 dark:shadow-black/70 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-8 py-5 border-b border-line">
           <div className="flex items-center gap-3">

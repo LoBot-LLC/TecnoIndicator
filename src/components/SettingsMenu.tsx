@@ -1,19 +1,35 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import {
   Type,
   Ruler,
   Settings,
+  X,
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useCurrency, ALL_CURRENCIES } from "../context/CurrencyContext";
 import { useSettings, FONT_OPTIONS } from "../context/SettingsContext";
 
-const TABS: Array<{ id: "fonts" | "units"; label: string; icon: ReactElement }> = [
-  { id: "fonts", label: "Fonts & Themes", icon: <Type className="h-4 w-4" /> },
-  { id: "units", label: "Unit Conversion", icon: <Ruler className="h-4 w-4" /> },
+const TABS: Array<{
+  id: "fonts" | "units";
+  label: string;
+  icon: ReactElement;
+  description: string;
+}> = [
+  {
+    id: "fonts",
+    label: "Fonts & Themes",
+    icon: <Type className="h-5 w-5" />,
+    description: "Color theme and body font",
+  },
+  {
+    id: "units",
+    label: "Unit Conversion",
+    icon: <Ruler className="h-5 w-5" />,
+    description: "Currency, length & energy units",
+  },
 ];
 
 export default function SettingsMenu({ className = "" }: { className?: string }) {
@@ -30,68 +46,98 @@ export default function SettingsMenu({ className = "" }: { className?: string })
 
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"fonts" | "units">("fonts");
-  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
     return () => {
-      document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
     };
   }, [open]);
 
   const toggle = () => setOpen((v) => !v);
 
-  return (
-    <div className={`relative ${className}`} ref={wrapperRef}>
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        aria-label="Settings"
-        className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-panel/5 text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
-      >
-        <Settings className="h-5 w-5" />
-      </button>
+  if (!open) {
+    return (
+      <div className={`relative ${className}`}>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label="Settings"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-panel/5 text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
+        >
+          <Settings className="h-5 w-5" />
+        </button>
+      </div>
+    );
+  }
 
-      {open && (
-        <div className="absolute right-0 mt-2 z-50 w-80 overflow-hidden rounded-xl border border-line bg-panel shadow-2xl shadow-slate-900/50 dark:shadow-black/50">
-          <div className="border-b border-line px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-500">
-              Settings
-            </p>
-            <div className="flex gap-1 mt-2">
-              {TABS.map((t) => {
-                const active = tab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setTab(t.id)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                      active
-                        ? "bg-teal-400/15 text-teal-600 dark:text-teal-200"
-                        : "text-slate-600 hover:bg-slate-100/50 dark:text-slate-400 dark:hover:bg-panel/10 dark:hover:text-teal-200"
-                    }`}
-                  >
-                    {t.icon} <span className="hidden sm:inline">{t.label}</span>
-                  </button>
-                );
-              })}
+  return (
+    <div className={`fixed inset-0 z-[100] flex items-center justify-center ${className}`}>
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+        onClick={() => setOpen(false)}
+      />
+      {/* Modal */}
+      <div className="relative z-10 w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-2xl border border-line bg-panel shadow-2xl shadow-slate-900/50 dark:shadow-black/70 flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-8 py-5 border-b border-line">
+          <div className="flex items-center gap-3">
+            <Settings className="h-6 w-6 text-teal-400" />
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Settings</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Customize your preferences
+              </p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close settings"
+            className="rounded-lg bg-base/30 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-teal-400/10 hover:text-teal-600 dark:hover:bg-panel/10 dark:hover:text-teal-200 transition-all"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-          <div className="px-4 py-3 space-y-5">
+        {/* Body */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left nav */}
+          <nav className="w-64 border-r border-line bg-base/30 flex flex-col">
+            {TABS.map((t) => {
+              const active = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTab(t.id)}
+                  className={`flex items-center gap-3 px-6 py-4 text-sm transition-all border-l-2 ${
+                    active
+                      ? "bg-teal-400/10 text-teal-600 dark:text-teal-200 border-teal-400 dark:border-teal-300"
+                      : "text-slate-600 dark:text-slate-400 hover:bg-panel/5 dark:hover:bg-panel/10 hover:text-slate-900 dark:hover:text-slate-100 border-transparent"
+                  }`}
+                >
+                  {t.icon}
+                  <div className="flex-1 text-left">
+                    <p className="font-medium leading-tight">{t.label}</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-500 leading-tight mt-0.5">
+                      {t.description}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Right content */}
+          <div className="flex-1 overflow-y-auto px-8 py-6 bg-panel">
             {tab === "fonts" ? (
               <FontsSection
                 theme={theme}
@@ -112,12 +158,10 @@ export default function SettingsMenu({ className = "" }: { className?: string })
             )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
-
-/* ---------------- Fonts & Themes section ---------------- */
 
 function FontsSection({
   theme,
@@ -132,31 +176,38 @@ function FontsSection({
 }) {
   return (
     <>
-      <section className="space-y-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-500">
-          Color theme
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Fonts & Themes</h3>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Customize the appearance of the interface
         </p>
+      </div>
+
+      <section className="mb-8">
+        <label className="block mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+          Color Theme
+        </label>
         <select
           value={theme}
           onChange={(e) => setTheme(e.target.value as "light" | "dark")}
-          className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-teal-400/40 focus:outline-none"
+          className="w-full max-w-xs rounded-lg border border-line bg-panel-2 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
         >
           <option value="dark">Dark</option>
           <option value="light">Light</option>
         </select>
-        <p className="text-[10px] text-slate-500 dark:text-slate-400">
-          Choose the site color theme.
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+          Choose between light and dark mode
         </p>
       </section>
 
-      <section className="mt-4 space-y-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-500">
-          Body font
-        </p>
+      <section>
+        <label className="block mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+          Body Font
+        </label>
         <select
           value={fontFamily}
           onChange={(e) => setFontFamily(e.target.value)}
-          className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-teal-400/40 focus:outline-none"
+          className="w-full max-w-xs rounded-lg border border-line bg-panel-2 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
         >
           {FONT_OPTIONS.map((f) => (
             <option key={f.value} value={f.value}>
@@ -164,15 +215,13 @@ function FontsSection({
             </option>
           ))}
         </select>
-        <p className="text-[10px] text-slate-500 dark:text-slate-400">
-          Font families sourced from GlobalFonts.pro / Google Fonts.
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+          Font families from GlobalFonts.pro / Google Fonts
         </p>
       </section>
     </>
   );
 }
-
-/* ---------------- Unit Conversion section ---------------- */
 
 function UnitsSection({
   selectedCurrency,
@@ -193,14 +242,21 @@ function UnitsSection({
 }) {
   return (
     <>
-      <section className="space-y-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-500">
-          Currency
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Unit Conversion</h3>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Configure currency and measurement units
         </p>
+      </div>
+
+      <section className="mb-8">
+        <label className="block mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+          Currency
+        </label>
         <select
           value={selectedCurrency}
           onChange={(e) => setSelectedCurrency(e.target.value)}
-          className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-teal-400/40 focus:outline-none"
+          className="w-full max-w-xs rounded-lg border border-line bg-panel-2 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
         >
           {currencies.map((c) => (
             <option key={c.code} value={c.code}>
@@ -208,43 +264,43 @@ function UnitsSection({
             </option>
           ))}
         </select>
-        <p className="text-[10px] text-slate-500 dark:text-slate-400">
-          Exchange rates update in real time.
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+          Exchange rates update in real time
         </p>
       </section>
 
-      <section className="mt-4 space-y-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-500">
-          Length / volume
-        </p>
+      <section className="mb-8">
+        <label className="block mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+          Length / Volume
+        </label>
         <select
           value={lengthUnit}
           onChange={(e) => setLengthUnit(e.target.value as "meter" | "feet")}
-          className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-teal-400/40 focus:outline-none"
+          className="w-full max-w-xs rounded-lg border border-line bg-panel-2 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
         >
           <option value="meter">Meter (m³)</option>
           <option value="feet">Feet (ft³)</option>
         </select>
-        <p className="text-[10px] text-slate-500 dark:text-slate-400">
-          Water volume unit (1 m³ = 35.3147 ft³).
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+          1 m³ = 35.3147 ft³
         </p>
       </section>
 
-      <section className="mt-4 space-y-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-500">
+      <section>
+        <label className="block mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">
           Energy
-        </p>
+        </label>
         <select
           value={energyUnit}
           onChange={(e) => setEnergyUnit(e.target.value as "MWh" | "kWh" | "joule")}
-          className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-teal-400/40 focus:outline-none"
+          className="w-full max-w-xs rounded-lg border border-line bg-panel-2 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
         >
           <option value="MWh">Megawatt-hour (MWh)</option>
           <option value="kWh">Kilowatt-hour (kWh)</option>
           <option value="joule">Joule (J)</option>
         </select>
-        <p className="text-[10px] text-slate-500 dark:text-slate-400">
-          Electricity energy unit (1 MWh = 1,000 kWh = 3.6e9 J).
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+          1 MWh = 1,000 kWh = 3.6e9 J
         </p>
       </section>
     </>

@@ -44,6 +44,24 @@
   --color-slate-900: #f8fafc;
 }
 
+/* Select dropdowns - ensure proper visibility in dark mode */
+select {
+  background-color: var(--color-panel);
+  color: var(--color-slate-900);
+}
+.dark select {
+  background-color: var(--color-panel-2);
+  color: var(--color-slate-100);
+}
+select option {
+  background-color: var(--color-panel);
+  color: var(--color-slate-900);
+}
+.dark select option {
+  background-color: var(--color-panel-2);
+  color: var(--color-slate-100);
+}
+
 html {
   scroll-behavior: smooth;
 }

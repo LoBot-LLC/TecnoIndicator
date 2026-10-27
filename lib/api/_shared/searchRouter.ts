@@ -262,48 +262,99 @@ private async searchViaDuckDuckGo(
       throw new Error("DuckDuckGo not available");
     }
 
-    // Use DuckDuckGo Lite for simpler HTML parsing.
-    // NOTE: DuckDuckGo Lite is heavily bot-protected. It can return a
-    // 202/anomaly challenge page ("bots use DuckDuckGo too", challenge form)
-    // instead of results. The parser detects this and returns an empty array.
     const searchQuery = options.region ? `[${options.region}] ${query}` : query;
-    const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(searchQuery)}&kl=us-en`;
 
-    // Add realistic browser-like headers to reduce the chance of hitting the
-    // bot challenge. DDG Lite checks Sec-Fetch-* headers and Accept-Language.
-    const response = await fetch(url, {
-      signal: abortSignal ?? AbortSignal.timeout(15000),
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Referer": "https://lite.duckduckgo.com/",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "same-origin",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1"
+    // DuckDuckGo's HTML/Lite endpoints are heavily bot-protected. GET requests
+    // with query parameters are frequently flagged as automated. DDG's own
+    // documentation specifies these endpoints accept HTTP POST with form data
+    // (Content-Type: application/x-www-form-urlencoded). Using POST with a
+    // browser-like header set significantly reduces bot-challenge rates.
+    const formBody = new URLSearchParams();
+    formBody.set("q", searchQuery);
+    formBody.set("kl", "us-en");
+
+    const headers: HeadersInit = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Referer": "https://lite.duckduckgo.com/",
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-User": "?1",
+      "Upgrade-Insecure-Requests": "1",
+    };
+
+    // Try DuckDuckGo Lite first (POST form), then fall back to DDG HTML.
+    // Each endpoint has slightly different HTML and bot-detection strictness,
+    // so trying both maximises the chance of getting real results.
+    const endpoints = [
+      { name: "lite", url: "https://lite.duckduckgo.com/lite/", parser: "lite" },
+      { name: "html", url: "https://html.duckduckgo.com/html/", parser: "html" },
+    ];
+
+    for (const ep of endpoints) {
+      try {
+        const response = await fetch(ep.url, {
+          method: "POST",
+          signal: abortSignal ?? AbortSignal.timeout(15000),
+          headers,
+          body: formBody.toString(),
+        });
+
+        if (!response.ok) {
+          console.warn(`DuckDuckGo ${ep.name} HTTP error: ${response.status}`);
+          continue;
+        }
+
+        const html = await response.text();
+
+        // Bot challenge detection: DDG returns a 200 page with a CAPTCHA/
+        // anomaly form instead of results. Detect common block patterns so we
+        // can fall through to the next endpoint or return empty results.
+        const lowerHtml = html.toLowerCase();
+        const isChallenge =
+          lowerHtml.includes("bots use duckduckgo too") ||
+          lowerHtml.includes("unfortunately, bots use duckduckgo too") ||
+          (lowerHtml.includes("challenge") && lowerHtml.includes("select all squares")) ||
+          lowerHtml.includes("anomaly-modal") ||
+          lowerHtml.includes("please complete the following challenge");
+        const isIpBlocked =
+          lowerHtml.includes("your ip address") ||
+          lowerHtml.includes("user agent") ||
+          lowerHtml.includes("url decoded");
+        if (isChallenge || isIpBlocked) {
+          console.warn(`DuckDuckGo ${ep.name} returned a bot challenge page, trying next endpoint`);
+          continue;
+        }
+
+        const results =
+          ep.parser === "html"
+            ? this.parseDuckDuckGoHtml(html, options.limit ?? 10)
+            : this.parseDuckDuckGoLiteHtml(html, options.limit ?? 10);
+
+        if (results.length > 0) {
+          return {
+            results,
+            total: results.length,
+            keyIndex: -1,
+            searchSource: "duckduckgo",
+          };
+        }
+
+        // Parser returned no results — could be a genuinely empty query or a
+        // challenge page that slipped past detection. Try the next endpoint.
+        console.warn(`DuckDuckGo ${ep.name} returned no results, trying next endpoint`);
+      } catch (error) {
+        console.warn(`DuckDuckGo ${ep.name} fetch failed:`, error);
       }
-    });
-
-    // If the response is not OK, treat DuckDuckGo as temporarily unavailable.
-    // This prevents "All search methods failed" errors in the logs for transient issues like
-    // Cloudflare 522 errors. DuckDuckGo continues to be used for subsequent requests.
-    if (!response.ok) {
-      console.warn(`DuckDuckGo HTTP error: ${response.status} - treating as temporarily unavailable, returning empty results`);
-      return { results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" };
     }
 
-    const html = await response.text();
-    const results = this.parseDuckDuckGoLiteHtml(html, options.limit ?? 10);
-
-return {
-      results,
-      total: results.length,
-      keyIndex: -1,
-      searchSource: "duckduckgo",
-    };
+    // All endpoints exhausted without results.
+    console.warn("DuckDuckGo all endpoints failed or returned no results");
+    return { results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" };
   }
 
   private parseDuckDuckGoLiteHtml(html: string, limit: number): SearchResult[] {
@@ -329,17 +380,18 @@ return {
 
     // DuckDuckGo Lite results use <a class='result-link'> within <tr> rows.
     // Each result occupies 3 rows: title+link, snippet, and source URL.
-    // Match <a> tags with class='result-link' regardless of attribute order
-    // (DDG may emit href before class or class before href).
-    const aTagPattern = /<a\s+([^>]*?)href="([^"]+)"([^>]*)>([^<]+)<\/a>/gi;
+    // Match <a> tags with class='result-link' or class="result-link" regardless
+    // of attribute order and quote style (DDG may emit href before class,
+    // double-quoted href, single-quoted href, etc.).
+    const aTagPattern = /<a\s+([^>]*?)href=(["'])([^"']+)\2([^>]*)>([^<]+)<\/a>/gi;
     let match: RegExpMatchArray | null;
     let count = 0;
 
     while ((match = aTagPattern.exec(html)) && count < limit) {
       const attrsBefore = match[1];
-      const href = match[2];
-      const attrsAfter = match[3];
-      const title = match[4].trim();
+      const href = match[3];
+      const attrsAfter = match[4];
+      const title = match[5].trim();
 
       // Only process <a> tags that have class='result-link' or class="result-link"
       const allAttrs = attrsBefore + attrsAfter;
@@ -383,6 +435,83 @@ return {
         if (linkTextMatch && linkTextMatch[2]) {
           url = linkTextMatch[2].trim();
         }
+      }
+
+      if (url && title) {
+        results.push({
+          position: count + 1,
+          site_name: this.extractSiteName(url),
+          title,
+          snippet,
+          url,
+          publishedAt: undefined,
+        });
+        count++;
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Parse DuckDuckGo's non-Lite HTML endpoint (html.duckduckgo.com/html/).
+   *
+   * The non-Lite endpoint uses a different markup structure than Lite:
+   * results are wrapped in `<div class="result">` containers, with the title
+   * link in `<a class="result__a">` and the snippet in
+   * `<div class="result__snippet">`. This parser mirrors the structure used
+   * by well-known DDG scrapers (ddgs, openclaw, web2md).
+   */
+  private parseDuckDuckGoHtml(html: string, limit: number): SearchResult[] {
+    const results: SearchResult[] = [];
+    let count = 0;
+
+    // Match result blocks: <div class="result ..."> ... </div>
+    // We look for <a> tags with class containing "result__a" — the canonical
+    // DDG result link class. Using a lookahead to match class anywhere in the
+    // tag (DDG emits multiple classes, e.g. "result__a result__a--body").
+    const resultLinkPattern = /<a\b(?=[^>]*\bclass=["'][^"']*\bresult__a\b[^"']*["'])([^>]*?)>([\s\S]*?)<\/a>/gi;
+    let match: RegExpMatchArray | null;
+
+    while ((match = resultLinkPattern.exec(html)) && count < limit) {
+      const attrs = match[1];
+      const rawTitle = match[2];
+
+      // Extract href — handle both single and double quotes
+      const hrefMatch = attrs.match(/href=(["'])([^"']+)\1/i);
+      if (!hrefMatch) continue;
+      const rawHref = hrefMatch[2];
+
+      // Strip HTML tags from the title
+      const title = rawTitle
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (!title) continue;
+
+      // Resolve the destination URL from the DDG redirect (uddg parameter)
+      let url = rawHref;
+      try {
+        const normalized = url.startsWith("//") ? `https:${url}` : url;
+        const parsed = new URL(normalized);
+        const uddg = parsed.searchParams.get("uddg");
+        if (uddg) {
+          url = uddg;
+        }
+      } catch {
+        // Keep raw href as-is if URL parsing fails
+      }
+
+      // Find the snippet in the same result block
+      const block = html.slice(match.index);
+      const snippetMatch = block.match(/class=["'][^"']*\bresult__snippet\b[^"']*["'][^>]*>([\s\S]{0,500})<\/(?:div|td)>/i);
+      let snippet = "";
+      if (snippetMatch && snippetMatch[1]) {
+        snippet = snippetMatch[1]
+          .replace(/<[^>]*>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
       }
 
       if (url && title) {

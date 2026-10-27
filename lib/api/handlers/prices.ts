@@ -183,34 +183,31 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
   const regionalScope = scope === "global" ? undefined : scope;
 
   // Attempt search via the primary search chain (Playwright MCP → DuckDuckGo)
-  // then fall back to TinyFish for each commodity when no results are returned.
+  // and TinyFish concurrently. DDG is frequently bot-blocked; running TinyFish
+  // in parallel ensures we don't wait for DDG to fail before trying TinyFish.
   const searchResults = await Promise.all(
     COMMODITY_QUERIES.map(async ({ commodity, queryTemplate }) => {
       try {
-        const result = await searchRouter.search(queryTemplate, {
-          limit: 10,
-          region: regionalScope,
-        }, abortSignal);
-        if (result.results.length > 0) return result;
-
-        // Primary search chain returned no results — try TinyFish directly.
-        console.warn(`Primary search returned no results for ${commodity}, trying TinyFish...`);
-        return await tinyfishRouter.tinyfishSearch(queryTemplate, {
-          limit: 10,
-          region: regionalScope,
-        }, abortSignal);
-      } catch (error) {
-        console.warn(`Failed to search for ${commodity}:`, error);
-        // As a last resort, try TinyFish directly even if the primary search threw.
-        try {
-          return await tinyfishRouter.tinyfishSearch(queryTemplate, {
+        const [primaryResult, tinyfishResult] = await Promise.all([
+          searchRouter.search(queryTemplate, {
             limit: 10,
             region: regionalScope,
-          }, abortSignal);
-        } catch (tinyfishError) {
-          console.warn(`TinyFish fallback also failed for ${commodity}:`, tinyfishError);
-          return { results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" as const };
-        }
+          }, abortSignal).catch(() => ({ results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" as const })),
+          tinyfishRouter.tinyfishSearch(queryTemplate, {
+            limit: 10,
+            region: regionalScope,
+          }, abortSignal).catch(() => ({ results: [], total: 0, keyIndex: -1, searchSource: "tinyfish" as const })),
+        ]);
+
+        // Prefer primary results if available, otherwise fall back to TinyFish.
+        if (primaryResult.results.length > 0) return primaryResult;
+        if (tinyfishResult.results.length > 0) return tinyfishResult;
+
+        // Both returned no results — return primary (empty) result.
+        return primaryResult;
+      } catch (error) {
+        console.warn(`Failed to search for ${commodity}:`, error);
+        return { results: [], total: 0, keyIndex: -1, searchSource: "duckduckgo" as const };
       }
     }),
   );
@@ -285,17 +282,11 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
         }
       }
 
-      if (aiPrices.oil && aiPrices.electricity && aiPrices.water) {
-        return {
-          oil: { ...aiPrices.oil, isLive: true, searchSource },
-          electricity: { ...aiPrices.electricity, isLive: true, searchSource },
-          water: { ...aiPrices.water, isLive: true, searchSource },
-          asOf: new Date().toISOString(),
-          dataSource: "Kilo AI analysis of search results",
-          isLive: true,
-          searchSource,
-        };
-      }
+      // Note: we intentionally do NOT return early when all three commodities
+      // are extracted by AI. Falling through to deterministic extraction allows
+      // partial AI results to be combined with deterministic fallback values for
+      // any commodity the AI missed. This is especially important for water
+      // prices, which are harder to extract from search results.
     }
   } catch (error) {
     console.warn("Kilo AI price analysis failed, falling back to deterministic extraction:", error);
@@ -353,5 +344,49 @@ async function getLivePricesFromSearch(scope: RegionId, abortSignal: AbortSignal
   }
 
   result.isLive = anyLive;
+
+  // Retry water price extraction if not live — water prices are the most
+  // volatile and often require multiple search attempts to acquire a source.
+  // The Kilo Gateway AI models sometimes fail to utilize TinyFish, Playwright
+  // and DuckDuckGo HTML search properly for water; retrying with alternative
+  // queries increases the chance of obtaining an accurate source.
+  if (!result.water.isLive && !abortSignal?.aborted) {
+    const waterRetryQueries = [
+      "municipal water tariff price per cubic meter 2026",
+      "water utility rates price 2026",
+    ];
+    for (const retryQuery of waterRetryQueries) {
+      if (abortSignal?.aborted) break;
+      try {
+        console.warn(`Water price not live, retrying with query: ${retryQuery}`);
+        const waterResult = await searchRouter.search(retryQuery, {
+          limit: 10,
+          region: regionalScope,
+        }, abortSignal);
+        if (waterResult.results.length > 0) {
+          for (const res of waterResult.results) {
+            const price = extractPriceFromText(`${res.title} ${res.snippet}`);
+            if (price !== null && price > 0 && price <= 100) {
+              // Water prices are typically in the $1-$10/m³ range
+              result.water = {
+                price,
+                unit: "USD per cubic meter",
+                source: sanitizeUrl(res.url) || res.url,
+                isLive: true,
+                searchSource: waterResult.searchSource,
+              };
+              result.isLive = true;
+              result.dataSource = "Kilo AI analysis of search results (water retry)";
+              break;
+            }
+          }
+        }
+        if (result.water.isLive) break;
+      } catch (retryError) {
+        console.warn(`Water retry failed for "${retryQuery}":`, retryError);
+      }
+    }
+  }
+
   return result;
 }

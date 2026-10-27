@@ -393,7 +393,7 @@ function CommodityCard({
         <span className="text-slate-600">±{(commodity.maxVol * 100).toFixed(0)}% vol @10y</span>
       </div>
 
-      {isLive && !isWater && (
+      {!isWater && (oilSource || electricitySource) && (
         <p className="mt-2 text-[11px] leading-relaxed text-slate-700 dark:text-slate-400">
           <span className="font-semibold text-emerald-300">Source:</span>{" "}
           {commodity.id === "oil" ? oilSource : electricitySource}

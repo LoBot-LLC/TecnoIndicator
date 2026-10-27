@@ -14,6 +14,7 @@ import Reveal from "./Reveal";
 import Ticker from "./Ticker";
 import { useFlash } from "../hook/useFlash";
 import { useCurrency } from "../context/CurrencyContext";
+import { useSettings } from "../context/SettingsContext";
 import {
   COMMODITIES,
   fmtFullDate,
@@ -45,12 +46,13 @@ function forecastPath(
   return d;
 }
 
-function LivePrice({ value }: { value: number }) {
+function LivePrice({ value, convert }: { value: number; convert?: (v: number) => number }) {
   const flash = useFlash(value);
   const { selectedCurrency, formatPrice } = useCurrency();
+  const displayValue = convert ? convert(value) : value;
   return (
     <span className={`font-display text-lg font-semibold tabular-nums text-slate-900 dark:text-white ${flash}`}>
-      {formatPrice(value, selectedCurrency)}
+      {formatPrice(displayValue, selectedCurrency)}
     </span>
   );
 }
@@ -78,6 +80,7 @@ export default function Hero({
   horizon: horizonProp,
 }: HeroProps) {
   const { selectedCurrency } = useCurrency();
+  const { convertEnergy, convertLengthVolume, energyUnitLabel, lengthUnitLabel } = useSettings();
 
   const today = new Date();
   const horizon = horizonProp ?? 10;
@@ -103,23 +106,26 @@ export default function Hero({
     icon: typeof Fuel;
     color: string;
     decimals: number;
+    convert?: (v: number) => number;
   }> = [
     { id: "oil", name: "Brent Crude", unit: `${selectedCurrency}/bbl`, icon: Fuel, color: "#f5b840", decimals: 2 },
     {
       id: "electricity",
       name: "Electricity",
-      unit: `${selectedCurrency}/MWh`,
+      unit: `${selectedCurrency}/${energyUnitLabel()}`,
       icon: Zap,
       color: "#2dd4bf",
       decimals: 1,
+      convert: convertEnergy,
     },
     {
       id: "water",
       name: "Water",
-      unit: `${selectedCurrency}/m³`,
+      unit: `${selectedCurrency}/${lengthUnitLabel()}`,
       icon: Droplets,
       color: "#38bdf8",
       decimals: 2,
+      convert: convertLengthVolume,
     },
   ];
 
@@ -304,7 +310,7 @@ export default function Hero({
                         <p className="text-[11px] text-slate-600 dark:text-slate-500">{r.unit}</p>
                       </div>
                     </div>
-                    <LivePrice value={prices[r.id]} />
+                    <LivePrice value={prices[r.id]} convert={r.convert} />
                   </div>
                 );
               })}

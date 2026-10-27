@@ -1,21 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { ReactElement } from "react";
 import {
-  ChevronDown,
-  FontSizes,
-  Moon,
+  Type,
   Ruler,
   Settings,
-  Sun,
-  Zap,
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useCurrency, ALL_CURRENCIES } from "../context/CurrencyContext";
 import { useSettings, FONT_OPTIONS } from "../context/SettingsContext";
 
-const TABS: Array<{ id: "fonts" | "units"; label: string; icon: JSX.Element }> = [
-  { id: "fonts", label: "Fonts & Themes", icon: <FontSizes className="h-4 w-4" /> },
+const TABS: Array<{ id: "fonts" | "units"; label: string; icon: ReactElement }> = [
+  { id: "fonts", label: "Fonts & Themes", icon: <Type className="h-4 w-4" /> },
   { id: "units", label: "Unit Conversion", icon: <Ruler className="h-4 w-4" /> },
 ];
 
@@ -29,8 +26,6 @@ export default function SettingsMenu({ className = "" }: { className?: string })
     setLengthUnit,
     energyUnit,
     setEnergyUnit,
-    energyUnitLabel,
-    lengthUnitLabel,
   } = useSettings();
 
   const [open, setOpen] = useState(false);
@@ -113,8 +108,6 @@ export default function SettingsMenu({ className = "" }: { className?: string })
                 setLengthUnit={setLengthUnit}
                 energyUnit={energyUnit}
                 setEnergyUnit={setEnergyUnit}
-                energyUnitLabel={energyUnitLabel}
-                lengthUnitLabel={lengthUnitLabel}
               />
             )}
           </div>
@@ -189,8 +182,6 @@ function UnitsSection({
   setLengthUnit,
   energyUnit,
   setEnergyUnit,
-  energyUnitLabel,
-  lengthUnitLabel,
 }: {
   selectedCurrency: string;
   setSelectedCurrency: (code: string) => void;
@@ -199,8 +190,6 @@ function UnitsSection({
   setLengthUnit: (u: "meter" | "feet") => void;
   energyUnit: "MWh" | "kWh" | "joule";
   setEnergyUnit: (u: "MWh" | "kWh" | "joule") => void;
-  energyUnitLabel: () => string;
-  lengthUnitLabel: () => string;
 }) {
   return (
     <>

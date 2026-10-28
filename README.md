@@ -4,7 +4,7 @@
 
 <img width="1984" height="992" alt="image" src="https://github.com/user-attachments/assets/ceaff96a-4022-4f32-9a8b-d194ffd9e484" />
 
-A modern, clean, professional single-page web application that delivers illustrative energy price forecasts with interactive data visualization, scenario analysis, and **AI-powered** dynamic factor insights and recommendations. Built with **Next.js (App Router)** and deployed on Vercel: the UI is a React client application, while the market data, AI curation and forecasting live in Next.js route handlers under `app/api/`.
+A modern, clean, professional single-page web application that delivers energy price forecasts with interactive data visualization, scenario analysis, and **AI-powered** dynamic factor insights and recommendations. Built with **Next.js (App Router)** and deployed on Vercel: the UI is a React client application, while the market data, AI curation and forecasting live in Next.js route handlers under `app/api/`.
 
 **Live demo:** [https://tecnoindicator.vercel.app/](https://tecnoindicator.vercel.app/)
 

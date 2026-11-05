@@ -4,11 +4,46 @@ import { isRegion, type Region } from "./regions";
 export const DEFAULT_CATEGORY = "Market";
 
 export function safeParseJson<T = unknown>(text: string): T | null {
+  if (!text || typeof text !== "string") return null;
+
+  // Try direct parse first.
   try {
     return JSON.parse(text) as T;
   } catch {
-    return null;
+    // Fall through to fence-stripping / extraction below.
   }
+
+  // Strip markdown code fences (```json ... ``` or ``` ... ```).
+  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/i);
+  if (fenceMatch) {
+    try {
+      return JSON.parse(fenceMatch[1].trim()) as T;
+    } catch {
+      // Fall through.
+    }
+  }
+
+  // Try to extract the first JSON object from the text.
+  const objectMatch = text.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    try {
+      return JSON.parse(objectMatch[0]) as T;
+    } catch {
+      // Fall through.
+    }
+  }
+
+  // Try to extract the first JSON array from the text.
+  const arrayMatch = text.match(/\[[\s\S]*\]/);
+  if (arrayMatch) {
+    try {
+      return JSON.parse(arrayMatch[0]) as T;
+    } catch {
+      // Fall through.
+    }
+  }
+
+  return null;
 }
 
 export function sanitizeError(message: string): string {

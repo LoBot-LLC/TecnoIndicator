@@ -115,10 +115,10 @@ export default function SolutionsSection({
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
-                AI solutions
+                AI-powered solutions
               </p>
               <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-                3 actionable strategies
+                Recommended strategies for business
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-500">
                 AI-generated solutions adapted from current dynamic reasons to help

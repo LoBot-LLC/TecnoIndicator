@@ -1,5 +1,5 @@
 import { kiloRouter } from "../_shared/kiloRouter";
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { searchRouter } from "../_shared/searchRouter";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
 import { MAX_SOLUTIONS, SOLUTIONS_CACHE_MS } from "../_shared/http";
 import { getCache, setCache } from "../_shared/cache";
@@ -44,7 +44,7 @@ const REGION_QUERIES: Record<Region, string[]> = {
   ],
 };
 
-const SOLUTION_PROMPT = `You are a Senior Business Strategy Advisor for commodity-driven companies. Based on the following market analytics, dynamic factors, and fresh web evidence, generate exactly 3 actionable solutions for business owners and executives to manage their logistics and business decisions better. Each solution should target a different strategic aspect: operational resilience, cost optimization, and strategic positioning.
+const SOLUTION_PROMPT = `You are a Senior Business Strategy Advisor for commodity-driven companies. Based on the following market analytics, dynamic factors, and fresh web evidence, generate exactly 3 Recommended strategies for business, each targeting a different strategic aspect: operational resilience, cost optimization, and strategic positioning.
 
 Return strict JSON only with this schema:
 {
@@ -203,18 +203,18 @@ async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Pr
   try {
     const searches = await Promise.all(
       queries.map((q) =>
-        tinyfishRouter.tinyfishSearch(
+        searchRouter.search(
           `${q} ${recentMonth()}`,
           { limit: 10, region: scope === "global" ? undefined : (scope as Region) },
           abortSignal,
         ),
       ),
     );
-    const freshEvidence = searches.flatMap((r) => r.results).slice(0, 15);
+    const freshEvidence = searches.flatMap((r: { results: unknown[] }) => r.results).slice(0, 15);
     await setCache(evidenceCacheKey, freshEvidence, EVIDENCE_CACHE_MS);
     return freshEvidence;
   } catch (error) {
-    console.error("TinyFish evidence fetch failed:", error);
+    console.error("Search evidence fetch failed:", error);
     return [];
   }
 }

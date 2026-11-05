@@ -1,9 +1,10 @@
 import { REGIONS, type Region } from "../_shared/regions";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { searchRouter } from "../_shared/searchRouter";
 import { analyticsCacheKey } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
-import { readFactorWindow } from "./factor-analysis";
+import { readFactorWindow, runFactorAnalysis, writeFactorWindow } from "./factor-analysis";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
 import type { AnalyticsSnapshot, RegionalAnalyticsSnapshot } from "../_shared/types";
 
@@ -23,6 +24,12 @@ interface HealthResponse {
     available: boolean;
     usableKeys: number;
     configuredKeys: number;
+  };
+  playwrightMcp: {
+    available: boolean;
+  };
+  duckDuckGo: {
+    available: boolean;
   };
   onlineModelConnected: boolean;
   analytics: {
@@ -94,9 +101,26 @@ async function readAnalyticsStatus(scope: "global" | Region): Promise<AnalyticsS
   return { lastFetch, success: lastFetch !== null };
 }
 
-async function readFactorStatus(scope: "global" | Region): Promise<FactorStatus> {
+async function readFactorStatus(scope: "global" | Region, abortSignal?: AbortSignal): Promise<FactorStatus> {
   const window = await readFactorWindow(scope);
   if (!window) {
+    // The factor window has never been curated (or the cron hasn't run yet).
+    // Trigger on-demand curation so the health check reflects the real state
+    // of the Kilo Gateway AI models instead of reporting a permanent "false".
+    if (abortSignal) {
+      try {
+        const result = await runFactorAnalysis(scope, { abortSignal });
+        await writeFactorWindow(scope, result.factors, result.aiCurated);
+        return {
+          lastRun: result.updatedAt,
+          nextRun: nextCronRun(),
+          aiCurated: result.aiCurated,
+          pollIntervalMs: FACTOR_POLL_INTERVAL_MS,
+        };
+      } catch {
+        // Fall through to return the degraded status below.
+      }
+    }
     return { lastRun: null, nextRun: nextCronRun(), aiCurated: false, pollIntervalMs: FACTOR_POLL_INTERVAL_MS };
   }
   return {
@@ -123,14 +147,15 @@ export async function handleHealth(_req: Request): Promise<Response> {
   const totalTimeoutId = setTimeout(() => abortController.abort(), 10000);
 
   try {
-    const [kiloStatus, tinyfishStatus, globalAnalytics, regionalAnalytics, globalFactors, regionalFactors] =
+    const [kiloStatus, tinyfishStatus, searchStatus, globalAnalytics, regionalAnalytics, globalFactors, regionalFactors] =
       await Promise.all([
         kiloRouter.getKiloStatus(abortController.signal),
         tinyfishRouter.getTinyfishStatus(abortController.signal),
+        searchRouter.getSearchStatus(),
         readAnalyticsStatus("global"),
         Promise.all(REGIONS.map((region) => readAnalyticsStatus(region))),
-        readFactorStatus("global"),
-        Promise.all(REGIONS.map((region) => readFactorStatus(region))),
+        readFactorStatus("global", abortController.signal),
+        Promise.all(REGIONS.map((region) => readFactorStatus(region, abortController.signal))),
       ]);
 
     const onlineModelConnected =
@@ -151,6 +176,12 @@ export async function handleHealth(_req: Request): Promise<Response> {
         available: tinyfishStatus.available,
         usableKeys: tinyfishStatus.usableKeys,
         configuredKeys: tinyfishStatus.configuredKeys,
+      },
+      playwrightMcp: {
+        available: searchStatus.playwrightMcp.available,
+      },
+      duckDuckGo: {
+        available: searchStatus.duckDuckGo.available,
       },
       onlineModelConnected,
       analytics: {
@@ -176,6 +207,8 @@ export async function handleHealth(_req: Request): Promise<Response> {
         onlineModelConnected: false,
         kiloGateway: { available: false, usableKeys: 0, configuredKeys: 0, keyFormats: { jwt: 0, opaque: 0, unrecognized: 0 } },
         tinyfish: { available: false, usableKeys: 0, configuredKeys: 0 },
+        playwrightMcp: { available: false },
+        duckDuckGo: { available: false },
       },
       { status: 200 },
     );

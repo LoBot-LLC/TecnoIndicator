@@ -178,18 +178,23 @@ function FactorCard({
 interface FactorsSectionProps {
   horizon: number;
   dynamicFactors?: Factor[];
+  dynamicFactorsAiCurated?: boolean;
   healthStatus?: "Initializing AI" | "Online Model Connected" | "Offline Model";
 }
 
 export default function FactorsSection({
   horizon,
   dynamicFactors,
+  dynamicFactorsAiCurated,
   healthStatus,
 }: FactorsSectionProps) {
   const hasDynamicFactors = dynamicFactors && dynamicFactors.length === 8;
   const activeFactors = hasDynamicFactors ? dynamicFactors : FACTORS;
   const isOnline = healthStatus === "Online Model Connected";
-  const aiCurated = hasDynamicFactors && isOnline;
+  // aiCurated is only true when the API explicitly confirms the factors were
+  // AI-curated — not merely when 8 factors happen to be present (which could
+  // be static fallbacks returned when AI curation failed).
+  const aiCurated = dynamicFactorsAiCurated && isOnline;
 
   const sorted = useMemo(
     () =>

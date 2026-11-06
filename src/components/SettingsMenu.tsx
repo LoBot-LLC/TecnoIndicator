@@ -84,7 +84,7 @@ export default function SettingsMenu() {
                   <select
                     value={theme}
                     onChange={(e) => setTheme(e.target.value as "light" | "dark")}
-                    className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100"
+                    className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100 dark:[color-scheme:dark]"
                   >
                     <option value="light" className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">
                       Light
@@ -100,7 +100,7 @@ export default function SettingsMenu() {
                   <select
                     value={fontKey}
                     onChange={(e) => setFontKey(e.target.value)}
-                    className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100"
+                    className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100 dark:[color-scheme:dark]"
                   >
                     {fonts.map((f) => (
                       <option key={f.key} value={f.key} className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">
@@ -181,7 +181,7 @@ export default function SettingsMenu() {
                   <select
                     value={lengthUnit}
                     onChange={(e) => setLengthUnit(e.target.value as LengthUnit)}
-                    className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100"
+                    className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100 dark:[color-scheme:dark]"
                   >
                     {LENGTH_UNITS.map((u) => (
                       <option key={u.id} value={u.id} className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">
@@ -198,7 +198,7 @@ export default function SettingsMenu() {
                   <select
                     value={energyUnit}
                     onChange={(e) => setEnergyUnit(e.target.value as EnergyUnit)}
-                    className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100"
+                    className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100 dark:[color-scheme:dark]"
                   >
                     {ENERGY_UNITS.map((u) => (
                       <option key={u.id} value={u.id} className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">

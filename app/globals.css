@@ -319,6 +319,18 @@ summary:focus-visible {
   border-radius: 8px;
 }
 
+/* Native form controls in dark mode - ensure readable dropdown options */
+.dark select,
+.dark input,
+.dark textarea {
+  color-scheme: dark;
+}
+.dark select option,
+.dark select optgroup {
+  background-color: var(--color-panel);
+  color: var(--color-slate-800);
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

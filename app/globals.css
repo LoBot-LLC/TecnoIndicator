@@ -50,7 +50,7 @@ html {
 body {
   background-color: var(--color-base);
   color: var(--color-slate-900);
-  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans, "Inter", ui-sans-serif, system-ui, sans-serif);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
@@ -317,6 +317,18 @@ summary:focus-visible {
   outline: 2px solid rgba(45, 212, 191, 0.65);
   outline-offset: 2px;
   border-radius: 8px;
+}
+
+/* Native form controls in dark mode - ensure readable dropdown options */
+.dark select,
+.dark input,
+.dark textarea {
+  color-scheme: dark;
+}
+.dark select option,
+.dark select optgroup {
+  background-color: var(--color-panel);
+  color: var(--color-slate-800);
 }
 
 @media (prefers-reduced-motion: reduce) {

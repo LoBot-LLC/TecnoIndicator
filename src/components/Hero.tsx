@@ -14,6 +14,8 @@ import Reveal from "./Reveal";
 import Ticker from "./Ticker";
 import { useFlash } from "../hook/useFlash";
 import { useCurrency } from "../context/CurrencyContext";
+import { useUnit } from "../context/UnitContext";
+import { convertEnergy, convertWater, energyLabel, waterLabel } from "../lib/units";
 import {
   COMMODITIES,
   fmtFullDate,
@@ -45,12 +47,16 @@ function forecastPath(
   return d;
 }
 
-function LivePrice({ value }: { value: number }) {
+function LivePrice({ value, id }: { value: number; id: CommodityId }) {
   const flash = useFlash(value);
   const { selectedCurrency, formatPrice } = useCurrency();
+  const { lengthUnit, energyUnit } = useUnit();
+  let v = value;
+  if (id === "electricity") v = convertEnergy(value, energyUnit);
+  else if (id === "water") v = convertWater(value, lengthUnit);
   return (
     <span className={`font-display text-lg font-semibold tabular-nums text-slate-900 dark:text-white ${flash}`}>
-      {formatPrice(value, selectedCurrency)}
+      {formatPrice(v, selectedCurrency)}
     </span>
   );
 }
@@ -78,6 +84,7 @@ export default function Hero({
   horizon: horizonProp,
 }: HeroProps) {
   const { selectedCurrency } = useCurrency();
+  const { lengthUnit, energyUnit } = useUnit();
 
   const today = new Date();
   const horizon = horizonProp ?? 10;
@@ -108,7 +115,7 @@ export default function Hero({
     {
       id: "electricity",
       name: "Electricity",
-      unit: `${selectedCurrency}/MWh`,
+      unit: `${selectedCurrency}/${energyLabel(energyUnit)}`,
       icon: Zap,
       color: "#2dd4bf",
       decimals: 1,
@@ -116,7 +123,7 @@ export default function Hero({
     {
       id: "water",
       name: "Water",
-      unit: `${selectedCurrency}/m³`,
+      unit: `${selectedCurrency}/${waterLabel(lengthUnit)}`,
       icon: Droplets,
       color: "#38bdf8",
       decimals: 2,
@@ -304,7 +311,7 @@ export default function Hero({
                         <p className="text-[11px] text-slate-600 dark:text-slate-500">{r.unit}</p>
                       </div>
                     </div>
-                    <LivePrice value={prices[r.id]} />
+                    <LivePrice value={prices[r.id]} id={r.id} />
                   </div>
                 );
               })}

@@ -1,14 +1,16 @@
 import { Droplets, Fuel, TrendingDown, TrendingUp, Zap } from "lucide-react";
 import { useCurrency } from "../context/CurrencyContext";
+import { useUnit } from "../context/UnitContext";
+import { convertEnergy, convertWater, energyLabel, waterLabel } from "../lib/units";
 import { type CommodityId } from "../lib/model";
 
 const META: Record<
   CommodityId,
-  { name: string; unit: string; icon: typeof Fuel; color: string }
+  { name: string; icon: typeof Fuel; color: string }
 > = {
-  oil: { name: "BRENT CRUDE", unit: "bbl", icon: Fuel, color: "#f5b840" },
-  electricity: { name: "GLOBAL POWER", unit: "MWh", icon: Zap, color: "#2dd4bf" },
-  water: { name: "GLOBAL WATER", unit: "m³", icon: Droplets, color: "#38bdf8" },
+  oil: { name: "BRENT CRUDE", icon: Fuel, color: "#f5b840" },
+  electricity: { name: "GLOBAL POWER", icon: Zap, color: "#2dd4bf" },
+  water: { name: "GLOBAL WATER", icon: Droplets, color: "#38bdf8" },
 };
 
 interface TickerProps {
@@ -18,11 +20,21 @@ interface TickerProps {
 
 export default function Ticker({ prices, deltas }: TickerProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
+  const { lengthUnit, energyUnit } = useUnit();
   const items = (Object.keys(META) as CommodityId[]).map((id) => {
     const m = META[id];
     const delta = deltas[id] ?? 0;
     const up = delta >= 0;
-    return { id, ...m, price: prices[id], delta, up };
+    let displayValue = prices[id];
+    let unit = "bbl";
+    if (id === "electricity") {
+      displayValue = convertEnergy(prices[id], energyUnit);
+      unit = energyLabel(energyUnit);
+    } else if (id === "water") {
+      displayValue = convertWater(prices[id], lengthUnit);
+      unit = waterLabel(lengthUnit);
+    }
+    return { id, ...m, displayValue, unit, delta, up };
   });
 
   const row = (keyPrefix: string) => (
@@ -36,7 +48,7 @@ export default function Ticker({ prices, deltas }: TickerProps) {
               {it.name}
             </span>
             <span className="font-display text-sm font-semibold text-slate-900 dark:text-white">
-              {formatPrice(it.price, selectedCurrency)}
+              {formatPrice(it.displayValue, selectedCurrency)}
               <span className="ml-1 text-[11px] font-medium text-slate-700 dark:text-slate-100">/{it.unit}</span>
             </span>
             <span

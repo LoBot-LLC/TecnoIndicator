@@ -50,7 +50,7 @@ html {
 body {
   background-color: var(--color-base);
   color: var(--color-slate-900);
-  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans, "Inter", ui-sans-serif, system-ui, sans-serif);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow-x: hidden;

@@ -34,6 +34,8 @@ import {
 import Reveal from "./Reveal";
 import { useFlash } from "../hook/useFlash";
 import { useCurrency } from "../context/CurrencyContext";
+import { useUnit } from "../context/UnitContext";
+import { convertEnergy, convertWater, energyLabel, waterLabel, type EnergyUnit, type LengthUnit } from "../lib/units";
 import {
   buildCSV,
   COMMODITIES,
@@ -90,20 +92,40 @@ type FancyDataset = ChartDataset<ChartKind, number[]> & {
   decimals?: number;
 };
 
+function convertByCommodity(
+  v: number,
+  id: CommodityId,
+  lengthUnit: LengthUnit,
+  energyUnit: EnergyUnit,
+): number {
+  if (id === "electricity") return convertEnergy(v, energyUnit);
+  if (id === "water") return convertWater(v, lengthUnit);
+  return v;
+}
+
+function unitForCommodity(id: CommodityId, lengthUnit: LengthUnit, energyUnit: EnergyUnit): string {
+  if (id === "electricity") return energyLabel(energyUnit);
+  if (id === "water") return waterLabel(lengthUnit);
+  return "bbl";
+}
+
 function buildDatasets(
   points: ForecastPoint[],
   type: ChartKind,
   bands: boolean,
+  lengthUnit: LengthUnit,
+  energyUnit: EnergyUnit,
 ): FancyDataset[] {
   const datasets: FancyDataset[] = [];
   for (const c of COMMODITIES) {
+    const u = unitForCommodity(c.id, lengthUnit, energyUnit);
     datasets.push({
       label: `${c.short} avg`,
-      data: points.map((p) => p[c.id].avg),
+      data: points.map((p) => convertByCommodity(p[c.id].avg, c.id, lengthUnit, energyUnit)),
       borderColor: c.color,
       backgroundColor: type === "bar" ? hexToRgba(c.color, 0.72) : c.color,
       yAxisID: AXIS[c.id],
-      unit: c.unit,
+      unit: `USD/${u}`,
       decimals: c.decimals,
       order: 1,
       ...(type === "line"
@@ -128,11 +150,11 @@ function buildDatasets(
       for (const key of ["min", "max"] as const) {
         datasets.push({
           label: `${c.short} ${key}`,
-          data: points.map((p) => p[c.id][key]),
+          data: points.map((p) => convertByCommodity(p[c.id][key], c.id, lengthUnit, energyUnit)),
           borderColor: hexToRgba(c.color, 0.42),
           backgroundColor: "transparent",
           yAxisID: AXIS[c.id],
-          unit: c.unit,
+          unit: `USD/${u}`,
           decimals: c.decimals,
           order: 3,
           type: "line",
@@ -149,8 +171,16 @@ function buildDatasets(
   return datasets;
 }
 
-function axisRange(points: ForecastPoint[], id: CommodityId) {
-  const vals = points.flatMap((p) => [p[id].min, p[id].max]);
+function axisRange(
+  points: ForecastPoint[],
+  id: CommodityId,
+  lengthUnit: LengthUnit,
+  energyUnit: EnergyUnit,
+) {
+  const vals = points.flatMap((p) => [
+    convertByCommodity(p[id].min, id, lengthUnit, energyUnit),
+    convertByCommodity(p[id].max, id, lengthUnit, energyUnit),
+  ]);
   const lo = Math.min(...vals);
   const hi = Math.max(...vals);
   const pad = (hi - lo) * 0.14 || 1;
@@ -192,9 +222,12 @@ function buildConfig(
   bands: boolean,
   fmt: PriceFormatter,
   currencyCode: string,
+  lengthUnit: LengthUnit,
+  energyUnit: EnergyUnit,
   isDark?: boolean,
 ): ChartConfiguration<ChartKind, number[], string> {
-  const theme = isDark ?? (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+  const theme =
+    isDark ?? (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
   const colors = getChartColors(theme);
   const axisOpts = (id: CommodityId, title: string, color: string) => ({
     position: (id === "oil" ? "left" : "right") as "left" | "right",
@@ -215,14 +248,17 @@ function buildConfig(
       color: hexToRgba(color, 0.55),
       font: { family: "Inter", size: 10, weight: 600 as const },
     },
-    ...axisRange(points, id),
+    ...axisRange(points, id, lengthUnit, energyUnit),
   });
 
   return {
     type,
     data: {
       labels: points.map((p) => p.label),
-      datasets: buildDatasets(points, type, bands) as ChartDataset<ChartKind, number[]>[],
+      datasets: buildDatasets(points, type, bands, lengthUnit, energyUnit) as ChartDataset<
+        ChartKind,
+        number[]
+      >[],
     },
     options: {
       responsive: true,
@@ -272,8 +308,8 @@ function buildConfig(
           },
         },
         yOil: axisOpts("oil", `Oil ${currencyCode}/bbl`, "#f5b840"),
-        yElec: axisOpts("electricity", `Power ${currencyCode}/MWh`, "#2dd4bf"),
-        yWater: axisOpts("water", `Water ${currencyCode}/m³`, "#38bdf8"),
+        yElec: axisOpts("electricity", `Power ${currencyCode}/${energyLabel(energyUnit)}`, "#2dd4bf"),
+        yWater: axisOpts("water", `Water ${currencyCode}/${waterLabel(lengthUnit)}`, "#38bdf8"),
       },
     },
   } as unknown as ChartConfiguration<ChartKind, number[], string>;
@@ -301,15 +337,28 @@ function CommodityCard({
   regionLabel,
 }: CommodityCardProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
+  const { lengthUnit, energyUnit } = useUnit();
   const Icon = ICONS[commodity.id];
   const band = horizonBand[commodity.id];
   const todayBand = today[commodity.id];
+  const conv = (v: number) =>
+    commodity.id === "electricity"
+      ? convertEnergy(v, energyUnit)
+      : commodity.id === "water"
+        ? convertWater(v, lengthUnit)
+        : v;
+  const unitSuffix =
+    commodity.id === "electricity"
+      ? energyLabel(energyUnit)
+      : commodity.id === "water"
+        ? waterLabel(lengthUnit)
+        : "bbl";
   const delta = band.avg - todayBand.avg;
   const deltaPct = (delta / todayBand.avg) * 100;
   const up = delta >= 0;
   const isWater = commodity.id === "water";
-  const flashCls = useFlash(band.avg);
-  const spotFlash = useFlash(todayBand.avg);
+  const flashCls = useFlash(conv(band.avg));
+  const spotFlash = useFlash(conv(todayBand.avg));
 
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-line bg-panel/70 p-5 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -328,7 +377,7 @@ function CommodityCard({
           <div>
             <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{commodity.name}</p>
             <p className="text-[11px] text-slate-700 dark:text-slate-400">
-              {commodity.unit.replace("USD", selectedCurrency)} · {regionLabel}
+              {selectedCurrency}/{unitSuffix} · {regionLabel}
             </p>
           </div>
         </div>
@@ -340,12 +389,12 @@ function CommodityCard({
       </div>
 
       <p className={`relative mt-5 font-display text-3xl font-bold tabular-nums text-slate-900 dark:text-white ${flashCls}`}>
-        {formatPrice(band.avg, selectedCurrency)}
+        {formatPrice(conv(band.avg), selectedCurrency)}
       </p>
       <p className="mt-1 text-xs text-slate-700 dark:text-slate-400">
         Average forecast · {horizonBand.year} · spot{" "}
         <span className={`font-semibold text-slate-600 dark:text-slate-400 ${spotFlash}`}>
-          {formatPrice(todayBand.avg, selectedCurrency)}
+          {formatPrice(conv(todayBand.avg), selectedCurrency)}
         </span>
       </p>
 
@@ -353,13 +402,13 @@ function CommodityCard({
         <div className="rounded-xl border border-line bg-base/40 px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">Low</p>
           <p className="mt-0.5 font-display text-sm font-semibold text-slate-800 dark:text-slate-100">
-            {formatPrice(band.min, selectedCurrency)}
+            {formatPrice(conv(band.min), selectedCurrency)}
           </p>
         </div>
         <div className="rounded-xl border border-line bg-base/40 px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">High</p>
           <p className="mt-0.5 font-display text-sm font-semibold text-slate-800 dark:text-slate-100">
-            {formatPrice(band.max, selectedCurrency)}
+            {formatPrice(conv(band.max), selectedCurrency)}
           </p>
         </div>
       </div>
@@ -400,8 +449,10 @@ function CommodityCard({
           </button>
           {live && (
             <p className="mt-2 text-[11px] leading-relaxed text-slate-700 dark:text-slate-400">
-              <span className="font-semibold text-sky-300">{formatPrice(live.price, selectedCurrency)}/m³</span> ·{" "}
-              {live.asOf} · {live.source} · {live.range}
+              <span className="font-semibold text-sky-300">
+                {formatPrice(convertWater(live.price, lengthUnit), selectedCurrency)}/{waterLabel(lengthUnit)}
+              </span>{" "}
+              · {live.asOf} · {live.source} · {live.range}
             </p>
           )}
         </div>
@@ -446,6 +497,7 @@ export default function ForecastTool({
   onRegion,
 }: ForecastToolProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
+  const { lengthUnit, energyUnit } = useUnit();
   const [chartType, setChartType] = useState<ChartKind>("line");
   const [showBands, setShowBands] = useState(true);
   const [assumptionsOpen, setAssumptionsOpen] = useState(false);
@@ -475,27 +527,39 @@ export default function ForecastTool({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const isDark = document.documentElement.classList.contains("dark");
-    chartRef.current = new Chart(ctx, buildConfig(chartType, points, showBands, formatPrice, selectedCurrency, isDark));
+    chartRef.current = new Chart(
+      ctx,
+      buildConfig(chartType, points, showBands, formatPrice, selectedCurrency, lengthUnit, energyUnit, isDark),
+    );
     return () => {
       chartRef.current?.destroy();
       chartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartType, formatPrice, selectedCurrency]);
+  }, [chartType, formatPrice, selectedCurrency, lengthUnit, energyUnit]);
 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     chart.data.labels = points.map((p) => p.label);
-    chart.data.datasets = buildDatasets(points, chartType, showBands);
+    chart.data.datasets = buildDatasets(points, chartType, showBands, lengthUnit, energyUnit);
     // Refresh axis ranges
     const isDark = document.documentElement.classList.contains("dark");
-    const cfg = buildConfig(chartType, points, showBands, formatPrice, selectedCurrency, isDark);
+    const cfg = buildConfig(
+      chartType,
+      points,
+      showBands,
+      formatPrice,
+      selectedCurrency,
+      lengthUnit,
+      energyUnit,
+      isDark,
+    );
     if (chart.options.scales) {
       chart.options.scales = cfg.options?.scales;
     }
     chart.update();
-  }, [points, chartType, showBands, formatPrice, selectedCurrency]);
+  }, [points, chartType, showBands, formatPrice, selectedCurrency, lengthUnit, energyUnit]);
 
   useEffect(() => {
     setAnnounce(
@@ -898,14 +962,14 @@ export default function ForecastTool({
                       colSpan={3}
                       style={{ color: "#2dd4bf" }}
                     >
-                      Electricity {selectedCurrency}/MWh
+                      Electricity {selectedCurrency}/{energyLabel(energyUnit)}
                     </th>
                     <th
                       className="px-3 py-2 text-center font-semibold"
                       colSpan={3}
                       style={{ color: "#38bdf8" }}
                     >
-                      Water {selectedCurrency}/m³
+                      Water {selectedCurrency}/{waterLabel(lengthUnit)}
                     </th>
                   </tr>
                   <tr className="border-b border-line bg-base/20 text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
@@ -944,22 +1008,22 @@ export default function ForecastTool({
                         {formatPrice(p.oil.max, selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-100">
-                        {formatPrice(p.electricity.avg, selectedCurrency)}
+                        {formatPrice(convertEnergy(p.electricity.avg, energyUnit), selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-700 dark:text-slate-400">
-                        {formatPrice(p.electricity.min, selectedCurrency)}
+                        {formatPrice(convertEnergy(p.electricity.min, energyUnit), selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-700 dark:text-slate-400">
-                        {formatPrice(p.electricity.max, selectedCurrency)}
+                        {formatPrice(convertEnergy(p.electricity.max, energyUnit), selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-800 dark:text-slate-100">
-                        {formatPrice(p.water.avg, selectedCurrency)}
+                        {formatPrice(convertWater(p.water.avg, lengthUnit), selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-700 dark:text-slate-400">
-                        {formatPrice(p.water.min, selectedCurrency)}
+                        {formatPrice(convertWater(p.water.min, lengthUnit), selectedCurrency)}
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums text-slate-700 dark:text-slate-400">
-                        {formatPrice(p.water.max, selectedCurrency)}
+                        {formatPrice(convertWater(p.water.max, lengthUnit), selectedCurrency)}
                       </td>
                     </tr>
                   ))}

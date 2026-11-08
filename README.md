@@ -118,10 +118,154 @@ reports `onlineModelConnected: false`.
 
 ### Tech stack
 
-- **Next.js 15** (App Router) + **React 19** + **TypeScript**
-- **Tailwind CSS 4** (via `@tailwindcss/postcss`)
-- **Chart.js** for the forecast chart
-- Next.js route handlers as the backend, deployed on Vercel
+#### Frontend
+- **Next.js 16** (App Router) — React framework with server components
+- **React 19** — UI library (concurrent features)
+- **TypeScript 5** — Static type checking across the entire codebase
+- **Tailwind CSS 4** — Utility-first styling via `@tailwindcss/postcss`
+- **Chart.js** — Interactive data visualization (used directly, no React wrapper)
+- **Lucide React** — Clean, consistent icon system
+- **clsx** + **tailwind-merge** — Conditional className utilities
+- **flags** — Feature flag / feature gating support
+
+#### Backend / API Layer
+- **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
+- **Node.js** — Runtime environment (via Next.js on Vercel)
+- **Kilo Gateway API** — AI model orchestration (price extraction, factor curation, solutions, forecasting)
+- **TinyFish API** — Market data search & scraping
+- **Redis (Upstash / Vercel KV)** — Distributed caching for API responses (optional; in-memory fallback)
+
+#### Data & Models (`src/lib/`)
+- **Deterministic Analytics Engine** — Fuel levy, grid loss, water scarcity calculations
+- **Currency & Unit Conversion** — Multi-currency support with real-time formatting
+- **Markdown Report Generator** — Export forecasts as `.md` reports
+- **Event & Factor Models** — Structured types for price drivers and scenarios
+
+#### Development & Build Tooling
+- **pnpm** — Fast, disk-efficient package manager
+- **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run lint` / `npm run build`)
+- **PostCSS** — Tailwind CSS 4 processing pipeline
+- **Vercel Analytics** — Real-user monitoring (RUM)
+- **Vercel Speed Insights** — Core Web Vitals tracking
+
+#### Testing & Quality
+- **Playwright** — End-to-end browser testing (chromium, firefox, webkit)
+- **ESLint** (Next.js config) — Code quality & consistency
+- **Prettier** (via Tailwind plugin) — Opinionated formatting
+
+#### Deployment & Infrastructure
+- **Vercel** — Native Next.js hosting, edge functions, cron jobs
+- **Vercel Cron** — Nightly factor re-curation (`0 2 * * *` UTC)
+- **Environment Variables** — Secure secret management (`.env.local` locally, Vercel dashboard in prod)
+
+---
+
+## 📁 Project Structure
+
+```
+.
+├── app/                                    # Next.js App Router (frontend + API)
+│   ├── api/                               # API route handlers (serverless functions)
+│   │   ├── ai-forecast/route.ts           # 11-year global forecast band
+│   │   ├── cron/
+│   │   │   └── curate-factors/route.ts    # Nightly AI factor re-curation (Vercel cron)
+│   │   ├── dynamic-factors/route.ts       # 8 curated global price factors
+│   │   ├── health/route.ts                # Gateway/key/cache status
+│   │   ├── prices/route.ts                # Live commodity spot prices (oil, electricity, water)
+│   │   ├── rates/route.ts                 # Exchange rates for currency conversion
+│   │   ├── regional-analytics/route.ts    # Regional fuel/electricity/water indices
+│   │   ├── regional-factors/route.ts      # 8 curated factors for a region
+│   │   ├── regional-forecast/route.ts     # 11-year region-specific forecast
+│   │   ├── regional/route.ts              # Region metadata & list
+│   │   ├── solutions/route.ts             # Up to 3 AI-curated strategy recommendations
+│   │   └── telemetry/route.ts             # Client-side analytics ingestion
+│   ├── globals.css                        # Global styles + Tailwind CSS 4 imports
+│   ├── layout.tsx                         # Root layout (providers, fonts, metadata)
+│   ├── page.tsx                           # Main single-page application entry
+│   ├── robots.ts                          # robots.txt generation
+│   └── sitemap.ts                         # sitemap.xml generation
+│
+├── lib/                                    # Backend API implementation layer
+│   └── api/
+│       ├── handlers/                      # Endpoint business logic
+│       │   ├── ai-forecast.ts             # Forecast band generation
+│       │   ├── analytics.ts               # Global indices computation
+│       │   ├── cron-curate-factors.ts     # Nightly curation job
+│       │   ├── dynamic-factors.ts         # Global factor curation
+│       │   ├── factor-analysis.ts         # Factor impact analysis
+│       │   ├── health.ts                  # Health check implementation
+│       │   ├── prices.ts                  # Price fetching & fallbacks
+│       │   ├── regional-analytics.ts      # Regional indices computation
+│       │   ├── regional-factors.ts        # Regional factor curation
+│       │   ├── regional-forecast.ts       # Regional forecast generation
+│       │   └── solutions.ts               # AI solution generation
+│       └── _shared/                       # Cross-cutting utilities
+│           ├── cache.ts                   # Redis + in-memory cache abstraction
+│           ├── deterministicAnalytics.ts  # Fuel/grid/water math
+│           ├── http.ts                    # TinyFish/Kilo HTTP clients
+│           ├── kiloRouter.ts              # Kilo Gateway model routing
+│           ├── redis.ts                   # Upstash Redis client
+│           ├── regions.ts                 # Region definitions & metadata
+│           ├── tinyfishRouter.ts          # TinyFish search/scrape routing
+│           ├── types.ts                   # Shared TypeScript interfaces
+│           └── validation.ts              # Zod schemas for request validation
+│
+├── src/                                    # Frontend source code
+│   ├── components/                        # React UI components
+│   │   ├── AboutSection.tsx               # Project description & mission
+│   │   ├── CurrencySelector.tsx           # Multi-currency picker
+│   │   ├── FactorsSection.tsx             # 8 dynamic factors grid
+│   │   ├── Footer.tsx                     # Site footer
+│   │   ├── ForecastTool.tsx               # Main prediction UI (slider, cards, chart, table)
+│   │   ├── Hero.tsx                       # Landing hero with CTA
+│   │   ├── icons.tsx                      # SVG icon components
+│   │   ├── Logo.tsx                       # Brand logo
+│   │   ├── MarketIndexStrip.tsx           # Live market ticker
+│   │   ├── Navbar.tsx                     # Top navigation + export menu
+│   │   ├── RegionalEvaluation.tsx         # Regional intelligence panel
+│   │   ├── Reveal.tsx                     # Scroll/fade animations
+│   │   ├── SettingsMenu.tsx               # Units, theme, currency preferences
+│   │   ├── SolutionsSection.tsx           # AI strategy recommendations
+│   │   ├── Ticker.tsx                     # Animated price ticker
+│   │   └── VercelAnalytics.tsx            # Analytics consent + init
+│   ├── context/                           # React Context providers
+│   │   ├── CurrencyContext.tsx            # Currency state & formatting
+│   │   ├── FontContext.tsx                # Font loading & selection
+│   │   ├── ThemeContext.tsx               # Dark/light mode
+│   │   └── UnitContext.tsx                # Unit system (metric/imperial)
+│   ├── hook/                              # Custom React hooks
+│   │   ├── useFlash.ts                    # Toast/flash notifications
+│   │   └── useLiveMarket.ts               # Live market data polling
+│   └── lib/                               # Frontend business logic
+│       ├── currencies.ts                  # Currency codes, symbols, formatting
+│       ├── events.ts                      # Event bus for cross-component comms
+│       ├── fonts.ts                       # Font definitions & loading
+│       ├── markdown.ts                    # Markdown report generation
+│       ├── model.ts                       # Forecast types & computations
+│       └── units.ts                       # Unit conversion & display
+│
+├── public/                                 # Static assets (served at /)
+│   └── LoBot-Trademark.png                # Brand logo (PNG)
+│
+├── sandbox-quickstart/                     # Standalone dev sandbox (separate package.json)
+│   ├── .gitignore
+│   ├── index.ts
+│   └── package.json
+│
+├── .env.example                           # Environment variable template
+├── .gitignore                             # Git ignore patterns
+├── LICENSE                                # MIT License
+├── LoBot Trademark.png                    # Brand logo (root copy)
+├── next.config.ts                         # Next.js configuration
+├── package.json                           # Root dependencies & scripts
+├── package-lock.json                      # npm lockfile
+├── pnpm-lock.yaml                         # pnpm lockfile (preferred)
+├── postcss.config.mjs                     # PostCSS + Tailwind CSS 4 config
+├── README.md                              # This file
+├── tsconfig.json                          # TypeScript configuration
+└── vercel.json                            # Vercel deployment config (crons, headers)
+
+```
 
 ---
 

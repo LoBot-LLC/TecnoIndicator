@@ -6,7 +6,7 @@
 
 A modern, clean, professional single-page web application that delivers energy price forecasts with interactive data visualization, scenario analysis, and **AI-powered** dynamic factor insights and recommendations. Built with **Next.js (App Router)** and deployed on Vercel: the UI is a React client application, while the market data, AI curation and forecasting live in Next.js route handlers under `app/api/`.
 
-**Live demo:** [https://tecnoindicator-lobot.vercel.app](https://tecnoindicator-lobot.vercel.app)
+**Live demo:** [https://lobotllc.vercel.app](https://lobotllc.vercel.app)
 
 ---
 
@@ -127,6 +127,7 @@ reports `onlineModelConnected: false`.
 - **Lucide React** — Clean, consistent icon system
 - **clsx** + **tailwind-merge** — Conditional className utilities
 - **flags** — Feature flag / feature gating support
+- **LoBot logo mark** (`images/lobotlogoonly.svg`) — Brand SVG rendered as a React component (`LoBotIcon` in `src/components/icons.tsx`), used as the footer link to the LoBot LLC company website.
 
 #### Backend / API Layer
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
@@ -246,7 +247,9 @@ reports `onlineModelConnected: false`.
 │
 ├── public/                                 # Static assets (served at /)
 │   └── LoBot-Trademark.png                # Brand logo (PNG)
-│
+├── images/                                 # Brand assets
+│   ├── lobotlogoonly.svg                   # LoBot logo mark (SVG) — footer company link
+│   └── LoBot-Trademark.png                 # LoBot brand wordmark (PNG)
 ├── sandbox-quickstart/                     # Standalone dev sandbox (separate package.json)
 │   ├── .gitignore
 │   ├── index.ts

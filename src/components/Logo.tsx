@@ -42,8 +42,8 @@ export default function Logo({ onClick, variant = "tecnoindicator" }: LogoProps)
         <Activity className="h-4.5 w-4.5" strokeWidth={2.4} />
       </span>
       <span className="font-display text-[15px] font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-        Tecno
-        <span className="text-teal-400 dark:text-teal-300">Indicator</span>
+        LoBot
+        <span className="text-teal-400 dark:text-teal-300">TecnoIndicator</span>
       </span>
     </a>
   );

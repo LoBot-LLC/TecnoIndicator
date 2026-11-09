@@ -33,13 +33,13 @@ export function TecnoIndicatorIcon({ className = "h-5 w-5" }: IconProps) {
       viewBox="0 0 64 64"
       fill="none"
       stroke="currentColor"
-      strokeWidth="3.5"
+      strokeWidth="2.5"
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
       aria-hidden="true"
     >
-      <path d="M12 36 L22 36 L28 20 L34 36 L40 20 L46 36 L52 36" />
+      <path d="M14 34 L24 34 L28 22 L34 48 L40 34 L50 34" />
     </svg>
   );
 }

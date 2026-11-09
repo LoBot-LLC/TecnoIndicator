@@ -1,3 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-  <path d="M14 34 L24 34 L28 22 L34 48 L40 34 L50 34" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="lobottecnoindicator-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#5eead4" />
+      <stop offset="55%" stop-color="#2dd4bf" />
+      <stop offset="100%" stop-color="#0d9488" />
+    </linearGradient>
+  </defs>
+  <path d="M14 34 L24 34 L28 22 L34 48 L40 34 L50 34" stroke="url(#lobottecnoindicator-gradient)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
 </svg>

@@ -32,14 +32,23 @@ export function TecnoIndicatorIcon({ className = "h-5 w-5" }: IconProps) {
     <svg
       viewBox="0 0 64 64"
       fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
       className={className}
       aria-hidden="true"
     >
-      <path d="M14 34 L24 34 L28 22 L34 48 L40 34 L50 34" />
+      <defs>
+        <linearGradient id="lobottecnoindicator-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#5eead4" />
+          <stop offset="55%" stopColor="#2dd4bf" />
+          <stop offset="100%" stopColor="#0d9488" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M14 34 L24 34 L28 22 L34 48 L40 34 L50 34"
+        stroke="url(#lobottecnoindicator-gradient)"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

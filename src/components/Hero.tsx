@@ -156,7 +156,7 @@ export default function Hero({
           <Reveal delay={80}>
             <h1 className="mt-6 font-display text-4xl font-bold leading-[1.08] tracking-tight text-slate-900 dark:text-white sm:text-5xl lg:text-[3.35rem]">
               LoBot
-              <span className="text-teal-600 dark:text-teal-300">TecnoIndicator</span>
+              <span className="text-teal-600 dark:text-teal-300"> TecnoIndicator</span>
             </h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-600 dark:text-slate-500 sm:text-lg">
               Real-time 10-year forecasts for global{" "}

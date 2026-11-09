@@ -127,7 +127,7 @@ reports `onlineModelConnected: false`.
 - **Lucide React** — Clean, consistent icon system
 - **clsx** + **tailwind-merge** — Conditional className utilities
 - **flags** — Feature flag / feature gating support
-- **LoBot logo mark** (`images/lobotlogoonly.svg`) — Brand SVG rendered as a React component (`LoBotIcon` in `src/components/icons.tsx`), used as the footer link to the LoBot LLC company website.
+- **LoBot logo mark** (`images/lobotlogoonly.svg`) — Brand SVG rendered as an inline React component (`LoBotIcon` in `src/components/icons.tsx`), used for the header/footer logo mark and the footer company link to the LoBot LLC website.
 
 #### Backend / API Layer
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
@@ -245,10 +245,8 @@ reports `onlineModelConnected: false`.
 │       ├── model.ts                       # Forecast types & computations
 │       └── units.ts                       # Unit conversion & display
 │
-├── public/                                 # Static assets (served at /)
-│   └── LoBot-Trademark.png                # Brand logo (PNG)
 ├── images/                                 # Brand assets
-│   ├── lobotlogoonly.svg                   # LoBot logo mark (SVG) — footer company link
+│   ├── lobotlogoonly.svg                   # LoBot logo mark (SVG) — inline LoBotIcon component
 │   └── LoBot-Trademark.png                 # LoBot brand wordmark (PNG)
 ├── sandbox-quickstart/                     # Standalone dev sandbox (separate package.json)
 │   ├── .gitignore
@@ -258,7 +256,6 @@ reports `onlineModelConnected: false`.
 ├── .env.example                           # Environment variable template
 ├── .gitignore                             # Git ignore patterns
 ├── LICENSE                                # MIT License
-├── LoBot Trademark.png                    # Brand logo (root copy)
 ├── next.config.ts                         # Next.js configuration
 ├── package.json                           # Root dependencies & scripts
 ├── package-lock.json                      # npm lockfile

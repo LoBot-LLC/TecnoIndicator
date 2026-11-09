@@ -37,9 +37,9 @@ export function TecnoIndicatorIcon({ className = "h-5 w-5" }: IconProps) {
     >
       <defs>
         <linearGradient id="lobottecnoindicator-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#5eead4" />
-          <stop offset="55%" stopColor="#2dd4bf" />
-          <stop offset="100%" stopColor="#0d9488" />
+          <stop offset="0%" stopColor="#22d3ee" />
+          <stop offset="50%" stopColor="#06b6d4" />
+          <stop offset="100%" stopColor="#0891b2" />
         </linearGradient>
       </defs>
       <path

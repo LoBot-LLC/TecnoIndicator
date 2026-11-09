@@ -26,6 +26,24 @@ export function LoBotIcon({ className = "h-5 w-5" }: IconProps) {
   );
 }
 
+/** TecnoIndicator waveform mark (from images/lobottecnoindicator.svg). */
+export function TecnoIndicatorIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M12 36 L22 36 L28 20 L34 36 L40 20 L46 36 L52 36" />
+    </svg>
+  );
+}
+
 /** GitHub mark (not part of lucide's current icon set). */
 export function GithubIcon({ className = "h-5 w-5" }: IconProps) {
   return (

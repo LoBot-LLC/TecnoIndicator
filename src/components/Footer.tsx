@@ -43,7 +43,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
               aria-label="Visit LoBot LLC company website"
               className="mt-5 inline-flex items-center gap-2.5 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
             >
-              <LoBotIcon className="h-4 w-4" />
+              <LoBotIcon className="h-5 w-5" />
             </a>
           </div>
 

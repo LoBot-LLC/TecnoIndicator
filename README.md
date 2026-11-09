@@ -127,7 +127,8 @@ reports `onlineModelConnected: false`.
 - **Lucide React** — Clean, consistent icon system
 - **clsx** + **tailwind-merge** — Conditional className utilities
 - **flags** — Feature flag / feature gating support
-- **LoBot logo mark** (`images/lobotlogoonly.svg`) — Brand SVG rendered as an inline React component (`LoBotIcon` in `src/components/icons.tsx`), used for the header/footer logo mark and the footer company link to the LoBot LLC website.
+- **LoBot logo mark** (`images/lobotlogoonly.svg`) — Brand SVG rendered as an inline React component (`LoBotIcon` in `src/components/icons.tsx`), used for the footer logo mark and the footer company link to the LoBot LLC website.
+- **TecnoIndicator waveform mark** (`images/lobottecnoindicator.svg`) — Brand SVG rendered as an inline React component (`TecnoIndicatorIcon` in `src/components/icons.tsx`), used as the header icon next to the "LoBot TecnoIndicator" wordmark.
 
 #### Backend / API Layer
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
@@ -247,6 +248,7 @@ reports `onlineModelConnected: false`.
 │
 ├── images/                                 # Brand assets
 │   ├── lobotlogoonly.svg                   # LoBot logo mark (SVG) — inline LoBotIcon component
+│   ├── lobottecnoindicator.svg             # TecnoIndicator waveform mark (SVG) — inline TecnoIndicatorIcon component
 │   └── LoBot-Trademark.png                 # LoBot brand wordmark (PNG)
 ├── sandbox-quickstart/                     # Standalone dev sandbox (separate package.json)
 │   ├── .gitignore

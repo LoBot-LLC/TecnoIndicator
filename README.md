@@ -6,7 +6,7 @@
 
 A modern, clean, professional single-page web application that delivers energy price forecasts with interactive data visualization, scenario analysis, and **AI-powered** dynamic factor insights and recommendations. Built with **Next.js (App Router)** and deployed on Vercel: the UI is a React client application, while the market data, AI curation and forecasting live in Next.js route handlers under `app/api/`.
 
-**Live demo:** [https://tecnoindicator-lobot.vercel.app](https://tecnoindicator-lobot.vercel.app)
+**Live demo:** [https://lobotllc.vercel.app](https://lobotllc.vercel.app)
 
 ---
 
@@ -127,6 +127,8 @@ reports `onlineModelConnected: false`.
 - **Lucide React** — Clean, consistent icon system
 - **clsx** + **tailwind-merge** — Conditional className utilities
 - **flags** — Feature flag / feature gating support
+- **LoBot logo mark** (`images/lobotlogoonly.svg`) — Brand SVG rendered as an inline React component (`LoBotIcon` in `src/components/icons.tsx`), used for the footer logo mark and the footer company link to the LoBot LLC website.
+- **TecnoIndicator waveform mark** (`images/lobottecnoindicator.svg`) — Brand SVG rendered as an inline React component (`TecnoIndicatorIcon` in `src/components/icons.tsx`), used as the header icon next to the "LoBot TecnoIndicator" wordmark.
 
 #### Backend / API Layer
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
@@ -244,9 +246,10 @@ reports `onlineModelConnected: false`.
 │       ├── model.ts                       # Forecast types & computations
 │       └── units.ts                       # Unit conversion & display
 │
-├── public/                                 # Static assets (served at /)
-│   └── LoBot-Trademark.png                # Brand logo (PNG)
-│
+├── images/                                 # Brand assets
+│   ├── lobotlogoonly.svg                   # LoBot logo mark (SVG) — inline LoBotIcon component
+│   ├── lobottecnoindicator.svg             # TecnoIndicator waveform mark (SVG) — inline TecnoIndicatorIcon component
+│   └── LoBot-Trademark.png                 # LoBot brand wordmark (PNG)
 ├── sandbox-quickstart/                     # Standalone dev sandbox (separate package.json)
 │   ├── .gitignore
 │   ├── index.ts
@@ -255,7 +258,6 @@ reports `onlineModelConnected: false`.
 ├── .env.example                           # Environment variable template
 ├── .gitignore                             # Git ignore patterns
 ├── LICENSE                                # MIT License
-├── LoBot Trademark.png                    # Brand logo (root copy)
 ├── next.config.ts                         # Next.js configuration
 ├── package.json                           # Root dependencies & scripts
 ├── package-lock.json                      # npm lockfile

@@ -1,6 +1,6 @@
 import { FileImage, FileText, Globe2, Waves } from "lucide-react";
 import Logo from "./Logo";
-import { GithubIcon } from "./icons";
+import { GithubIcon, LoBotIcon } from "./icons";
 import { fmtFullDate, fmtTime } from "../lib/model";
 import { EVENTS, emit } from "../lib/events";
 
@@ -12,6 +12,7 @@ const NAV = [
 ];
 
 const REPO_URL = "https://github.com/LoBot-LLC";
+const COMPANY_URL = "https://lobotllc.vercel.app/";
 
 interface FooterProps {
   lastUpdated: Date;
@@ -35,6 +36,14 @@ export default function Footer({ lastUpdated }: FooterProps) {
               className="mt-5 inline-flex items-center gap-2.5 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
             >
               <GithubIcon className="h-4 w-4" />
+            </a>
+            <a
+              href={COMPANY_URL}
+              rel="noreferrer"
+              aria-label="Visit LoBot LLC company website"
+              className="mt-5 inline-flex items-center gap-2.5 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
+            >
+              <LoBotIcon className="h-4 w-4" />
             </a>
           </div>
 

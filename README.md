@@ -129,6 +129,7 @@ reports `onlineModelConnected: false`.
 - **flags** — Feature flag / feature gating support
 - **LoBot logo mark** (`images/lobotlogoonly.svg`) — Brand SVG rendered as an inline React component (`LoBotIcon` in `src/components/icons.tsx`), used for the footer logo mark and the footer company link to the LoBot LLC website.
 - **TecnoIndicator waveform mark** (`images/lobottecnoindicator.svg`) — Brand SVG rendered as an inline React component (`TecnoIndicatorIcon` in `src/components/icons.tsx`), used as the header icon next to the "LoBot TecnoIndicator" wordmark.
+- **LinkedIn "in" mark** — Custom inline SVG component (`LinkedinIcon` in `src/components/icons.tsx`), used as the footer social link to the LoBot LLC LinkedIn page. Lucide v1 removed all brand icons (including LinkedIn), so brand marks like this one are maintained as hand-written SVG components.
 
 #### Backend / API Layer
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
@@ -220,7 +221,7 @@ reports `onlineModelConnected: false`.
 │   │   ├── Footer.tsx                     # Site footer
 │   │   ├── ForecastTool.tsx               # Main prediction UI (slider, cards, chart, table)
 │   │   ├── Hero.tsx                       # Landing hero with CTA
-│   │   ├── icons.tsx                      # SVG icon components
+│   │   ├── icons.tsx                      # Custom SVG icon components (GithubIcon, LinkedinIcon, LoBotIcon, TecnoIndicatorIcon)
 │   │   ├── Logo.tsx                       # Brand logo
 │   │   ├── MarketIndexStrip.tsx           # Live market ticker
 │   │   ├── Navbar.tsx                     # Top navigation + export menu

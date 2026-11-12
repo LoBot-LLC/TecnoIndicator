@@ -704,7 +704,7 @@ export class WebSearchRouter {
       const combinedSignal = abortSignal
         ? combineAbortSignals(abortSignal, controller.signal)
         : controller.signal;
-      const timeout = setTimeout(() => controller.abort(), 5000);
+      const timeout = setTimeout(() => controller.abort(), MCP_TIMEOUT_MS);
 
       try {
         const initPayload = {

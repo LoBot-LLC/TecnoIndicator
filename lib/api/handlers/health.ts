@@ -119,7 +119,9 @@ async function readFactorStatus(scope: "global" | Region): Promise<FactorStatus>
  */
 export async function handleHealth(_req: Request): Promise<Response> {
   const abortController = new AbortController();
-  const totalTimeoutId = setTimeout(() => abortController.abort(), 10000);
+  // Must exceed MCP_TIMEOUT_MS (25s) so the MCP availability probe in
+  // webSearchRouter can finish its initialize handshake before aborting.
+  const totalTimeoutId = setTimeout(() => abortController.abort(), 30000);
 
   try {
     const [kiloStatus, webSearchStatus, globalAnalytics, regionalAnalytics, globalFactors, regionalFactors] =

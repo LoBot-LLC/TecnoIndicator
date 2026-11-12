@@ -28,7 +28,6 @@ import {
   Pause,
   Play,
   RefreshCw,
-  Waves,
   Zap,
 } from "lucide-react";
 import Reveal from "./Reveal";
@@ -47,8 +46,10 @@ import {
   START_YEAR,
   type Commodity,
   type CommodityId,
+  type FetchingByCommodity,
   type ForecastPoint,
-  type LiveWaterQuote,
+  type LiveQuote,
+  type LiveQuotes,
   type RegionId,
 } from "../lib/model";
 import { buildMarkdown } from "../lib/markdown";
@@ -321,9 +322,9 @@ interface CommodityCardProps {
   commodity: Commodity;
   today: ForecastPoint;
   horizonBand: ForecastPoint;
-  live: LiveWaterQuote | null;
+  live: LiveQuote | null;
   fetching: boolean;
-  onFetchWater: () => void;
+  onFetchCommodity: () => void;
   regionLabel: string;
 }
 
@@ -333,7 +334,7 @@ function CommodityCard({
   horizonBand,
   live,
   fetching,
-  onFetchWater,
+  onFetchCommodity,
   regionLabel,
 }: CommodityCardProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
@@ -356,7 +357,6 @@ function CommodityCard({
   const delta = band.avg - todayBand.avg;
   const deltaPct = (delta / todayBand.avg) * 100;
   const up = delta >= 0;
-  const isWater = commodity.id === "water";
   const flashCls = useFlash(conv(band.avg));
   const spotFlash = useFlash(conv(todayBand.avg));
 
@@ -381,7 +381,7 @@ function CommodityCard({
             </p>
           </div>
         </div>
-        {isWater && live && (
+        {live && (
           <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-300">
             Live
           </span>
@@ -428,35 +428,33 @@ function CommodityCard({
         <span className="text-slate-600">±{(commodity.maxVol * 100).toFixed(0)}% vol @10y</span>
       </div>
 
-      {isWater && (
-        <div className="relative mt-4 border-t border-line pt-4">
-          <button
-            type="button"
-            onClick={onFetchWater}
-            disabled={fetching}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/10 px-3 py-2.5 text-xs font-semibold text-sky-200 transition-all hover:bg-sky-400/15 disabled:opacity-60"
-          >
-            {fetching ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Waves className="h-3.5 w-3.5" />
-            )}
-            {fetching
-              ? "Fetching live quote…"
-              : live
-                ? "Re-fetch Live Water Price"
-                : "Fetch Live Water Price"}
-          </button>
-          {live && (
-            <p className="mt-2 text-[11px] leading-relaxed text-slate-700 dark:text-slate-400">
-              <span className="font-semibold text-sky-300">
-                {formatPrice(convertWater(live.price, lengthUnit), selectedCurrency)}/{waterLabel(lengthUnit)}
-              </span>{" "}
-              · {live.asOf} · {live.source} · {live.range}
-            </p>
+      <div className="relative mt-4 border-t border-line pt-4">
+        <button
+          type="button"
+          onClick={onFetchCommodity}
+          disabled={fetching}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/10 px-3 py-2.5 text-xs font-semibold text-sky-200 transition-all hover:bg-sky-400/15 disabled:opacity-60"
+        >
+          {fetching ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Zap className="h-3.5 w-3.5" />
           )}
-        </div>
-      )}
+          {fetching
+            ? "Fetching live quote…"
+            : live
+              ? "Re-fetch Live Price"
+              : "Fetch Live Price"}
+        </button>
+        {live && (
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-700 dark:text-slate-400">
+            <span className="font-semibold text-sky-300">
+              {formatPrice(conv(live.price), selectedCurrency)}/{unitSuffix}
+            </span>{" "}
+            · {live.asOf} · {live.source} · {live.range}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -470,9 +468,9 @@ interface ForecastToolProps {
   points: ForecastPoint[];
   lastUpdated: Date;
   onRefresh: () => void;
-  onFetchWater: () => void;
-  waterFetching: boolean;
-  waterLive: LiveWaterQuote | null;
+  onFetchCommodity: (commodity: CommodityId) => void;
+  fetchingByCommodity: FetchingByCommodity;
+  liveQuotes: LiveQuotes;
   isLive: boolean;
   streaming: boolean;
   onToggleLive: () => void;
@@ -487,9 +485,9 @@ export default function ForecastTool({
   points,
   lastUpdated,
   onRefresh,
-  onFetchWater,
-  waterFetching,
-  waterLive,
+  onFetchCommodity,
+  fetchingByCommodity,
+  liveQuotes,
   isLive,
   streaming,
   onToggleLive,
@@ -706,19 +704,6 @@ export default function ForecastTool({
                 <RefreshCw className={`h-3.5 w-3.5 ${spin ? "spin-once" : ""}`} />
                 Refresh data
               </button>
-              <button
-                type="button"
-                onClick={onFetchWater}
-                disabled={waterFetching}
-                className="inline-flex items-center gap-2 rounded-lg border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-200 transition-colors hover:bg-sky-400/15 disabled:opacity-60"
-              >
-                {waterFetching ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Waves className="h-3.5 w-3.5" />
-                )}
-                {waterFetching ? "Fetching…" : "Fetch live water price"}
-              </button>
             </div>
           </div>
         </Reveal>
@@ -842,9 +827,9 @@ export default function ForecastTool({
                 }}
                 today={today}
                 horizonBand={horizonBand}
-                live={waterLive}
-                fetching={waterFetching}
-                onFetchWater={onFetchWater}
+                live={liveQuotes[c.id]}
+                fetching={fetchingByCommodity[c.id]}
+                onFetchCommodity={() => onFetchCommodity(c.id)}
                 regionLabel={regionProfile.short}
               />
             </Reveal>

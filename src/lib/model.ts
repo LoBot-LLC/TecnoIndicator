@@ -511,13 +511,17 @@ export type LivePricesResponse = {
   isLive: boolean;
 };
 
-/** The live water quote surfaced by the water card, derived from /api/prices. */
-export interface LiveWaterQuote {
+/** A live quote surfaced by a commodity card, derived from /api/prices. */
+export interface LiveQuote {
   price: number;
   asOf: string;
   source: string;
   range: string;
 }
+
+/** Per-commodity live quotes and fetch states surfaced by the commodity cards. */
+export type LiveQuotes = Record<CommodityId, LiveQuote | null>;
+export type FetchingByCommodity = Record<CommodityId, boolean>;
 
 /* ------------------------------------------------------------------ */
 /* Regional fallback factors (8 per region, 40 total)                 */

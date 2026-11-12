@@ -2,12 +2,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   COMMODITIES,
   type CommodityId,
+  type FetchingByCommodity,
   type LivePricesResponse,
-  type LiveWaterQuote,
+  type LiveQuotes,
 } from "../lib/model";
 
 function getDefaultPrices(): Record<CommodityId, number> {
   return Object.fromEntries(COMMODITIES.map((c) => [c.id, c.base])) as Record<CommodityId, number>;
+}
+
+function defaultLiveQuotes(): LiveQuotes {
+  return Object.fromEntries(COMMODITIES.map((c) => [c.id, null])) as unknown as LiveQuotes;
+}
+
+function defaultFetching(): FetchingByCommodity {
+  return Object.fromEntries(COMMODITIES.map((c) => [c.id, false])) as unknown as FetchingByCommodity;
 }
 
 export interface UseLiveMarketReturn {
@@ -15,12 +24,12 @@ export interface UseLiveMarketReturn {
   deltas: Record<CommodityId, number>;
   jitter: number;
   lastUpdated: Date;
-  waterLive: LiveWaterQuote | null;
-  waterFetching: boolean;
+  liveQuotes: LiveQuotes;
+  fetchingByCommodity: FetchingByCommodity;
   isLive: boolean;
   streaming: boolean;
   refresh: () => void;
-  fetchWater: () => Promise<void>;
+  fetchCommodity: (commodity: CommodityId) => Promise<void>;
   toggleLive: () => void;
 }
 
@@ -29,8 +38,9 @@ export function useLiveMarket(): UseLiveMarketReturn {
   const [deltas, setDeltas] = useState<Record<CommodityId, number>>({ oil: 0, electricity: 0, water: 0 });
   const [jitter, setJitter] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
-  const [waterLive, setWaterLive] = useState<LiveWaterQuote | null>(null);
-  const [waterFetching, setWaterFetching] = useState(false);
+  const [liveQuotes, setLiveQuotes] = useState<LiveQuotes>(defaultLiveQuotes);
+  const [fetchingByCommodity, setFetchingByCommodity] =
+    useState<FetchingByCommodity>(defaultFetching);
   const [isLive, setIsLive] = useState(true);
   const [streaming, setStreaming] = useState(true);
   const tickRef = useRef<number | null>(null);
@@ -51,8 +61,11 @@ export function useLiveMarket(): UseLiveMarketReturn {
       // Compute real deltas from previous prices
       setDeltas({
         oil: (newPrices.oil - prevPricesRef.current.oil) / prevPricesRef.current.oil,
-        electricity: (newPrices.electricity - prevPricesRef.current.electricity) / prevPricesRef.current.electricity,
-        water: (newPrices.water - prevPricesRef.current.water) / prevPricesRef.current.water,
+        electricity:
+          (newPrices.electricity - prevPricesRef.current.electricity) /
+          prevPricesRef.current.electricity,
+        water: (newPrices.water - prevPricesRef.current.water) /
+          prevPricesRef.current.water,
       });
       prevPricesRef.current = newPrices;
       setPrices(newPrices);
@@ -69,40 +82,52 @@ export function useLiveMarket(): UseLiveMarketReturn {
     void fetchPrices(true);
   }, [fetchPrices]);
 
-  // Fetch live water price from the API with force=true
-  const fetchWater = useCallback(async () => {
-    setWaterFetching(true);
-    try {
-      const res = await fetch("/api/prices?force=true");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as LivePricesResponse;
-      const newPrices = {
-        oil: data.oil.price,
-        electricity: data.electricity.price,
-        water: data.water.price,
-      };
-      // Compute real deltas from previous prices
-      setDeltas({
-        oil: (newPrices.oil - prevPricesRef.current.oil) / prevPricesRef.current.oil,
-        electricity: (newPrices.electricity - prevPricesRef.current.electricity) / prevPricesRef.current.electricity,
-        water: (newPrices.water - prevPricesRef.current.water) / prevPricesRef.current.water,
-      });
-      prevPricesRef.current = newPrices;
-      setPrices(newPrices);
-      setWaterLive({
-        price: data.water.price,
-        asOf: new Date(data.asOf).toLocaleTimeString("en-GB", { hour12: false }),
-        source: data.water.source || data.dataSource,
-        range: data.water.isLive ? "Live feed" : "Static benchmark",
-      });
-      setIsLive(data.isLive);
-      setLastUpdated(new Date(data.asOf));
-    } catch {
-      setWaterLive(null);
-    } finally {
-      setWaterFetching(false);
-    }
-  }, []);
+  // Fetch live prices with force=true and surface a per-commodity quote.
+  // Fetches the full payload so every displayed number reflects the latest
+  // information; only the requested commodity's quote badge is updated.
+  const fetchCommodity = useCallback(
+    async (commodity: CommodityId) => {
+      setFetchingByCommodity((prev) => ({ ...prev, [commodity]: true }));
+      try {
+        const res = await fetch("/api/prices?force=true");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as LivePricesResponse;
+        const newPrices = {
+          oil: data.oil.price,
+          electricity: data.electricity.price,
+          water: data.water.price,
+        };
+        // Compute real deltas from previous prices
+        setDeltas({
+          oil: (newPrices.oil - prevPricesRef.current.oil) / prevPricesRef.current.oil,
+          electricity:
+            (newPrices.electricity - prevPricesRef.current.electricity) /
+            prevPricesRef.current.electricity,
+          water: (newPrices.water - prevPricesRef.current.water) /
+            prevPricesRef.current.water,
+        });
+        prevPricesRef.current = newPrices;
+        setPrices(newPrices);
+        const commodityData = data[commodity];
+        setLiveQuotes((prev) => ({
+          ...prev,
+          [commodity]: {
+            price: commodityData.price,
+            asOf: new Date(data.asOf).toLocaleTimeString("en-GB", { hour12: false }),
+            source: commodityData.source || data.dataSource,
+            range: commodityData.isLive ? "Live feed" : "Static benchmark",
+          },
+        }));
+        setIsLive(data.isLive);
+        setLastUpdated(new Date(data.asOf));
+      } catch {
+        setLiveQuotes((prev) => ({ ...prev, [commodity]: null }));
+      } finally {
+        setFetchingByCommodity((prev) => ({ ...prev, [commodity]: false }));
+      }
+    },
+    [],
+  );
 
   const toggleLive = useCallback(() => {
     setIsLive((prev) => !prev);
@@ -141,7 +166,6 @@ export function useLiveMarket(): UseLiveMarketReturn {
         start();
       }
     };
-
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       clear();
@@ -152,8 +176,8 @@ export function useLiveMarket(): UseLiveMarketReturn {
   // Initial fetch
   useEffect(() => {
     void fetchPrices();
-    // Initial water fetch for backward compatibility
-    void fetchWater();
+    // Initial live quotes for backward compatibility
+    void Promise.all(COMMODITIES.map((c) => fetchCommodity(c.id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -162,12 +186,12 @@ export function useLiveMarket(): UseLiveMarketReturn {
     deltas,
     jitter,
     lastUpdated,
-    waterLive,
-    waterFetching,
+    liveQuotes,
+    fetchingByCommodity,
     isLive,
     streaming,
     refresh,
-    fetchWater,
+    fetchCommodity,
     toggleLive,
   };
 }

@@ -39,12 +39,12 @@ export default function HomePage() {
     deltas,
     jitter,
     lastUpdated,
-    waterLive,
-    waterFetching,
+    liveQuotes,
+    fetchingByCommodity,
     isLive,
     streaming,
     refresh,
-    fetchWater,
+    fetchCommodity,
     toggleLive,
   } = useLiveMarket();
 
@@ -59,7 +59,10 @@ export default function HomePage() {
     [prices, horizon, jitter, region],
   );
 
-  const handleFetchWater = useCallback(() => void fetchWater(), [fetchWater]);
+  const handleFetchCommodity = useCallback(
+    (commodity: CommodityId) => void fetchCommodity(commodity),
+    [fetchCommodity],
+  );
 
   /** "global" is already a valid scope id for every /api route. */
   const scope: RegionId = region;

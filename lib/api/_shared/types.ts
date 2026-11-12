@@ -124,11 +124,12 @@ export interface KiloStatus {
   };
 }
 
-export interface TinyFishStatus {
+export interface WebSearchStatus {
   available: boolean;
-  configuredKeys: number;
-  usableKeys: number;
-  rateLimitedKeys: number[];
+  mcpAvailable: boolean;
+  mcpUrl: string | null;
+  duckDuckGoAvailable: boolean;
+  fallbackUsed: boolean;
 }
 
 export interface Solution {

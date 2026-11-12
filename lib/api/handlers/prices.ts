@@ -1,4 +1,4 @@
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { webSearchRouter } from "../_shared/webSearchRouter";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getCache, setCache } from "../_shared/cache";
 import { SEARCH_CACHE_MS, sanitizeUrl } from "../_shared/http";
@@ -102,7 +102,7 @@ async function resolvePrices(req: Request): Promise<Response> {
     }
   }
 
-  // Bounded live-price attempt: TinyFish search + Kilo extraction.
+  // Bounded live-price attempt: Playwright MCP / DuckDuckGo search + Kilo extraction.
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
@@ -163,17 +163,17 @@ function extractPriceFromText(text: string): number | null {
   return null;
 }
 
-async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
+async function getLivePricesFromWebSearch(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
   const searchResults = await Promise.all(
     COMMODITY_QUERIES.map(async ({ commodity, queryTemplate }) => {
       try {
-        return await tinyfishRouter.tinyfishSearch(queryTemplate, {
+        return await webSearchRouter.webSearch(queryTemplate, {
           limit: 10,
           region: scope === "global" ? undefined : scope,
         }, abortSignal);
       } catch (error) {
         console.warn(`Failed to search for ${commodity}:`, error);
-        return { results: [], total: 0, keyIndex: -1 };
+        return { results: [], total: 0, source: "mcp" as const };
       }
     }),
   );
@@ -232,7 +232,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
           electricity: { ...prices.electricity, isLive: true },
           water: { ...prices.water, isLive: true },
           asOf: new Date().toISOString(),
-          dataSource: "Kilo AI analysis of TinyFish search results",
+          dataSource: "Kilo AI analysis of Playwright MCP / DuckDuckGo search results",
           isLive: true,
         };
       }
@@ -264,7 +264,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
       electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true },
       water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true },
       asOf: new Date().toISOString(),
-      dataSource: "TinyFish search (deterministic fallback)",
+      dataSource: "Playwright MCP / DuckDuckGo search (deterministic fallback)",
       isLive: true,
     };
   }
@@ -274,7 +274,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
     electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false },
     water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false },
     asOf: new Date().toISOString(),
-    dataSource: "TinyFish search (insufficient data)",
+    dataSource: "Playwright MCP / DuckDuckGo search (insufficient data)",
     isLive: false,
   };
 }

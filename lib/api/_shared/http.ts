@@ -18,14 +18,6 @@ export const KILO_KEY_ENV_NAMES = [
   "KILO_GATEWAY_KEY",
 ] as const;
 
-export const TINYFISH_KEY_ENV_NAMES = [
-  "TINYFISH_KEY_1",
-  "TINYFISH_KEY_2",
-  "TINYFISH_KEY_3",
-  "TINYFISH_KEY_4",
-  "TINYFISH_KEY_5",
-] as const;
-
 export const FACTOR_COUNT = 8;
 export const ANALYTICS_CACHE_MS = 60_000;
 /** How long a freshly curated factor window counts as "fresh" for request-level short-circuiting. */
@@ -45,6 +37,15 @@ export const FORECAST_CACHE_MS = 5 * 60_000;
 export const SOLUTIONS_CACHE_MS = 60_000;
 export const MAX_SOLUTIONS = 3;
 export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
+
+/**
+ * URL of the always-on Playwright MCP server (streamable HTTP transport).
+ * Set via `PLAYWRIGHT_MCP_URL` environment variable, e.g.:
+ *   http://localhost:8931/mcp
+ * Start the server with:
+ *   npx @playwright/mcp@latest --port 8931 --host 0.0.0.0 --headless --shared-browser-context
+ */
+export const PLAYWRIGHT_MCP_URL = process.env.PLAYWRIGHT_MCP_URL ?? "http://localhost:8931/mcp";
 
 /**
  * The single canonical cache key for curated price factors.

@@ -16,8 +16,9 @@ A modern, clean, professional single-page web application that delivers energy p
 - **Currency Selector** - Predict the prices at your country's currency, at any moment
 - **Interactive Prediction Tool**
   - Horizon slider (1–10 years)
-  - Two commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Water (USD/M^3)** and **Global Electricity (USD/MWh)**
+  - Three commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Electricity (USD/MWh)**, and **Global Water (USD/m³)**
   - Three scenarios per commodity: Average, Optimistic (Min), Pessimistic (Max)
+  - **Per-commodity "Fetch/Re-fetch Live Price"** on each card — retrieves the latest prices from web-searched URLs (Playwright MCP primary, DuckDuckGo HTTP fallback) and updates the displayed numbers/quotes
   - Clean data table + interactive line chart (Chart.js)
 - **Real-time Feel** — Live-updating timestamp + “Refresh Data” button that perturbs values within realistic ranges.
 - **Key Factors & Drivers** — Dynamic grid of 8 major price influencers with:
@@ -34,10 +35,10 @@ A modern, clean, professional single-page web application that delivers energy p
   - Accessibility (ARIA labels, keyboard navigation, high contrast)
   - Clear disclaimers throughout
 - **AI Model Integration**
-  - Search and fetch current prices via an always-on **Playwright MCP server** (primary) with **DuckDuckGo HTTP search** fallback
+  - Search and fetch latest commodity prices from web-searched URLs via an always-on **Playwright MCP server** (primary) with **DuckDuckGo HTTP search** fallback (no full live browser fetch required per request)
   - Search, analyze and display 8 dynamic factors (FIFO rolling window) affecting the prices
   - Updating 3 dynamic AI-powered solutions based on the updating factors
-  - Executed via models from **Kilo Gateway** with evidence gathered through Playwright MCP / DuckDuckGo (no fallback by default unless the MCP server fails)
+  - Executed via models from **Kilo Gateway** with evidence gathered through Playwright MCP / DuckDuckGo (fallback only when MCP fails)
 
 ---
 
@@ -111,13 +112,13 @@ these as project environment variables.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `PLAYWRIGHT_MCP_URL` | Recommended | URL of the always-on Playwright MCP server (streamable HTTP), e.g. `http://localhost:8931/mcp`. Used as the **primary** web search/scrape provider for live prices and dynamic factor curation. |
+| `PLAYWRIGHT_MCP_URL` | Recommended | URL of the always-on Playwright MCP server (streamable HTTP), e.g. `http://localhost:8931/mcp`. Used as the **primary** web search provider for retrieving latest price evidence/URLs and dynamic factor curation. |
 | `DUCKDUCKGO_ENABLED` | Optional | Kept for configuration clarity; DuckDuckGo HTTP search is the **fallback** and is used only when the Playwright MCP server fails to operate. No API key required. |
 | `KILO_GATEWAY_KEY` or `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Required for live AI | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional | Upstash Redis REST credentials for a shared cache across serverless instances. `REDIS_URL` / `REDIS_TOKEN` are accepted as aliases. Without Redis an in-memory per-instance cache is used. |
 | `FUEL_BASE_DIESEL_PRICE`, `FUEL_FACTOR`, `GRID_LOSS_FACTOR`, `WATER_SCARCITY_MULTIPLIER` | Optional | Override the deterministic analytics constants. |
 
-**Web search behavior:** The software uses the Playwright MCP server by default for fetching web search results (displaying current prices and analyzing/displaying 8 dynamic reasons/FIFO factors). DuckDuckGo is not used as a default path; it is activated only if the Playwright MCP server fails to operate.
+**Web search behavior:** The software uses the Playwright MCP server by default for web search (retrieving the latest information and URLs for prices and the 8 dynamic reasons/FIFO factors). DuckDuckGo is not used as a default path; it is activated only if the Playwright MCP server fails to operate. Commodity re-fetch actions request the latest prices derived from those web-searched URLs/results (MCP primary, DuckDuckGo fallback) rather than performing separate ad-hoc live page scrapes.
 
 The site degrades gracefully: with no keys or MCP server available every endpoint still
 returns a response, backed by public benchmark defaults, and the health endpoint

@@ -15,6 +15,7 @@ import {
   EVAL_REGIONS,
   generateForecast,
   REGIONAL_FACTORS,
+  type CommodityId,
   type Factor,
   type RegionId,
   type Solution,
@@ -300,9 +301,9 @@ export default function HomePage() {
             points={points}
             lastUpdated={lastUpdated}
             onRefresh={refresh}
-            onFetchWater={handleFetchWater}
-            waterFetching={waterFetching}
-            waterLive={waterLive}
+            onFetchCommodity={handleFetchCommodity}
+            fetchingByCommodity={fetchingByCommodity}
+            liveQuotes={liveQuotes}
             isLive={isLive}
             streaming={streaming}
             onToggleLive={toggleLive}

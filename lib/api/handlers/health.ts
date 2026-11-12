@@ -1,6 +1,6 @@
 import { REGIONS, type Region } from "../_shared/regions";
 import { kiloRouter } from "../_shared/kiloRouter";
-import { tinyfishRouter } from "../_shared/tinyfishRouter";
+import { webSearchRouter } from "../_shared/webSearchRouter";
 import { analyticsCacheKey } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
@@ -19,10 +19,12 @@ interface HealthResponse {
     configuredKeys: number;
     keyFormats?: { jwt: number; opaque: number; unrecognized: number };
   };
-  tinyfish: {
+  webSearch: {
     available: boolean;
-    usableKeys: number;
-    configuredKeys: number;
+    mcpAvailable: boolean;
+    mcpUrl: string | null;
+    duckDuckGoAvailable: boolean;
+    fallbackUsed: boolean;
   };
   onlineModelConnected: boolean;
   analytics: {
@@ -109,36 +111,34 @@ async function readFactorStatus(scope: "global" | Region): Promise<FactorStatus>
 
 /**
  * GET /api/health — gateway/key availability plus the real state of the
- * analytics and factor caches. `lastFetch` / `lastRun` / `aiCurated` are derived
- * from what is actually stored; they used to be hardcoded literals that always
- * reported a successful, never-run analysis.
+ * analytics, factor caches, and web search providers. `lastFetch` / `lastRun`
+ * / `aiCurated` are derived from what is actually stored.
+ *
+ * Web search uses an always-on Playwright MCP server (primary) with DuckDuckGo
+ * HTTP search as fallback when the MCP server is unavailable.
  */
 export async function handleHealth(_req: Request): Promise<Response> {
-  // Health check triggers full initialization (model catalog fetch + key probing)
-  // so that the returned status accurately reflects whether a live Kilo Gateway
-  // connection is available.  The initialization is protected by the same
-  // abortController, so a cold start that exceeds the timeout will still be
-  // caught and the endpoint will return a degraded-but-informed response.
   const abortController = new AbortController();
   const totalTimeoutId = setTimeout(() => abortController.abort(), 10000);
 
   try {
-    const [kiloStatus, tinyfishStatus, globalAnalytics, regionalAnalytics, globalFactors, regionalFactors] =
+    const [kiloStatus, webSearchStatus, globalAnalytics, regionalAnalytics, globalFactors, regionalFactors] =
       await Promise.all([
         kiloRouter.getKiloStatus(abortController.signal),
-        tinyfishRouter.getTinyfishStatus(abortController.signal),
+        webSearchRouter.getWebSearchStatus(abortController.signal),
         readAnalyticsStatus("global"),
         Promise.all(REGIONS.map((region) => readAnalyticsStatus(region))),
         readFactorStatus("global"),
         Promise.all(REGIONS.map((region) => readFactorStatus(region))),
       ]);
 
+    // Online model is "connected" when Kilo Gateway is usable and web search
+    // (MCP primary or DuckDuckGo fallback) is available for live data.
     const onlineModelConnected =
       kiloStatus.available &&
       kiloStatus.usableKeys > 0 &&
       kiloStatus.zeroCostModels.length > 0 &&
-      tinyfishStatus.available &&
-      tinyfishStatus.usableKeys > 0;
+      webSearchStatus.available;
 
     const response: HealthResponse = {
       kiloGateway: {
@@ -147,10 +147,12 @@ export async function handleHealth(_req: Request): Promise<Response> {
         configuredKeys: kiloStatus.configuredKeys,
         keyFormats: kiloStatus.keyFormats,
       },
-      tinyfish: {
-        available: tinyfishStatus.available,
-        usableKeys: tinyfishStatus.usableKeys,
-        configuredKeys: tinyfishStatus.configuredKeys,
+      webSearch: {
+        available: webSearchStatus.available,
+        mcpAvailable: webSearchStatus.mcpAvailable,
+        mcpUrl: webSearchStatus.mcpUrl,
+        duckDuckGoAvailable: webSearchStatus.duckDuckGoAvailable,
+        fallbackUsed: webSearchStatus.fallbackUsed,
       },
       onlineModelConnected,
       analytics: {
@@ -175,7 +177,13 @@ export async function handleHealth(_req: Request): Promise<Response> {
         error: "Health check temporarily unavailable",
         onlineModelConnected: false,
         kiloGateway: { available: false, usableKeys: 0, configuredKeys: 0, keyFormats: { jwt: 0, opaque: 0, unrecognized: 0 } },
-        tinyfish: { available: false, usableKeys: 0, configuredKeys: 0 },
+        webSearch: {
+          available: false,
+          mcpAvailable: false,
+          mcpUrl: process.env.PLAYWRIGHT_MCP_URL ?? "http://localhost:8931/mcp",
+          duckDuckGoAvailable: true,
+          fallbackUsed: true,
+        },
       },
       { status: 200 },
     );

@@ -102,19 +102,20 @@ async function resolvePrices(req: Request): Promise<Response> {
     }
   }
 
-  // Bounded live-price attempt: Playwright MCP / DuckDuckGo search + Kilo extraction.
+  // Bounded live-price attempt: Playwright MCP search + Kilo extraction.
+  // DuckDuckGo is used only as fallback when the Playwright MCP server fails.
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
   try {
-    const searchResults = await getLivePricesFromTinyFish(scope, abortController.signal);
+    const searchResults = await getLivePricesFromWebSearch(scope, abortController.signal);
 
     if (searchResults.isLive) {
       await setCache(cacheKey, searchResults, SEARCH_CACHE_MS);
       return Response.json(searchResults, { status: 200 });
     }
   } catch (error) {
-    console.warn("TinyFish search failed, falling back to defaults:", error);
+    console.warn("Web search failed, falling back to defaults:", error);
   } finally {
     clearTimeout(timeoutId);
   }

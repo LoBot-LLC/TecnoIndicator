@@ -34,10 +34,10 @@ A modern, clean, professional single-page web application that delivers energy p
   - Accessibility (ARIA labels, keyboard navigation, high contrast)
   - Clear disclaimers throughout
 - **AI Model Integration**
-  - Search and fetch current prices
-  - Search, analyze and display 8 dynamic factors affecting the prices
-  - Updating 3 dynamic AI-powered solutions based on the updating factors 
-  - Executed via models from Kilo Gateway and TinyFish API
+  - Search and fetch current prices via an always-on **Playwright MCP server** (primary) with **DuckDuckGo HTTP search** fallback
+  - Search, analyze and display 8 dynamic factors (FIFO rolling window) affecting the prices
+  - Updating 3 dynamic AI-powered solutions based on the updating factors
+  - Executed via models from **Kilo Gateway** with evidence gathered through Playwright MCP / DuckDuckGo (no fallback by default unless the MCP server fails)
 
 ---
 
@@ -51,23 +51,30 @@ A modern, clean, professional single-page web application that delivers energy p
    npm install
    ```
 
-2. Optionally copy the example environment file and fill in your API keys (see [Environment variables](#environment-variables) below):
+2. Optionally copy the example environment file and fill in your configuration (see [Environment variables](#environment-variables) below):
 
    ```bash
    cp .env.example .env.local
    ```
 
-3. Start the development server on <http://localhost:3000>:
+3. Start the always-on Playwright MCP server (primary web search provider):
+
+   ```bash
+   npm run playwright:mcp
+   # Default endpoint: http://localhost:8931/mcp
+   ```
+
+4. Start the development server on <http://localhost:3000>:
 
    ```bash
    npm run dev
    ```
 
-4. Use the **horizon slider** to select 1–10 years.
-5. View results in the cards, table, and interactive chart.
-6. Click **Refresh Data** to simulate live market updates.
-7. Scroll to the **Key Factors** section — relevance updates automatically with the horizon.
-8. Use the **Export** button in the navbar to download forecast data, or select a region in **Regional Intelligence** and use **Export region** to download its CSV table or Markdown report.
+5. Use the **horizon slider** to select 1–10 years.
+6. View results in the cards, table, and interactive chart.
+7. Click **Refresh Data** to simulate live market updates.
+8. Scroll to the **Key Factors** section — relevance updates automatically with the horizon.
+9. Use the **Export** button in the navbar to download forecast data, or select a region in **Regional Intelligence** and use **Export region** to download its CSV table or Markdown report.
 
 For a production build:
 
@@ -88,7 +95,7 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/dynamic-factors` | The 8 curated global price factors |
 | `/api/regional-factors?region=` | The 8 curated factors for one region |
 | `/api/solutions?region=` | Up to 3 AI-curated strategy recommendations |
-| `/api/health` | Gateway/key availability plus real cache status |
+| `/api/health` | Gateway/key availability, Playwright MCP/DuckDuckGo web search status, plus real cache status |
 | `/api/ai-forecast` | 11-year global forecast band |
 | `/api/regional-forecast?region=` | 11-year region-specific forecast band |
 | `/api/cron/curate-factors` | Nightly factor re-curation (Vercel cron, `0 2 * * *` UTC) |
@@ -104,14 +111,17 @@ these as project environment variables.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `TINYFISH_KEY_1` … `TINYFISH_KEY_5` | Required | TinyFish search/fetch API keys used to gather and scrape market evidence. Without them the app still runs and serves deterministic fallback data. |
-| `KILO_GATEWAY_KEY` or `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Required | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. |
+| `PLAYWRIGHT_MCP_URL` | Recommended | URL of the always-on Playwright MCP server (streamable HTTP), e.g. `http://localhost:8931/mcp`. Used as the **primary** web search/scrape provider for live prices and dynamic factor curation. |
+| `DUCKDUCKGO_ENABLED` | Optional | Kept for configuration clarity; DuckDuckGo HTTP search is the **fallback** and is used only when the Playwright MCP server fails to operate. No API key required. |
+| `KILO_GATEWAY_KEY` or `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Required for live AI | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional | Upstash Redis REST credentials for a shared cache across serverless instances. `REDIS_URL` / `REDIS_TOKEN` are accepted as aliases. Without Redis an in-memory per-instance cache is used. |
 | `FUEL_BASE_DIESEL_PRICE`, `FUEL_FACTOR`, `GRID_LOSS_FACTOR`, `WATER_SCARCITY_MULTIPLIER` | Optional | Override the deterministic analytics constants. |
 
-The site degrades gracefully: with no keys configured every endpoint still
+**Web search behavior:** The software uses the Playwright MCP server by default for fetching web search results (displaying current prices and analyzing/displaying 8 dynamic reasons/FIFO factors). DuckDuckGo is not used as a default path; it is activated only if the Playwright MCP server fails to operate.
+
+The site degrades gracefully: with no keys or MCP server available every endpoint still
 returns a response, backed by public benchmark defaults, and the health endpoint
-reports `onlineModelConnected: false`.
+reports `onlineModelConnected: false`. All TinyFish API keys and integrations have been removed.
 
 ### Keyboard Shortcuts
 - Press `/` (when focused on the page) to jump to the horizon slider.
@@ -135,7 +145,8 @@ reports `onlineModelConnected: false`.
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js** — Runtime environment (via Next.js on Vercel)
 - **Kilo Gateway API** — AI model orchestration (price extraction, factor curation, solutions, forecasting)
-- **TinyFish API** — Market data search & scraping
+- **Playwright MCP Server** (always-on, primary) — Streamable HTTP MCP server (`@playwright/mcp`) used for web search/scrape to fetch live prices and evidence for dynamic factors
+- **DuckDuckGo HTTP search** (fallback) — HTML/Lite/Instant Answer endpoints used only when the Playwright MCP server fails
 - **Redis (Upstash / Vercel KV)** — Distributed caching for API responses (optional; in-memory fallback)
 
 #### Data & Models (`src/lib/`)
@@ -173,13 +184,13 @@ reports `onlineModelConnected: false`.
 │   │   ├── cron/
 │   │   │   └── curate-factors/route.ts    # Nightly AI factor re-curation (Vercel cron)
 │   │   ├── dynamic-factors/route.ts       # 8 curated global price factors
-│   │   ├── health/route.ts                # Gateway/key/cache status
+│   │   ├── health/route.ts                # Gateway/key/cache + web search status
 │   │   ├── prices/route.ts                # Live commodity spot prices (oil, electricity, water)
 │   │   ├── rates/route.ts                 # Exchange rates for currency conversion
+│   │   ├── regional/route.ts              # Region metadata & list
 │   │   ├── regional-analytics/route.ts    # Regional fuel/electricity/water indices
 │   │   ├── regional-factors/route.ts      # 8 curated factors for a region
 │   │   ├── regional-forecast/route.ts     # 11-year region-specific forecast
-│   │   ├── regional/route.ts              # Region metadata & list
 │   │   ├── solutions/route.ts             # Up to 3 AI-curated strategy recommendations
 │   │   └── telemetry/route.ts             # Client-side analytics ingestion
 │   ├── globals.css                        # Global styles + Tailwind CSS 4 imports
@@ -195,9 +206,9 @@ reports `onlineModelConnected: false`.
 │       │   ├── analytics.ts               # Global indices computation
 │       │   ├── cron-curate-factors.ts     # Nightly curation job
 │       │   ├── dynamic-factors.ts         # Global factor curation
-│       │   ├── factor-analysis.ts         # Factor impact analysis
+│       │   ├── factor-analysis.ts         # Factor impact analysis (MCP/DDG evidence)
 │       │   ├── health.ts                  # Health check implementation
-│       │   ├── prices.ts                  # Price fetching & fallbacks
+│       │   ├── prices.ts                  # Live price fetching (MCP primary, DDG fallback)
 │       │   ├── regional-analytics.ts      # Regional indices computation
 │       │   ├── regional-factors.ts        # Regional factor curation
 │       │   ├── regional-forecast.ts       # Regional forecast generation
@@ -205,13 +216,18 @@ reports `onlineModelConnected: false`.
 │       └── _shared/                       # Cross-cutting utilities
 │           ├── cache.ts                   # Redis + in-memory cache abstraction
 │           ├── deterministicAnalytics.ts  # Fuel/grid/water math
-│           ├── http.ts                    # TinyFish/Kilo HTTP clients
+│           ├── http.ts                    # Shared HTTP/config constants (MCP URL, caches)
 │           ├── kiloRouter.ts              # Kilo Gateway model routing
 │           ├── redis.ts                   # Upstash Redis client
 │           ├── regions.ts                 # Region definitions & metadata
-│           ├── tinyfishRouter.ts          # TinyFish search/scrape routing
+│           ├── tinyfishRouter.ts          # Deprecated compat shim (re-exports web search)
 │           ├── types.ts                   # Shared TypeScript interfaces
-│           └── validation.ts              # Zod schemas for request validation
+│           ├── validation.ts              # Zod-free validation helpers
+│           └── webSearchRouter.ts         # Playwright MCP (primary) + DuckDuckGo fallback
+│
+├── mcp/                                    # Always-on Playwright MCP server assets
+│   ├── playwright-mcp-server.mjs          # MCP server launcher (streamable HTTP)
+│   └── README.md                          # MCP run/config notes
 │
 ├── src/                                    # Frontend source code
 │   ├── components/                        # React UI components
@@ -259,6 +275,7 @@ reports `onlineModelConnected: false`.
 ├── .env.example                           # Environment variable template
 ├── .gitignore                             # Git ignore patterns
 ├── LICENSE                                # MIT License
+├── AGENT_PROMPT.md                        # Sample agent prompt
 ├── next.config.ts                         # Next.js configuration
 ├── package.json                           # Root dependencies & scripts
 ├── package-lock.json                      # npm lockfile

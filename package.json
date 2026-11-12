@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "playwright:mcp": "node mcp/playwright-mcp-server.mjs"
   },
   "dependencies": {
     "@vercel/analytics": "^1.5.0",
@@ -24,6 +25,7 @@
     "tailwind-merge": "3.4.0"
   },
   "devDependencies": {
+    "@playwright/mcp": "^0.0.64",
     "@tailwindcss/postcss": "4.1.17",
     "@types/node": "22.19.17",
     "@types/react": "19.2.7",

@@ -55,7 +55,9 @@ export class WebSearchRouter {
   private mcpInitialized: boolean = false;
 
   constructor() {
-    this.mcpUrl = process.env.PLAYWRIGHT_MCP_URL ?? null;
+    // Always-on Playwright MCP server is the primary search provider.
+    // DuckDuckGo HTTP search is used only when the MCP server is unavailable.
+    this.mcpUrl = process.env.PLAYWRIGHT_MCP_URL ?? "http://localhost:8931/mcp";
   }
 
   private async mcpInitialize(abortSignal?: AbortSignal): Promise<boolean> {

@@ -1,5 +1,5 @@
 import { getCache, setCache } from "./cache";
-import { SEARCH_CACHE_MS, SCRAPE_CACHE_MS, sanitizeUrl, PLAYWRIGHT_MCP_URL } from "./http";
+import { SEARCH_CACHE_MS, SCRAPE_CACHE_MS, sanitizeUrl, OPEN_WEBSEARCH_MCP_URL } from "./http";
 import type { Region } from "./regions";
 
 export interface SearchResult {
@@ -60,16 +60,17 @@ export class WebSearchRouter {
   private mcpInitialized: boolean = false;
 
   constructor() {
-    // Always-on Playwright MCP server is the primary search provider.
-    // DuckDuckGo HTTP search is used only when the MCP server is unavailable.
+    // Always-on Open-WebSearch MCP server is the primary search provider.
+    // DuckDuckGo HTTP search is used only when the Open-WebSearch MCP server is
+    // unavailable or misconfigured.
     //
-    // - Set PLAYWRIGHT_MCP_URL to a remote MCP server URL for cloud/deployed
-    //   environments (e.g. https://your-mcp-host/mcp).
-    // - Set PLAYWRIGHT_MCP_URL to an empty string to explicitly disable MCP and
-    //   use DuckDuckGo fallback only.
-    // - If unset, default to localhost for local dev; in Vercel/cloud
-    //   deployments default to null to avoid probing unreachable localhost.
-    this.mcpUrl = PLAYWRIGHT_MCP_URL;
+    // - Set OPEN_WEBSEARCH_MCP_URL to a remote MCP server URL for cloud/deployed
+    //   environments (e.g. http://localhost:3000/mcp for a local `open-websearch` daemon).
+    // - Set OPEN_WEBSEARCH_MCP_URL to an empty string to explicitly disable MCP
+    //   and use DuckDuckGo fallback only.
+    // - If unset, defaults to the public hosted instance:
+    //   https://open-web-search.vercel.app/mcp (recommended for production/Edge).
+    this.mcpUrl = OPEN_WEBSEARCH_MCP_URL;
   }
 
   /** Reset MCP session state so the next call re-initializes from scratch. */
@@ -78,6 +79,7 @@ export class WebSearchRouter {
     this.mcpInitialized = false;
   }
 
+  /** Initialize/Open a new MCP session with the Open-WebSearch server. */
   private async mcpInitialize(abortSignal?: AbortSignal): Promise<boolean> {
     if (this.mcpInitialized && this.mcpSessionId) return true;
     if (!this.mcpUrl) return false;
@@ -113,7 +115,7 @@ export class WebSearchRouter {
 
       if (!response.ok) {
         this.resetMcpState();
-        console.warn(`MCP initialize failed: ${response.status}`);
+        console.warn(`Open-WebSearch MCP initialize failed: ${response.status}`);
         return false;
       }
 
@@ -145,7 +147,7 @@ export class WebSearchRouter {
       return false;
     } catch (error) {
       this.resetMcpState();
-      console.warn("MCP initialize error:", error);
+      console.warn("Open-WebSearch MCP initialize error:", error);
       return false;
     } finally {
       clearTimeout(timeout);
@@ -153,15 +155,17 @@ export class WebSearchRouter {
     }
   }
 
-  private async mcpCallTool(
-    toolName: string,
-    args: Record<string, unknown>,
+  private async mcpSearch(
+    query: string,
+    options: { limit?: number; region?: Region } = {},
     abortSignal?: AbortSignal
-  ): Promise<unknown> {
-    if (!this.mcpInitialized || !this.mcpSessionId) {
-      const ok = await this.mcpInitialize(abortSignal);
-      if (!ok) throw new Error("MCP not initialized");
-    }
+  ): Promise<WebSearchResponse> {
+    const limit = options.limit ?? 10;
+    const engines = ["duckduckgo", "bing", "exa", "brave", "juejin", "startpage", "sogou", "hackernews"];
+
+    // Initialize MCP session if needed
+    const initialized = await this.mcpInitialize(abortSignal);
+    if (!initialized) throw new Error("Open-WebSearch MCP not initialized");
 
     const controller = new AbortController();
     const combinedSignal = abortSignal
@@ -175,8 +179,13 @@ export class WebSearchRouter {
         id: Date.now(),
         method: "tools/call",
         params: {
-          name: toolName,
-          arguments: args,
+          name: "search",
+          arguments: {
+            query,
+            limit,
+            engines,
+            searchMode: "auto",
+          },
         },
       };
 
@@ -194,150 +203,133 @@ export class WebSearchRouter {
 
       if (!response.ok) {
         this.resetMcpState();
-        throw new Error(`MCP tool call failed: ${response.status}`);
+        throw new Error(`Open-WebSearch MCP search failed: ${response.status}`);
       }
 
       // Parse SSE response
       const text = await response.text();
       const lines = text.split("\n");
+      let results: Array<{ title: string; url: string; snippet: string }> = [];
       for (const line of lines) {
         if (line.startsWith("data: ")) {
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.error) throw new Error(data.error.message ?? "MCP tool error");
-            if (data.result) return data.result;
+            if (data.error) throw new Error(data.error.message ?? "Open-WebSearch MCP tool error");
+            if (data.result) {
+              const result = data.result;
+              if (Array.isArray(result) && result.length > 0) {
+                // Result format: Array of SearchResult objects
+                results = result.map((item: unknown) => {
+                  if (typeof item !== "object" || item === null) return { title: "", url: "", snippet: "" };
+                  const r = item as Record<string, unknown>;
+                  return {
+                    title: typeof r.title === "string" ? r.title : "",
+                    url: typeof r.url === "string" ? r.url : "",
+                    snippet: typeof r.snippet === "string" ? r.snippet : "",
+                  };
+                });
+                break;
+              }
+            }
           } catch (e) {
-            if (e instanceof Error && e.message.startsWith("MCP tool")) throw e;
+            if (e instanceof Error && e.message.startsWith("Open-WebSearch")) throw e;
           }
         }
       }
 
-      throw new Error("No valid MCP response");
+      const searchResult: SearchResult[] = results.map((r, i) => ({
+        position: i + 1,
+        site_name: new URL(r.url).hostname,
+        title: r.title,
+        snippet: r.snippet,
+        url: sanitizeUrl(r.url) ?? r.url,
+        publishedAt: undefined,
+      }));
+
+      return { results: searchResult, total: searchResult.length, source: "mcp" };
     } finally {
       clearTimeout(timeout);
       controller.abort();
     }
   }
 
-  private async mcpSearch(
-    query: string,
-    options: { limit?: number; region?: Region } = {},
-    abortSignal?: AbortSignal
-  ): Promise<WebSearchResponse> {
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-    const limit = options.limit ?? 10;
-
-    // Navigate to DuckDuckGo HTML results
-    await this.mcpCallTool("browser_navigate", { url: searchUrl }, abortSignal);
-
-    // Extract results using browser_run_code
-    const extractScript = `
-      (() => {
-        const results = [];
-        // Try multiple selector patterns DuckDuckGo uses
-        const items = document.querySelectorAll('.result, .web-result, .links_main .result__body, .results__item');
-        for (const item of items) {
-          const titleEl = item.querySelector('.result__a, .result__title, .snippet__title, a[class*="title"], .result__link');
-          const urlEl = item.querySelector('.result__url, .result__snippet a, .snippet__url, a[class*="url"]');
-          const snippetEl = item.querySelector('.result__snippet, .snippet__text, .snippet__desc, [class*="snippet"]');
-          
-          const title = titleEl?.textContent?.trim() ?? "";
-          let url = urlEl?.textContent?.trim() ?? (titleEl?.getAttribute?.('href') ?? "");
-          const snippet = snippetEl?.textContent?.trim() ?? "";
-          
-          // DuckDuckGo html uses redirect links like //duckduckgo.com/l/?uddg=...
-          if (url.startsWith("//")) url = "https:" + url;
-          if (url.includes("duckduckgo.com/l/?")) {
-            try {
-              const u = new URL(url);
-              const uddg = u.searchParams.get("uddg");
-              if (uddg) url = decodeURIComponent(uddg);
-            } catch {}
-          }
-          
-          if (title && url) {
-            results.push({ title, url, snippet });
-            if (results.length >= ${limit}) break;
-          }
-        }
-        return results;
-      })()
-    `;
-
-    const runResult = await this.mcpCallTool("browser_run_code", { script: extractScript }, abortSignal);
-
-    let extracted: Array<{ title: string; url: string; snippet: string }> = [];
-    if (runResult && typeof runResult === "object") {
-      const content = runResult as { content?: unknown[] };
-      if (Array.isArray(content.content)) {
-        for (const item of content.content) {
-          if (item && typeof item === "object" && "text" in item) {
-            try {
-              extracted = JSON.parse(String(item.text));
-              break;
-            } catch {
-              // Not JSON, continue
-            }
-          }
-        }
-      }
-    }
-
-    const results: SearchResult[] = extracted.map((r, i) => ({
-      position: i + 1,
-      site_name: new URL(r.url).hostname,
-      title: r.title,
-      snippet: r.snippet,
-      url: sanitizeUrl(r.url) ?? r.url,
-      publishedAt: undefined,
-    }));
-
-    return { results, total: results.length, source: "mcp" };
-  }
-
   private async mcpScrape(url: string, abortSignal?: AbortSignal): Promise<ScrapedContent | null> {
     const safeUrl = sanitizeUrl(url);
     if (!safeUrl) return null;
 
-    await this.mcpCallTool("browser_navigate", { url: safeUrl }, abortSignal);
+    // Initialize MCP session if needed
+    const initialized = await this.mcpInitialize(abortSignal);
+    if (!initialized) throw new Error("Open-WebSearch MCP not initialized");
 
-    const extractScript = `
-      (() => {
-        const cloned = document.cloneNode(true) as Document;
-        const toRemove = cloned.querySelectorAll('script, style, nav, footer, header, aside, .ad, .ads, [class*="advert"], [id*="advert"]');
-        toRemove.forEach(el => el.remove());
-        
-        const title = cloned.title ?? "";
-        const text = cloned.body?.innerText?.slice(0, 10000) ?? "";
-        return { title, text };
-      })()
-    `;
+    const controller = new AbortController();
+    const combinedSignal = abortSignal
+      ? combineAbortSignals(abortSignal, controller.signal)
+      : controller.signal;
+    const timeout = setTimeout(() => controller.abort(), MCP_TIMEOUT_MS);
 
-    const runResult = await this.mcpCallTool("browser_run_code", { script: extractScript }, abortSignal);
+    try {
+      const callPayload = {
+        jsonrpc: "2.0",
+        id: Date.now(),
+        method: "tools/call",
+        params: {
+          name: "fetchWebContent",
+          arguments: {
+            url: safeUrl,
+            maxChars: 20000,
+            renderMode: "auto",
+            readability: true,
+            includeLinks: false,
+          },
+        },
+      };
 
-    let title = "";
-    let text = "";
-    if (runResult && typeof runResult === "object") {
-      const content = runResult as { content?: unknown[] };
-      if (Array.isArray(content.content)) {
-        for (const item of content.content) {
-          if (item && typeof item === "object" && "text" in item) {
-            try {
-              const parsed = JSON.parse(String(item.text));
-              title = parsed.title ?? "";
-              text = parsed.text ?? "";
-              break;
-            } catch {
-              // Not JSON
+      const response = await fetch(this.mcpUrl!, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+          "MCP-Protocol-Version": "2025-06-18",
+          "MCP-Session-Id": this.mcpSessionId!,
+        },
+        body: JSON.stringify(callPayload),
+        signal: combinedSignal,
+      });
+
+      if (!response.ok) {
+        this.resetMcpState();
+        throw new Error(`Open-WebSearch MCP scrape failed: ${response.status}`);
+      }
+
+      const text = await response.text();
+      const lines = text.split("\n");
+      let title = "";
+      let textContent = "";
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.error) throw new Error(data.error.message ?? "Open-WebSearch MCP tool error");
+            if (data.result) {
+              const result = data.result;
+              title = typeof result.title === "string" ? result.title : "";
+              textContent = typeof result.content === "string" ? result.content : "";
+              if (title && textContent) break;
             }
+          } catch (e) {
+            if (e instanceof Error && e.message.startsWith("Open-WebSearch")) throw e;
           }
         }
       }
+
+      if (!textContent) return null;
+
+      return { url: safeUrl, title, text: textContent, source: "mcp" };
+    } finally {
+      clearTimeout(timeout);
+      controller.abort();
     }
-
-    if (!text) return null;
-
-    return { url: safeUrl, title, text, source: "mcp" };
   }
 
   /** Build DuckDuckGo headers that look like a real browser. */
@@ -652,14 +644,14 @@ export class WebSearchRouter {
     const cached = await getCache<WebSearchResponse>(cacheKey, SEARCH_CACHE_MS);
     if (cached) return cached;
 
-    // Primary: Playwright MCP
+    // Primary: Open-WebSearch MCP
     if (this.mcpUrl) {
       try {
         const result = await this.mcpSearch(query, options, abortSignal);
         await setCache(cacheKey, result, SEARCH_CACHE_MS);
         return result;
       } catch (error) {
-        console.warn("MCP search failed, falling back to DuckDuckGo:", error);
+        console.warn("Open-WebSearch MCP search failed, falling back to DuckDuckGo:", error);
         this.resetMcpState();
       }
     }
@@ -679,7 +671,7 @@ export class WebSearchRouter {
     const cached = await getCache<ScrapedContent>(cacheKey, SCRAPE_CACHE_MS);
     if (cached) return cached;
 
-    // Primary: Playwright MCP
+    // Primary: Open-WebSearch MCP
     if (this.mcpUrl) {
       try {
         const result = await this.mcpScrape(safeUrl, abortSignal);
@@ -688,7 +680,7 @@ export class WebSearchRouter {
           return result;
         }
       } catch (error) {
-        console.warn("MCP scrape failed, falling back to DuckDuckGo:", error);
+        console.warn("Open-WebSearch MCP scrape failed, falling back to DuckDuckGo:", error);
         this.resetMcpState();
       }
     }
@@ -705,7 +697,7 @@ export class WebSearchRouter {
     let mcpAvailable = false;
     let duckDuckGoAvailable = false;
 
-    // Check MCP availability
+    // Check Open-WebSearch MCP availability (primary provider)
     if (this.mcpUrl) {
       const controller = new AbortController();
       const combinedSignal = abortSignal
@@ -741,7 +733,6 @@ export class WebSearchRouter {
           const sessionId = response.headers.get("mcp-session-id");
           if (sessionId) {
             this.mcpSessionId = sessionId;
-            this.mcpInitialized = true;
           }
         } else {
           this.resetMcpState();
@@ -774,7 +765,7 @@ export class WebSearchRouter {
     }
 
     return {
-      // Available if MCP is up OR DuckDuckGo is reachable (fallback is always attempted)
+      // Available if Open-WebSearch MCP is up OR DuckDuckGo is reachable (fallback)
       available: mcpAvailable || duckDuckGoAvailable,
       mcpAvailable,
       mcpUrl: this.mcpUrl,
@@ -785,10 +776,3 @@ export class WebSearchRouter {
 }
 
 export const webSearchRouter = new WebSearchRouter();
-
-// Backward compatibility aliases (will be removed after migration)
-export const tinyfishRouter = {
-  tinyfishSearch: webSearchRouter.webSearch.bind(webSearchRouter),
-  tinyfishScrape: webSearchRouter.webScrape.bind(webSearchRouter),
-  getTinyfishStatus: webSearchRouter.getWebSearchStatus.bind(webSearchRouter),
-};

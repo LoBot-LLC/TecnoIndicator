@@ -39,7 +39,33 @@ export const MAX_SOLUTIONS = 3;
 export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
 
 /**
+ * URL of the always-on Open-WebSearch MCP server (streamable HTTP transport).
+ * This is the **primary** web search provider for live prices and the 8 dynamic
+ * factors (FIFO). It supports multi-engine search (DuckDuckGo, Bing, Brave, Exa,
+ * etc.) with optional Playwright browser rendering — no API keys required.
+ *
+ * Set via `OPEN_WEBSEARCH_MCP_URL` environment variable, e.g.:
+ *   https://open-web-search.vercel.app/mcp   (public hosted instance, default)
+ *   http://localhost:3000/mcp                (local daemon: `open-websearch serve`)
+ *   http://localhost:8931/mcp                (custom remote MCP server)
+ *
+ * Set to an empty string to explicitly disable MCP and use DuckDuckGo HTTP
+ * fallback only. If unset, defaults to the public hosted instance so the Kilo
+ * Gateway AI models can use Open-WebSearch out of the box; in Vercel/cloud
+ * deployments you can override with a reachable remote URL.
+ * Start a local daemon with:
+ *   npx open-websearch@latest serve
+ * Configure the daemon with:
+ *   DEFAULT_SEARCH_ENGINE=duckduckgo PORT=3000 npx open-websearch@latest serve
+ */
+export const OPEN_WEBSEARCH_MCP_URL: string | null =
+  process.env.OPEN_WEBSEARCH_MCP_URL !== undefined
+    ? (process.env.OPEN_WEBSEARCH_MCP_URL.trim() || null)
+    : "https://open-web-search.vercel.app/mcp";
+
+/**
  * URL of the always-on Playwright MCP server (streamable HTTP transport).
+ * Kept for backwards compatibility / optional local browser automation.
  * Set via `PLAYWRIGHT_MCP_URL` environment variable, e.g.:
  *   http://localhost:8931/mcp          (local dev)
  *   https://your-mcp-host/mcp         (remote/cloud MCP server)

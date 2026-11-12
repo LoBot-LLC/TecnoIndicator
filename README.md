@@ -18,7 +18,7 @@ A modern, clean, professional single-page web application that delivers energy p
   - Horizon slider (1–10 years)
   - Three commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Electricity (USD/MWh)**, and **Global Water (USD/m³)**
   - Three scenarios per commodity: Average, Optimistic (Min), Pessimistic (Max)
-  - **Per-commodity "Fetch/Re-fetch Live Price"** on each card — retrieves the latest prices from web-searched URLs (Playwright MCP primary, DuckDuckGo HTTP fallback) and updates the displayed numbers/quotes
+  - **Per-commodity "Fetch/Re-fetch Live Price"** on each card — retrieves the latest prices from web-searched URLs (Open-WebSearch MCP primary, DuckDuckGo HTTP fallback) and updates the displayed numbers/quotes
   - Clean data table + interactive line chart (Chart.js)
 - **Real-time Feel** — Live-updating timestamp + “Refresh Data” button that perturbs values within realistic ranges.
 - **Key Factors & Drivers** — Dynamic grid of 8 major price influencers with:
@@ -35,10 +35,10 @@ A modern, clean, professional single-page web application that delivers energy p
   - Accessibility (ARIA labels, keyboard navigation, high contrast)
   - Clear disclaimers throughout
 - **AI Model Integration**
-  - Search and fetch latest commodity prices from web-searched URLs via an always-on **Playwright MCP server** (primary) with **DuckDuckGo HTTP search** fallback (no full live browser fetch required per request)
+  - Search and fetch latest commodity prices from web-searched URLs via an always-on **Open-WebSearch MCP server** (primary) with **DuckDuckGo HTTP search** fallback (no full live browser fetch required per request)
   - Search, analyze and display 8 dynamic factors (FIFO rolling window) affecting the prices
   - Updating 3 dynamic AI-powered solutions based on the updating factors
-  - Executed via models from **Kilo Gateway** with evidence gathered through Playwright MCP / DuckDuckGo (fallback only when MCP fails)
+  - Executed via models from **Kilo Gateway** with evidence gathered through Open-WebSearch MCP / DuckDuckGo (fallback only when MCP fails)
 
 ---
 
@@ -58,11 +58,12 @@ A modern, clean, professional single-page web application that delivers energy p
    cp .env.example .env.local
    ```
 
-3. Start the always-on Playwright MCP server (primary web search provider):
+3. Start the always-on Open-WebSearch MCP server (primary web search provider):
 
    ```bash
-   npm run playwright:mcp
-   # Default endpoint: http://localhost:8931/mcp
+   npm run open-websearch:mcp
+   # Default endpoint: https://open-web-search.vercel.app/mcp (public hosted)
+   # Or locally: http://localhost:3000/mcp (set OPEN_WEBSEARCH_MCP_URL=http://localhost:3000/mcp)
    ```
 
 4. Start the development server on <http://localhost:3000>:
@@ -96,7 +97,7 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/dynamic-factors` | The 8 curated global price factors |
 | `/api/regional-factors?region=` | The 8 curated factors for one region |
 | `/api/solutions?region=` | Up to 3 AI-curated strategy recommendations |
-| `/api/health` | Gateway/key availability, Playwright MCP/DuckDuckGo web search status, plus real cache status |
+| `/api/health` | Gateway/key availability, Open-WebSearch MCP/DuckDuckGo web search status, plus real cache status |
 | `/api/ai-forecast` | 11-year global forecast band |
 | `/api/regional-forecast?region=` | 11-year region-specific forecast band |
 | `/api/cron/curate-factors` | Nightly factor re-curation (Vercel cron, `0 2 * * *` UTC) |
@@ -112,13 +113,14 @@ these as project environment variables.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `PLAYWRIGHT_MCP_URL` | Recommended | URL of the always-on Playwright MCP server (streamable HTTP). Local dev: `http://localhost:8931/mcp`. Cloud/Vercel: set to a reachable remote MCP URL (e.g. `https://your-mcp-host/mcp`) or leave empty/unset to disable MCP probing and use DuckDuckGo fallback only (avoids unreachable `localhost` in serverless). |
-| `DUCKDUCKGO_ENABLED` | Optional | Informational; DuckDuckGo HTTP search is the **fallback** and is used automatically when MCP is unavailable/fails. No API key required. |
+| `OPEN_WEBSEARCH_MCP_URL` | Recommended | URL of the always-on Open-WebSearch MCP server (streamable HTTP). Public hosted instance: `https://open-web-search.vercel.app/mcp`. Local daemon: `http://localhost:3000/mcp` (start with `npx open-websearch@latest serve`). Set to empty string to disable MCP and use DuckDuckGo fallback only. |
+| `PLAYWRIGHT_MCP_URL` | Optional | URL of the always-on Playwright MCP server (streamable HTTP). Local dev: `http://localhost:8931/mcp`. Cloud/Vercel: set to a reachable remote MCP URL or leave empty/unset to disable MCP probing. Not required when using Open-WebSearch MCP as primary. |
+| `DUCKDUCKGO_ENABLED` | Optional | Informational; DuckDuckGo HTTP search is the **fallback** and is used automatically when Open-WebSearch MCP is unavailable/fails. No API key required. |
 | `KILO_GATEWAY_KEY` or `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Required for live AI | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional | Upstash Redis REST credentials for a shared cache across serverless instances. `REDIS_URL` / `REDIS_TOKEN` are accepted as aliases. Without Redis an in-memory per-instance cache is used. |
 | `FUEL_BASE_DIESEL_PRICE`, `FUEL_FACTOR`, `GRID_LOSS_FACTOR`, `WATER_SCARCITY_MULTIPLIER` | Optional | Override the deterministic analytics constants. |
 
-**Web search behavior:** The software uses the Playwright MCP server by default for web search (retrieving the latest information and URLs for prices and the 8 dynamic reasons/FIFO factors). DuckDuckGo is not used as a default path; it is activated only if the Playwright MCP server fails to operate or is not configured/reachable. Commodity re-fetch actions request the latest prices derived from those web-searched URLs/results (MCP primary, DuckDuckGo fallback) rather than performing separate ad-hoc live page scrapes. The health endpoint's MCP availability probe uses the same timeout as the runtime MCP client (25s) so a slow cold-start does not falsely report `mcpAvailable:false`. In Vercel/cloud deployments where `localhost` is unreachable, set `PLAYWRIGHT_MCP_URL` to a remote MCP server URL or leave it unset/empty to disable MCP probing and rely on DuckDuckGo fallback (avoiding false negatives and wasted probe time).
+**Web search behavior:** The software uses the Open-WebSearch MCP server by default for web search (retrieving the latest information and URLs for prices and the 8 dynamic reasons/FIFO factors). Open-WebSearch is a multi-engine MCP server supporting DuckDuckGo, Bing, Brave, Exa, and other engines with optional Playwright browser rendering — no API keys required. DuckDuckGo HTTP search is used only if Open-WebSearch MCP fails to operate or is not reachable. Commodity re-fetch actions request the latest prices derived from those web-searched URLs/results (Open-WebSearch MCP primary, DuckDuckGo fallback) rather than performing separate ad-hoc live page scrapes. The health endpoint's MCP availability probe uses the same timeout as the runtime MCP client (25s) so a slow cold-start does not falsely report `mcpAvailable:false`.
 
 The site degrades gracefully: with no keys or MCP server available every endpoint still
 returns a response, backed by public benchmark defaults, and the health endpoint
@@ -146,8 +148,8 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js** — Runtime environment (via Next.js on Vercel)
 - **Kilo Gateway API** — AI model orchestration (price extraction, factor curation, solutions, forecasting)
-- **Playwright MCP Server** (always-on, primary) — Streamable HTTP MCP server (`@playwright/mcp`) used for web search/scrape to fetch live prices and evidence for dynamic factors
-- **DuckDuckGo HTTP search** (fallback) — HTML/Lite/Instant Answer endpoints used only when the Playwright MCP server fails (health checks are best-effort; fallback is attempted at runtime even in restricted environments)
+- **Open-WebSearch MCP Server** (always-on, primary) — Multi-engine streamable HTTP MCP server (`open-websearch`) used for web search/scrape to fetch live prices and evidence for dynamic factors. Supports DuckDuckGo, Bing, Brave, Exa, and other engines with optional Playwright browser rendering. No API keys required. Public hosted instance at `https://open-web-search.vercel.app/mcp` or run locally via `npx open-websearch@latest serve`.
+- **DuckDuckGo HTTP search** (fallback) — HTML/Lite/Instant Answer endpoints used only when the Open-WebSearch MCP server fails (health checks are best-effort; fallback is attempted at runtime even in restricted environments)
 - **Redis (Upstash / Vercel KV)** — Distributed caching for API responses (optional; in-memory fallback)
 
 #### Data & Models (`src/lib/`)
@@ -207,7 +209,7 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 │       │   ├── analytics.ts               # Global indices computation
 │       │   ├── cron-curate-factors.ts     # Nightly curation job
 │       │   ├── dynamic-factors.ts         # Global factor curation
-│       │   ├── factor-analysis.ts         # Factor impact analysis (MCP/DDG evidence)
+│   │       ├── factor-analysis.ts         # Factor impact analysis (Open-WebSearch MCP / DDG evidence)
 │       │   ├── health.ts                  # Health check implementation
 │       │   ├── prices.ts                  # Live price fetching (MCP primary, DDG fallback)
 │       │   ├── regional-analytics.ts      # Regional indices computation
@@ -221,14 +223,15 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 │           ├── kiloRouter.ts              # Kilo Gateway model routing
 │           ├── redis.ts                   # Upstash Redis client
 │           ├── regions.ts                 # Region definitions & metadata
-│           ├── tinyfishRouter.ts          # Deprecated compat shim (re-exports web search)
+│   └── tinyfishRouter.ts          # REMOVED — TinyFish API keys removed; compat shim deleted
 │           ├── types.ts                   # Shared TypeScript interfaces
 │           ├── validation.ts              # Zod-free validation helpers
 │           └── webSearchRouter.ts         # Playwright MCP (primary) + DuckDuckGo fallback
 │
-├── mcp/                                    # Always-on Playwright MCP server assets
-│   ├── playwright-mcp-server.mjs          # MCP server launcher (streamable HTTP)
-│   └── README.md                          # MCP run/config notes
+├── mcp/                                    # Always-on MCP server assets
+│   ├── open-websearch-mcp-server.mjs       # Open-WebSearch MCP server launcher (streamable HTTP)
+│   ├── playwright-mcp-server.mjs           # Playwright MCP server launcher (streamable HTTP, optional)
+│   └── README.md                           # MCP run/config notes
 │
 ├── src/                                    # Frontend source code
 │   ├── components/                        # React UI components

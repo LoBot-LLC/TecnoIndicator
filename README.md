@@ -146,7 +146,7 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 - **Node.js** — Runtime environment (via Next.js on Vercel)
 - **Kilo Gateway API** — AI model orchestration (price extraction, factor curation, solutions, forecasting)
 - **Playwright MCP Server** (always-on, primary) — Streamable HTTP MCP server (`@playwright/mcp`) used for web search/scrape to fetch live prices and evidence for dynamic factors
-- **DuckDuckGo HTTP search** (fallback) — HTML/Lite/Instant Answer endpoints used only when the Playwright MCP server fails
+- **DuckDuckGo HTTP search** (fallback) — HTML/Lite/Instant Answer endpoints used only when the Playwright MCP server fails (health checks are best-effort; fallback is attempted at runtime even in restricted environments)
 - **Redis (Upstash / Vercel KV)** — Distributed caching for API responses (optional; in-memory fallback)
 
 #### Data & Models (`src/lib/`)

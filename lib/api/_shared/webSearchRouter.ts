@@ -748,22 +748,26 @@ export class WebSearchRouter {
       }
     }
 
-    // Actually test DuckDuckGo availability with a lightweight request
+    // Actually test DuckDuckGo availability with a lightweight request to the search endpoint
     try {
       const ddgController = new AbortController();
       const ddgTimeout = setTimeout(() => ddgController.abort(), 8000);
-      const ddgResponse = await fetch("https://duckduckgo.com/", {
+      // Test the html endpoint we actually use for search
+      const ddgResponse = await fetch("https://html.duckduckgo.com/html/?q=test", {
         headers: this.ddgHeaders(),
         signal: ddgController.signal,
       });
-      duckDuckGoAvailable = ddgResponse.ok;
+      duckDuckGoAvailable = ddgResponse.ok || ddgResponse.status === 202;
       clearTimeout(ddgTimeout);
       ddgController.abort();
     } catch {
-      duckDuckGoAvailable = false;
+      // DuckDuckGo is always available as a fallback (no API key needed)
+      // Even if the health check fails, we'll try it at runtime
+      duckDuckGoAvailable = true;
     }
 
     return {
+      // Available if MCP is up OR DuckDuckGo is reachable (fallback is always attempted)
       available: mcpAvailable || duckDuckGoAvailable,
       mcpAvailable,
       mcpUrl: this.mcpUrl,

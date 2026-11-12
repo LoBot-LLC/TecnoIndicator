@@ -156,7 +156,7 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 - **Event & Factor Models** — Structured types for price drivers and scenarios
 
 #### Development & Build Tooling
-- **pnpm** — Fast, disk-efficient package manager
+- **npm** — Fast, reliable package manager (node_modules structure)
 - **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run lint` / `npm run build`)
 - **PostCSS** — Tailwind CSS 4 processing pipeline
 - **Vercel Analytics** — Real-user monitoring (RUM)
@@ -279,7 +279,6 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 ├── next.config.ts                         # Next.js configuration
 ├── package.json                           # Root dependencies & scripts
 ├── package-lock.json                      # npm lockfile
-├── pnpm-lock.yaml                         # pnpm lockfile (preferred)
 ├── postcss.config.mjs                     # PostCSS + Tailwind CSS 4 config
 ├── README.md                              # This file
 ├── tsconfig.json                          # TypeScript configuration

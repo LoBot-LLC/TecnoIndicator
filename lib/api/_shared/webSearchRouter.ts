@@ -1,5 +1,5 @@
 import { getCache, setCache } from "./cache";
-import { SEARCH_CACHE_MS, SCRAPE_CACHE_MS, sanitizeUrl } from "./http";
+import { SEARCH_CACHE_MS, SCRAPE_CACHE_MS, sanitizeUrl, PLAYWRIGHT_MCP_URL } from "./http";
 import type { Region } from "./regions";
 
 export interface SearchResult {
@@ -62,7 +62,14 @@ export class WebSearchRouter {
   constructor() {
     // Always-on Playwright MCP server is the primary search provider.
     // DuckDuckGo HTTP search is used only when the MCP server is unavailable.
-    this.mcpUrl = process.env.PLAYWRIGHT_MCP_URL ?? "http://localhost:8931/mcp";
+    //
+    // - Set PLAYWRIGHT_MCP_URL to a remote MCP server URL for cloud/deployed
+    //   environments (e.g. https://your-mcp-host/mcp).
+    // - Set PLAYWRIGHT_MCP_URL to an empty string to explicitly disable MCP and
+    //   use DuckDuckGo fallback only.
+    // - If unset, default to localhost for local dev; in Vercel/cloud
+    //   deployments default to null to avoid probing unreachable localhost.
+    this.mcpUrl = PLAYWRIGHT_MCP_URL;
   }
 
   /** Reset MCP session state so the next call re-initializes from scratch. */

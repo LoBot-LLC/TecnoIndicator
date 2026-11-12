@@ -1,7 +1,7 @@
 import { REGIONS, type Region } from "../_shared/regions";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { webSearchRouter } from "../_shared/webSearchRouter";
-import { analyticsCacheKey } from "../_shared/http";
+import { analyticsCacheKey, PLAYWRIGHT_MCP_URL } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
@@ -179,13 +179,13 @@ export async function handleHealth(_req: Request): Promise<Response> {
         error: "Health check temporarily unavailable",
         onlineModelConnected: false,
         kiloGateway: { available: false, usableKeys: 0, configuredKeys: 0, keyFormats: { jwt: 0, opaque: 0, unrecognized: 0 } },
-        webSearch: {
-          available: false,
-          mcpAvailable: false,
-          mcpUrl: process.env.PLAYWRIGHT_MCP_URL ?? "http://localhost:8931/mcp",
-          duckDuckGoAvailable: true,
-          fallbackUsed: true,
-        },
+      webSearch: {
+        available: false,
+        mcpAvailable: false,
+        mcpUrl: PLAYWRIGHT_MCP_URL,
+        duckDuckGoAvailable: true,
+        fallbackUsed: true,
+      },
       },
       { status: 200 },
     );

@@ -41,11 +41,18 @@ export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
 /**
  * URL of the always-on Playwright MCP server (streamable HTTP transport).
  * Set via `PLAYWRIGHT_MCP_URL` environment variable, e.g.:
- *   http://localhost:8931/mcp
- * Start the server with:
+ *   http://localhost:8931/mcp          (local dev)
+ *   https://your-mcp-host/mcp         (remote/cloud MCP server)
+ * Set to an empty string to disable MCP and use DuckDuckGo fallback only.
+ * If unset, defaults to localhost for local dev; in Vercel/cloud deployments
+ * defaults to null to avoid probing unreachable localhost.
+ * Start the local server with:
  *   npx @playwright/mcp@latest --port 8931 --host 0.0.0.0 --headless --shared-browser-context
  */
-export const PLAYWRIGHT_MCP_URL = process.env.PLAYWRIGHT_MCP_URL ?? "http://localhost:8931/mcp";
+export const PLAYWRIGHT_MCP_URL: string | null =
+  process.env.PLAYWRIGHT_MCP_URL !== undefined
+    ? (process.env.PLAYWRIGHT_MCP_URL.trim() || null)
+    : (process.env.VERCEL ? null : "http://localhost:8931/mcp");
 
 /**
  * The single canonical cache key for curated price factors.

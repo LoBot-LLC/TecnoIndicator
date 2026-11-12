@@ -7,6 +7,8 @@ import {
 } from "./http";
 import { getCache, setCache } from "./cache";
 import type { Region } from "./regions";
+import { duckDuckGoScrape, duckDuckGoSearch, getDuckDuckGoStatus } from "./duckDuckGoSearch";
+import { getPlaywrightStatus, playwrightScrape, playwrightSearch } from "./playwrightSearch";
 
 export interface TinyFishKeyState {
   keyIndex: number;
@@ -32,6 +34,7 @@ interface TinyFishSearchResponse {
   results: SearchResult[];
   total: number;
   keyIndex: number;
+  source?: "tinyfish" | "playwright" | "duckduckgo";
 }
 
 interface ScrapedContent {
@@ -39,6 +42,7 @@ interface ScrapedContent {
   title: string;
   text: string;
   keyIndex: number;
+  source?: "tinyfish" | "playwright" | "duckduckgo";
 }
 
 const SEARCH_URL = "https://api.search.tinyfish.ai";
@@ -249,6 +253,7 @@ export class TinyFishRouter {
             results,
             total: data.total_results ?? 0,
             keyIndex: keyState.keyIndex,
+            source: "tinyfish",
           };
 
           keyState.lastCheckedAt = new Date().toISOString();
@@ -290,6 +295,40 @@ export class TinyFishRouter {
       keyState = this.selectKey();
     }
 
+    // Fallback 1: Playwright MCP (always-on) when all TinyFish keys fail
+    try {
+      const playwrightResult = await playwrightSearch(query, options, abortSignal);
+      if (playwrightResult.results.length > 0) {
+        const result: TinyFishSearchResponse = {
+          results: playwrightResult.results,
+          total: playwrightResult.total,
+          keyIndex: -2,
+          source: "playwright",
+        };
+        await setCache(cacheKey, result, SEARCH_CACHE_MS);
+        return result;
+      }
+    } catch (error) {
+      console.warn("Playwright fallback search failed:", error);
+    }
+
+    // Fallback 2: DuckDuckGo HTTP request if Playwright also fails
+    try {
+      const ddgResult = await duckDuckGoSearch(query, options, abortSignal);
+      if (ddgResult.results.length > 0) {
+        const result: TinyFishSearchResponse = {
+          results: ddgResult.results,
+          total: ddgResult.total,
+          keyIndex: -3,
+          source: "duckduckgo",
+        };
+        await setCache(cacheKey, result, SEARCH_CACHE_MS);
+        return result;
+      }
+    } catch (error) {
+      console.warn("DuckDuckGo fallback search failed:", error);
+    }
+
     const cachedFallback = await getCache<TinyFishSearchResponse>(
       cacheKey,
       60 * 60 * 1000
@@ -297,7 +336,7 @@ export class TinyFishRouter {
     if (cachedFallback) return cachedFallback;
 
     console.error("TinyFish search failed:", lastError?.message);
-    return { results: [], total: 0, keyIndex: -1 };
+    return { results: [], total: 0, keyIndex: -1, source: "tinyfish" };
   }
 
   async tinyfishScrape(url: string, abortSignal?: AbortSignal): Promise<ScrapedContent | null> {
@@ -352,6 +391,7 @@ export class TinyFishRouter {
             title: firstResult?.title ?? "",
             text: typeof firstResult?.text === "string" ? firstResult.text.slice(0, 10000) : "",
             keyIndex: keyState.keyIndex,
+            source: "tinyfish",
           };
 
           keyState.lastCheckedAt = new Date().toISOString();
@@ -392,6 +432,28 @@ export class TinyFishRouter {
       keyState = this.selectKey();
     }
 
+    // Fallback 1: Playwright MCP (always-on) when all TinyFish keys fail
+    try {
+      const pw = await playwrightScrape(safeUrl, abortSignal);
+      if (pw && pw.text) {
+        await setCache(cacheKey, { ...pw, source: "playwright" }, SCRAPE_CACHE_MS);
+        return { ...pw, source: "playwright" };
+      }
+    } catch (error) {
+      console.warn("Playwright fallback scrape failed:", error);
+    }
+
+    // Fallback 2: DuckDuckGo HTTP fetch if Playwright also fails
+    try {
+      const ddg = await duckDuckGoScrape(safeUrl, abortSignal);
+      if (ddg && ddg.text) {
+        await setCache(cacheKey, { ...ddg, source: "duckduckgo" }, SCRAPE_CACHE_MS);
+        return { ...ddg, source: "duckduckgo" };
+      }
+    } catch (error) {
+      console.warn("DuckDuckGo fallback scrape failed:", error);
+    }
+
     console.error("TinyFish scrape failed:", lastError?.message);
     return null;
   }
@@ -401,6 +463,8 @@ export class TinyFishRouter {
     configuredKeys: number;
     usableKeys: number;
     rateLimitedKeys: number[];
+    playwrightFallback: { available: boolean; mode: "always-on" };
+    duckDuckGoFallback: { available: boolean };
   }> {
     if (!quick && !this.initialized) {
       await this.refreshTinyfishStatus(true, abortSignal);
@@ -421,6 +485,9 @@ export class TinyFishRouter {
       }));
     }
 
+    const playwrightFallback = await getPlaywrightStatus();
+    const duckDuckGoFallback = getDuckDuckGoStatus();
+
     if (!this.initialized) {
       // Quick mode: return basic status even if not initialized
       const usableKeys = this.keyStates.filter(k => k.available && !k.rateLimited).length;
@@ -433,6 +500,8 @@ export class TinyFishRouter {
         configuredKeys: this.keyStates.length,
         usableKeys,
         rateLimitedKeys,
+        playwrightFallback,
+        duckDuckGoFallback,
       };
     }
 
@@ -443,6 +512,8 @@ export class TinyFishRouter {
       rateLimitedKeys: this.keyStates
         .map((k, i) => (k.rateLimited ? i : -1))
         .filter(i => i >= 0),
+      playwrightFallback,
+      duckDuckGoFallback,
     };
   }
 

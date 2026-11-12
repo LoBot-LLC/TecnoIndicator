@@ -38,6 +38,7 @@ A modern, clean, professional single-page web application that delivers energy p
   - Search, analyze and display 8 dynamic factors affecting the prices
   - Updating 3 dynamic AI-powered solutions based on the updating factors 
   - Executed via models from Kilo Gateway and TinyFish API
+  - **Web search fallback chain (issue #46):** TinyFish API keys (primary, rotated) → Playwright MCP browser search/scrape (always-on fallback) → DuckDuckGo HTTP search/scrape (final fallback). Fallbacks are used only when higher-priority providers fail, so current prices and the 8 dynamic FIFO factors continue to update even if all TinyFish API keys are unavailable.
 
 ---
 
@@ -88,7 +89,7 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/dynamic-factors` | The 8 curated global price factors |
 | `/api/regional-factors?region=` | The 8 curated factors for one region |
 | `/api/solutions?region=` | Up to 3 AI-curated strategy recommendations |
-| `/api/health` | Gateway/key availability plus real cache status |
+| `/api/health` | Gateway/key availability, web-search fallback status, plus real cache status |
 | `/api/ai-forecast` | 11-year global forecast band |
 | `/api/regional-forecast?region=` | 11-year region-specific forecast band |
 | `/api/cron/curate-factors` | Nightly factor re-curation (Vercel cron, `0 2 * * *` UTC) |
@@ -96,6 +97,13 @@ The backend runs as Next.js route handlers. The client calls these relative path
 All factor producers and consumers share a single canonical cache key,
 `dynamic-factors:{global|region}`, so the reasons shown in the UI are exactly
 the reasons the solutions were generated from.
+
+Web search for live prices and factor curation follows a strict fallback chain:
+1. **TinyFish API keys** (`TINYFISH_KEY_1..5`) — primary provider with key rotation
+2. **Playwright MCP (always-on)** — browser-based search/scrape fallback activated only when all TinyFish keys fail
+3. **DuckDuckGo HTTP** — final HTTP fallback if TinyFish and Playwright are unavailable
+
+Fallback providers are never used by default while TinyFish keys are operational.
 
 ### Environment variables
 
@@ -135,7 +143,9 @@ reports `onlineModelConnected: false`.
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js** — Runtime environment (via Next.js on Vercel)
 - **Kilo Gateway API** — AI model orchestration (price extraction, factor curation, solutions, forecasting)
-- **TinyFish API** — Market data search & scraping
+- **TinyFish API** — Primary market data search & scraping (rotated across up to 5 keys)
+- **Playwright MCP (always-on)** — Browser-based web search/scrape fallback via `playwright` when all TinyFish keys fail
+- **DuckDuckGo HTTP fallback** — Lightweight HTML/HTTP search & scrape fallback when TinyFish and Playwright both fail
 - **Redis (Upstash / Vercel KV)** — Distributed caching for API responses (optional; in-memory fallback)
 
 #### Data & Models (`src/lib/`)
@@ -205,11 +215,13 @@ reports `onlineModelConnected: false`.
 │       └── _shared/                       # Cross-cutting utilities
 │           ├── cache.ts                   # Redis + in-memory cache abstraction
 │           ├── deterministicAnalytics.ts  # Fuel/grid/water math
+│           ├── duckDuckGoSearch.ts        # DuckDuckGo HTTP search/scrape fallback
 │           ├── http.ts                    # TinyFish/Kilo HTTP clients
 │           ├── kiloRouter.ts              # Kilo Gateway model routing
+│           ├── playwrightSearch.ts        # Playwright MCP browser search/scrape fallback (always-on)
 │           ├── redis.ts                   # Upstash Redis client
 │           ├── regions.ts                 # Region definitions & metadata
-│           ├── tinyfishRouter.ts          # TinyFish search/scrape routing
+│           ├── tinyfishRouter.ts          # TinyFish search/scrape routing with Playwright & DuckDuckGo fallbacks
 │           ├── types.ts                   # Shared TypeScript interfaces
 │           └── validation.ts              # Zod schemas for request validation
 │

@@ -227,12 +227,18 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
       }
 
       if (prices.oil && prices.electricity && prices.water) {
+        const sourceLabel =
+          searchResults.find((r) => (r as { source?: string }).source === "playwright")
+            ? "Kilo AI analysis of Playwright MCP search results"
+            : searchResults.find((r) => (r as { source?: string }).source === "duckduckgo")
+              ? "Kilo AI analysis of DuckDuckGo search results"
+              : "Kilo AI analysis of TinyFish search results";
         return {
           oil: { ...prices.oil, isLive: true },
           electricity: { ...prices.electricity, isLive: true },
           water: { ...prices.water, isLive: true },
           asOf: new Date().toISOString(),
-          dataSource: "Kilo AI analysis of TinyFish search results",
+          dataSource: sourceLabel,
           isLive: true,
         };
       }
@@ -259,22 +265,34 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
   });
 
   if (Object.values(prices).every((p) => p.price !== null)) {
+    const fallbackSource =
+      searchResults.find((r) => (r as { source?: string }).source === "playwright")
+        ? "Playwright MCP search (deterministic fallback)"
+        : searchResults.find((r) => (r as { source?: string }).source === "duckduckgo")
+          ? "DuckDuckGo search (deterministic fallback)"
+          : "TinyFish search (deterministic fallback)";
     return {
       oil: { price: prices.oil.price as number, unit: getCommodityUnit("oil"), source: prices.oil.source, isLive: true },
       electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true },
       water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true },
       asOf: new Date().toISOString(),
-      dataSource: "TinyFish search (deterministic fallback)",
+      dataSource: fallbackSource,
       isLive: true,
     };
   }
 
+  const noDataSource =
+    searchResults.find((r) => (r as { source?: string }).source === "playwright")
+      ? "Playwright MCP search (insufficient data)"
+      : searchResults.find((r) => (r as { source?: string }).source === "duckduckgo")
+        ? "DuckDuckGo search (insufficient data)"
+        : "TinyFish search (insufficient data)";
   return {
     oil: { price: 0, unit: "USD per barrel", source: "insufficient data", isLive: false },
     electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false },
     water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false },
     asOf: new Date().toISOString(),
-    dataSource: "TinyFish search (insufficient data)",
+    dataSource: noDataSource,
     isLive: false,
   };
 }

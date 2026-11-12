@@ -24,6 +24,10 @@ interface HealthResponse {
     usableKeys: number;
     configuredKeys: number;
   };
+  webSearchFallbacks: {
+    playwrightMcp: { available: boolean; mode: "always-on" };
+    duckDuckGo: { available: boolean };
+  };
   onlineModelConnected: boolean;
   analytics: {
     global: {
@@ -137,8 +141,11 @@ export async function handleHealth(_req: Request): Promise<Response> {
       kiloStatus.available &&
       kiloStatus.usableKeys > 0 &&
       kiloStatus.zeroCostModels.length > 0 &&
-      tinyfishStatus.available &&
-      tinyfishStatus.usableKeys > 0;
+      (
+        (tinyfishStatus.available && tinyfishStatus.usableKeys > 0) ||
+        tinyfishStatus.playwrightFallback?.available ||
+        tinyfishStatus.duckDuckGoFallback?.available
+      );
 
     const response: HealthResponse = {
       kiloGateway: {
@@ -151,6 +158,10 @@ export async function handleHealth(_req: Request): Promise<Response> {
         available: tinyfishStatus.available,
         usableKeys: tinyfishStatus.usableKeys,
         configuredKeys: tinyfishStatus.configuredKeys,
+      },
+      webSearchFallbacks: {
+        playwrightMcp: tinyfishStatus.playwrightFallback ?? { available: true, mode: "always-on" },
+        duckDuckGo: tinyfishStatus.duckDuckGoFallback ?? { available: true },
       },
       onlineModelConnected,
       analytics: {
@@ -176,6 +187,10 @@ export async function handleHealth(_req: Request): Promise<Response> {
         onlineModelConnected: false,
         kiloGateway: { available: false, usableKeys: 0, configuredKeys: 0, keyFormats: { jwt: 0, opaque: 0, unrecognized: 0 } },
         tinyfish: { available: false, usableKeys: 0, configuredKeys: 0 },
+        webSearchFallbacks: {
+          playwrightMcp: { available: true, mode: "always-on" },
+          duckDuckGo: { available: true },
+        },
       },
       { status: 200 },
     );

@@ -34,6 +34,11 @@ export interface WebSearchStatus {
 
 const MCP_TIMEOUT_MS = 25000;
 const DUCKDUCKGO_TIMEOUT_MS = 15000;
+const DUCKDUCKGO_RETRY_ATTEMPTS = 2;
+const DUCKDUCKGO_RETRY_BACKOFF_MS = 2000;
+
+const DDG_USER_AGENT =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
 function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   const controller = new AbortController();
@@ -58,6 +63,12 @@ export class WebSearchRouter {
     // Always-on Playwright MCP server is the primary search provider.
     // DuckDuckGo HTTP search is used only when the MCP server is unavailable.
     this.mcpUrl = process.env.PLAYWRIGHT_MCP_URL ?? "http://localhost:8931/mcp";
+  }
+
+  /** Reset MCP session state so the next call re-initializes from scratch. */
+  private resetMcpState(): void {
+    this.mcpSessionId = null;
+    this.mcpInitialized = false;
   }
 
   private async mcpInitialize(abortSignal?: AbortSignal): Promise<boolean> {
@@ -94,6 +105,7 @@ export class WebSearchRouter {
       });
 
       if (!response.ok) {
+        this.resetMcpState();
         console.warn(`MCP initialize failed: ${response.status}`);
         return false;
       }
@@ -113,8 +125,6 @@ export class WebSearchRouter {
           try {
             const data = JSON.parse(line.slice(6));
             if (data.result?.protocolVersion) {
-              // Check for session ID in a subsequent header or assume success
-              // Some MCP implementations return session via header only
               this.mcpInitialized = true;
               return true;
             }
@@ -124,8 +134,10 @@ export class WebSearchRouter {
         }
       }
 
+      this.resetMcpState();
       return false;
     } catch (error) {
+      this.resetMcpState();
       console.warn("MCP initialize error:", error);
       return false;
     } finally {
@@ -174,6 +186,7 @@ export class WebSearchRouter {
       });
 
       if (!response.ok) {
+        this.resetMcpState();
         throw new Error(`MCP tool call failed: ${response.status}`);
       }
 
@@ -214,15 +227,26 @@ export class WebSearchRouter {
     const extractScript = `
       (() => {
         const results = [];
-        const items = document.querySelectorAll('.result, .web-result, .links_main .result__body');
+        // Try multiple selector patterns DuckDuckGo uses
+        const items = document.querySelectorAll('.result, .web-result, .links_main .result__body, .results__item');
         for (const item of items) {
-          const titleEl = item.querySelector('.result__a, .result__title, .snippet__title, a[class*="title"]');
+          const titleEl = item.querySelector('.result__a, .result__title, .snippet__title, a[class*="title"], .result__link');
           const urlEl = item.querySelector('.result__url, .result__snippet a, .snippet__url, a[class*="url"]');
           const snippetEl = item.querySelector('.result__snippet, .snippet__text, .snippet__desc, [class*="snippet"]');
           
           const title = titleEl?.textContent?.trim() ?? "";
-          const url = urlEl?.textContent?.trim() ?? (titleEl?.getAttribute?.('href') ?? "");
+          let url = urlEl?.textContent?.trim() ?? (titleEl?.getAttribute?.('href') ?? "");
           const snippet = snippetEl?.textContent?.trim() ?? "";
+          
+          // DuckDuckGo html uses redirect links like //duckduckgo.com/l/?uddg=...
+          if (url.startsWith("//")) url = "https:" + url;
+          if (url.includes("duckduckgo.com/l/?")) {
+            try {
+              const u = new URL(url);
+              const uddg = u.searchParams.get("uddg");
+              if (uddg) url = decodeURIComponent(uddg);
+            } catch {}
+          }
           
           if (title && url) {
             results.push({ title, url, snippet });
@@ -272,7 +296,6 @@ export class WebSearchRouter {
 
     const extractScript = `
       (() => {
-        // Remove scripts, styles, nav, footer, etc.
         const cloned = document.cloneNode(true) as Document;
         const toRemove = cloned.querySelectorAll('script, style, nav, footer, header, aside, .ad, .ads, [class*="advert"], [id*="advert"]');
         toRemove.forEach(el => el.remove());
@@ -310,80 +333,217 @@ export class WebSearchRouter {
     return { url: safeUrl, title, text, source: "mcp" };
   }
 
+  /** Build DuckDuckGo headers that look like a real browser. */
+  private ddgHeaders(): Record<string, string> {
+    return {
+      "User-Agent": DDG_USER_AGENT,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Referer": "https://duckduckgo.com/",
+    };
+  }
+
+  /** Parse DuckDuckGo lite.duckduckgo.com table-based HTML results. */
+  private parseDuckDuckGoLite(html: string, limit: number): SearchResult[] {
+    const results: SearchResult[] = [];
+
+    // Find the results table
+    const tableMatches = html.match(/<table[^>]*>.*?<\/table>/gs);
+    if (!tableMatches) return results;
+
+    for (const table of tableMatches) {
+      const rowMatches = table.match(/<tr[^>]*>.*?<\/tr>/gs);
+      if (!rowMatches) continue;
+
+      for (const row of rowMatches) {
+        const cellMatches = row.match(/<td[^>]*>(.*?)<\/td>/gs);
+        if (!cellMatches || cellMatches.length < 2) continue;
+
+        const linkMatch = cellMatches[0].match(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/i);
+        const snippet = cellMatches[1].replace(/<[^>]*>/g, "").trim();
+
+        if (linkMatch) {
+          let url = linkMatch[1];
+          const title = linkMatch[2].replace(/<[^>]*>/g, "").trim();
+
+          // DuckDuckGo lite redirect URLs
+          if (url.includes("duckduckgo.com/l/?")) {
+            try {
+              const u = new URL(url);
+              const uddg = u.searchParams.get("uddg");
+              if (uddg) url = decodeURIComponent(uddg);
+            } catch {}
+          }
+
+          const cleanUrl = sanitizeUrl(url) ?? url;
+
+          results.push({
+            position: results.length + 1,
+            site_name: new URL(cleanUrl).hostname,
+            title,
+            snippet,
+            url: cleanUrl,
+            publishedAt: undefined,
+          });
+
+          if (results.length >= limit) break;
+        }
+      }
+      if (results.length >= limit) break;
+    }
+
+    return results;
+  }
+
+  /** Parse DuckDuckGo html.duckduckgo.com results. */
+  private parseDuckDuckGoHtml(html: string, limit: number): SearchResult[] {
+    const results: SearchResult[] = [];
+
+    // Match result blocks
+    const resultRegex = /<div[^>]*class="[^"]*result[^"]*"[^>]*>.*?<\/div>/gs;
+    const matches = html.match(resultRegex);
+    if (!matches) return results;
+
+    for (const block of matches) {
+      const titleMatch = block.match(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/is);
+      const snippetMatch = block.match(/<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)<\/a>/is);
+
+      if (titleMatch) {
+        let url = titleMatch[1];
+        const title = titleMatch[2].replace(/<[^>]*>/g, "").trim();
+
+        // DuckDuckGo html redirect URLs
+        if (url.startsWith("//")) url = "https:" + url;
+        if (url.includes("duckduckgo.com/l/?")) {
+          try {
+            const u = new URL(url);
+            const uddg = u.searchParams.get("uddg");
+            if (uddg) url = decodeURIComponent(uddg);
+          } catch {}
+        }
+
+        const snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, "").trim() : "";
+        const cleanUrl = sanitizeUrl(url) ?? url;
+
+        results.push({
+          position: results.length + 1,
+          site_name: new URL(cleanUrl).hostname,
+          title,
+          snippet,
+          url: cleanUrl,
+          publishedAt: undefined,
+        });
+
+        if (results.length >= limit) break;
+      }
+    }
+
+    return results;
+  }
+
+  /** Try DuckDuckGo lite endpoint with retry. */
+  private async duckDuckGoLiteSearch(
+    query: string,
+    limit: number
+  ): Promise<WebSearchResponse> {
+    const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < DUCKDUCKGO_RETRY_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, DUCKDUCKGO_RETRY_BACKOFF_MS * attempt));
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), DUCKDUCKGO_TIMEOUT_MS);
+
+      try {
+        const response = await fetch(searchUrl, {
+          headers: this.ddgHeaders(),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          lastError = new Error(`DuckDuckGo lite failed: ${response.status}`);
+          continue;
+        }
+
+        const html = await response.text();
+        const results = this.parseDuckDuckGoLite(html, limit);
+        return { results, total: results.length, source: "duckduckgo" };
+      } catch (error) {
+        lastError = error;
+      } finally {
+        clearTimeout(timeout);
+        controller.abort();
+      }
+    }
+
+    throw lastError ?? new Error("DuckDuckGo lite search failed");
+  }
+
+  /** Try DuckDuckGo html endpoint with retry. */
+  private async duckDuckGoHtmlSearch(
+    query: string,
+    limit: number
+  ): Promise<WebSearchResponse> {
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < DUCKDUCKGO_RETRY_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, DUCKDUCKGO_RETRY_BACKOFF_MS * attempt));
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), DUCKDUCKGO_TIMEOUT_MS);
+
+      try {
+        const response = await fetch(searchUrl, {
+          headers: this.ddgHeaders(),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          lastError = new Error(`DuckDuckGo html failed: ${response.status}`);
+          continue;
+        }
+
+        const html = await response.text();
+        const results = this.parseDuckDuckGoHtml(html, limit);
+        return { results, total: results.length, source: "duckduckgo" };
+      } catch (error) {
+        lastError = error;
+      } finally {
+        clearTimeout(timeout);
+        controller.abort();
+      }
+    }
+
+    throw lastError ?? new Error("DuckDuckGo html search failed");
+  }
+
   private async duckDuckGoSearch(
     query: string,
     options: { limit?: number; region?: Region } = {}
   ): Promise<WebSearchResponse> {
     const limit = options.limit ?? 10;
-    const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), DUCKDUCKGO_TIMEOUT_MS);
+    // Try html.duckduckgo.com first (full HTML, more reliable), then lite.duckduckgo.com
+    try {
+      return await this.duckDuckGoHtmlSearch(query, limit);
+    } catch (htmlError) {
+      console.warn("DuckDuckGo html search failed:", htmlError);
+    }
 
     try {
-      const response = await fetch(searchUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; LobotTecnoIndicator/1.0)",
-          Accept: "text/html",
-        },
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`DuckDuckGo lite failed: ${response.status}`);
-      }
-
-      const html = await response.text();
-
-      // Parse lite.duckduckgo.com table-based results
-      const results: SearchResult[] = [];
-      const tableRegex = /<table[^>]*>.*?<\/table>/gs;
-      const tables = html.match(tableRegex) ?? [];
-
-      for (const table of tables) {
-        const rowRegex = /<tr>(.*?)<\/tr>/gs;
-        const rows = table.match(rowRegex) ?? [];
-
-        for (const row of rows) {
-          const cellRegex = /<td[^>]*>(.*?)<\/td>/gs;
-          const cells = [...row.matchAll(cellRegex)].map((m) => m[1]);
-
-          if (cells.length >= 2) {
-            // First cell: link with title
-            const linkMatch = cells[0].match(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/i);
-            // Second cell: snippet
-            const snippet = cells[1].replace(/<[^>]*>/g, "").trim();
-
-            if (linkMatch) {
-              const url = linkMatch[1];
-              const title = linkMatch[2].replace(/<[^>]*>/g, "").trim();
-              const cleanUrl = sanitizeUrl(url) ?? url;
-
-              results.push({
-                position: results.length + 1,
-                site_name: new URL(cleanUrl).hostname,
-                title,
-                snippet,
-                url: cleanUrl,
-                publishedAt: undefined,
-              });
-
-              if (results.length >= limit) break;
-            }
-          }
-        }
-        if (results.length >= limit) break;
-      }
-
-      return { results, total: results.length, source: "duckduckgo" };
-    } catch (error) {
-      console.warn("DuckDuckGo search error:", error);
-      // Fallback to instant answer API as last resort
-      return this.duckDuckGoInstantAnswer(query, limit);
-    } finally {
-      clearTimeout(timeout);
-      controller.abort();
+      return await this.duckDuckGoLiteSearch(query, limit);
+    } catch (liteError) {
+      console.warn("DuckDuckGo lite search failed:", liteError);
     }
+
+    // Last resort: instant answer API
+    return this.duckDuckGoInstantAnswer(query, limit);
   }
 
   private async duckDuckGoInstantAnswer(
@@ -399,7 +559,6 @@ export class WebSearchRouter {
       const data = await response.json();
       const results: SearchResult[] = [];
 
-      // Abstract/Answer
       if (data.AbstractText && data.AbstractURL) {
         results.push({
           position: 1,
@@ -411,7 +570,6 @@ export class WebSearchRouter {
         });
       }
 
-      // RelatedTopics
       if (Array.isArray(data.RelatedTopics)) {
         for (const topic of data.RelatedTopics) {
           if (topic.FirstURL && topic.Text) {
@@ -443,10 +601,7 @@ export class WebSearchRouter {
 
     try {
       const response = await fetch(safeUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; LobotTecnoIndicator/1.0)",
-          Accept: "text/html,application/xhtml+xml",
-        },
+        headers: this.ddgHeaders(),
         signal: controller.signal,
       });
 
@@ -498,10 +653,12 @@ export class WebSearchRouter {
         return result;
       } catch (error) {
         console.warn("MCP search failed, falling back to DuckDuckGo:", error);
+        this.resetMcpState();
       }
     }
 
     // Fallback: DuckDuckGo (only when MCP fails)
+    // Try html endpoint first, then lite, then instant answer
     const result = await this.duckDuckGoSearch(query, options);
     await setCache(cacheKey, result, SEARCH_CACHE_MS);
     return result;
@@ -525,6 +682,7 @@ export class WebSearchRouter {
         }
       } catch (error) {
         console.warn("MCP scrape failed, falling back to DuckDuckGo:", error);
+        this.resetMcpState();
       }
     }
 
@@ -538,7 +696,9 @@ export class WebSearchRouter {
 
   async getWebSearchStatus(abortSignal?: AbortSignal): Promise<WebSearchStatus> {
     let mcpAvailable = false;
+    let duckDuckGoAvailable = false;
 
+    // Check MCP availability
     if (this.mcpUrl) {
       const controller = new AbortController();
       const combinedSignal = abortSignal
@@ -547,7 +707,6 @@ export class WebSearchRouter {
       const timeout = setTimeout(() => controller.abort(), 5000);
 
       try {
-        // Quick MCP health check
         const initPayload = {
           jsonrpc: "2.0",
           id: 1,
@@ -577,20 +736,38 @@ export class WebSearchRouter {
             this.mcpSessionId = sessionId;
             this.mcpInitialized = true;
           }
+        } else {
+          this.resetMcpState();
         }
       } catch {
         mcpAvailable = false;
+        this.resetMcpState();
       } finally {
         clearTimeout(timeout);
         controller.abort();
       }
     }
 
+    // Actually test DuckDuckGo availability with a lightweight request
+    try {
+      const ddgController = new AbortController();
+      const ddgTimeout = setTimeout(() => ddgController.abort(), 8000);
+      const ddgResponse = await fetch("https://duckduckgo.com/", {
+        headers: this.ddgHeaders(),
+        signal: ddgController.signal,
+      });
+      duckDuckGoAvailable = ddgResponse.ok;
+      clearTimeout(ddgTimeout);
+      ddgController.abort();
+    } catch {
+      duckDuckGoAvailable = false;
+    }
+
     return {
-      available: mcpAvailable, // Primary available
+      available: mcpAvailable || duckDuckGoAvailable,
       mcpAvailable,
       mcpUrl: this.mcpUrl,
-      duckDuckGoAvailable: true, // Always available (no API key needed)
+      duckDuckGoAvailable,
       fallbackUsed: !mcpAvailable,
     };
   }

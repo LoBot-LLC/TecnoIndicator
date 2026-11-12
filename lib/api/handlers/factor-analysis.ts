@@ -399,10 +399,24 @@ export async function runFactorAnalysis(
         webSearchRouter.webSearch(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
       ),
     );
+    // Flatten results while preserving which source (MCP vs DuckDuckGo) they came from.
+    // When MCP is down and DuckDuckGo is the fallback, don't apply the narrow
+    // isReputableSource filter — DuckDuckGo results are already ranked by DDG,
+    // and the reputable-hosts list is too restrictive for keyless search.
     const candidates = searches
-      .flatMap((r) => r.results)
-      .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
-      .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
+      .flatMap((r) =>
+        r.results.map((result) => ({
+          ...result,
+          snippet: typeof result.snippet === "string" ? result.snippet : "",
+          source: r.source,
+        })),
+      )
+      .filter((r) => {
+        const recent = isRecentPublishedAt(r.publishedAt);
+        // MCP results: apply reputable-source filter. DuckDuckGo fallback: skip it.
+        const reputable = r.source === "duckduckgo" || isReputableSource(r.url);
+        return recent && reputable;
+      })
       .slice(0, 15);
 
     if (candidates.length === 0) {

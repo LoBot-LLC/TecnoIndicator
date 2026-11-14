@@ -80,15 +80,88 @@ export class WebSearchRouter {
   }
 
   /** Initialize/Open a new MCP session with the Open-WebSearch server. */
-  private async mcpInitialize(abortSignal?: AbortSignal): Promise<boolean> {
-    if (this.mcpInitialized && this.mcpSessionId) return true;
-    if (!this.mcpUrl) return false;
+  /** Parse a JSON-RPC payload from either SSE text or plain JSON. */
+  private parseRpcMessages(text: string): unknown[] {
+    const trimmed = text.trim();
+    if (!trimmed) return [];
+
+    // Plain JSON response
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        // fall through to SSE parsing
+      }
+    }
+
+    // SSE: collect data: lines (may be multi-event)
+    const messages: unknown[] = [];
+    const blocks = trimmed.split(/\n\n+/);
+    for (const block of blocks) {
+      const dataLines = block
+        .split("\n")
+        .filter((l) => l.startsWith("data:"))
+        .map((l) => l.slice(5).trimStart());
+      if (dataLines.length === 0) continue;
+      const data = dataLines.join("\n").trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        messages.push(JSON.parse(data));
+      } catch {
+        // ignore malformed event
+      }
+    }
+    return messages;
+  }
+
+  private async mcpPost(
+    payload: Record<string, unknown>,
+    timeoutMs: number,
+    abortSignal?: AbortSignal
+  ): Promise<{ ok: boolean; status: number; sessionId: string | null; messages: unknown[]; text: string }> {
+    if (!this.mcpUrl) {
+      return { ok: false, status: 0, sessionId: null, messages: [], text: "" };
+    }
 
     const controller = new AbortController();
     const combinedSignal = abortSignal
       ? combineAbortSignals(abortSignal, controller.signal)
       : controller.signal;
-    const timeout = setTimeout(() => controller.abort(), MCP_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        "MCP-Protocol-Version": "2025-06-18",
+      };
+      if (this.mcpSessionId) headers["MCP-Session-Id"] = this.mcpSessionId;
+
+      const response = await fetch(this.mcpUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        signal: combinedSignal,
+      });
+
+      const sessionId = response.headers.get("mcp-session-id");
+      const text = response.ok ? await response.text() : await response.text().catch(() => "");
+      const messages = response.ok ? this.parseRpcMessages(text) : [];
+      return { ok: response.ok, status: response.status, sessionId, messages, text };
+    } catch (error) {
+      console.warn("Open-WebSearch MCP request error:", error);
+      return { ok: false, status: 0, sessionId: null, messages: [], text: "" };
+    } finally {
+      clearTimeout(timeout);
+      controller.abort();
+    }
+  }
+
+  /** Initialize/Open a new MCP session with the Open-WebSearch server. */
+  private async mcpInitialize(abortSignal?: AbortSignal): Promise<boolean> {
+    if (this.mcpInitialized) return true;
+    if (!this.mcpUrl) return false;
 
     try {
       const initPayload = {
@@ -102,45 +175,33 @@ export class WebSearchRouter {
         },
       };
 
-      const response = await fetch(this.mcpUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-          "MCP-Protocol-Version": "2025-06-18",
-        },
-        body: JSON.stringify(initPayload),
-        signal: combinedSignal,
-      });
-
-      if (!response.ok) {
+      const res = await this.mcpPost(initPayload, MCP_TIMEOUT_MS, abortSignal);
+      if (!res.ok) {
         this.resetMcpState();
-        console.warn(`Open-WebSearch MCP initialize failed: ${response.status}`);
+        console.warn(`Open-WebSearch MCP initialize failed: ${res.status} ${res.text?.slice(0, 200) ?? ""}`);
         return false;
       }
 
-      const sessionId = response.headers.get("mcp-session-id");
-      if (sessionId) {
-        this.mcpSessionId = sessionId;
-        this.mcpInitialized = true;
-        return true;
-      }
+      if (res.sessionId) this.mcpSessionId = res.sessionId;
 
-      // If no session ID, try to parse SSE response
-      const text = await response.text();
-      const lines = text.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.result?.protocolVersion) {
-              this.mcpInitialized = true;
-              return true;
-            }
-          } catch {
-            // Ignore parse errors
-          }
+      const initMsg = res.messages.find((m) => {
+        const msg = m as { id?: unknown; result?: { protocolVersion?: string } };
+        return msg && (msg.id === 1 || msg.result?.protocolVersion);
+      }) as { result?: { protocolVersion?: string } } | undefined;
+
+      if (initMsg?.result?.protocolVersion || res.sessionId || res.messages.length > 0) {
+        this.mcpInitialized = true;
+        // Send notifications/initialized (best-effort, some servers require it)
+        try {
+          await this.mcpPost(
+            { jsonrpc: "2.0", method: "notifications/initialized", params: {} },
+            5000,
+            abortSignal
+          );
+        } catch {
+          // ignore
         }
+        return true;
       }
 
       this.resetMcpState();
@@ -149,10 +210,48 @@ export class WebSearchRouter {
       this.resetMcpState();
       console.warn("Open-WebSearch MCP initialize error:", error);
       return false;
-    } finally {
-      clearTimeout(timeout);
-      controller.abort();
     }
+  }
+
+  /** Extract tool call result payload from MCP tools/call response. */
+  private extractToolResult(messages: unknown[], id: number): unknown {
+    const msg = messages.find((m) => (m as { id?: unknown }).id === id) as
+      | { result?: unknown; error?: { message?: string } }
+      | undefined;
+    if (!msg) return null;
+    if (msg.error) throw new Error(msg.error.message ?? "Open-WebSearch MCP tool error");
+
+    const result = msg.result as {
+      content?: Array<{ type?: string; text?: string }>;
+      structuredContent?: unknown;
+      isError?: boolean;
+    } | undefined;
+    if (!result) return null;
+
+    // Prefer structuredContent if present
+    if (result.structuredContent !== undefined && result.structuredContent !== null) {
+      return result.structuredContent;
+    }
+
+    // Otherwise try to parse JSON from text content blocks
+    if (Array.isArray(result.content)) {
+      for (const item of result.content) {
+        if (item?.type === "text" && typeof item.text === "string") {
+          const t = item.text.trim();
+          if (t.startsWith("{") || t.startsWith("[")) {
+            try {
+              return JSON.parse(t);
+            } catch {
+              // return raw text as fallback
+            }
+          }
+          return item.text;
+        }
+      }
+    }
+
+    // Some servers may return the payload directly as result
+    return result;
   }
 
   private async mcpSearch(
@@ -161,175 +260,126 @@ export class WebSearchRouter {
     abortSignal?: AbortSignal
   ): Promise<WebSearchResponse> {
     const limit = options.limit ?? 10;
-    const engines = ["duckduckgo", "bing", "exa", "brave", "juejin", "startpage", "sogou", "hackernews"];
+    // Prefer engines likely to return price-relevant results
+    const engines = ["duckduckgo", "bing", "brave", "exa"];
 
-    // Initialize MCP session if needed
     const initialized = await this.mcpInitialize(abortSignal);
     if (!initialized) throw new Error("Open-WebSearch MCP not initialized");
 
-    const controller = new AbortController();
-    const combinedSignal = abortSignal
-      ? combineAbortSignals(abortSignal, controller.signal)
-      : controller.signal;
-    const timeout = setTimeout(() => controller.abort(), MCP_TIMEOUT_MS);
-
-    try {
-      const callPayload = {
-        jsonrpc: "2.0",
-        id: Date.now(),
-        method: "tools/call",
-        params: {
-          name: "search",
-          arguments: {
-            query,
-            limit,
-            engines,
-            searchMode: "auto",
-          },
+    const callId = Date.now();
+    const callPayload = {
+      jsonrpc: "2.0",
+      id: callId,
+      method: "tools/call",
+      params: {
+        name: "search",
+        arguments: {
+          query,
+          limit,
+          engines,
+          searchMode: "auto",
         },
-      };
+      },
+    };
 
-      const response = await fetch(this.mcpUrl!, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-          "MCP-Protocol-Version": "2025-06-18",
-          "MCP-Session-Id": this.mcpSessionId!,
-        },
-        body: JSON.stringify(callPayload),
-        signal: combinedSignal,
-      });
-
-      if (!response.ok) {
-        this.resetMcpState();
-        throw new Error(`Open-WebSearch MCP search failed: ${response.status}`);
-      }
-
-      // Parse SSE response
-      const text = await response.text();
-      const lines = text.split("\n");
-      let results: Array<{ title: string; url: string; snippet: string }> = [];
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.error) throw new Error(data.error.message ?? "Open-WebSearch MCP tool error");
-            if (data.result) {
-              const result = data.result;
-              if (Array.isArray(result) && result.length > 0) {
-                // Result format: Array of SearchResult objects
-                results = result.map((item: unknown) => {
-                  if (typeof item !== "object" || item === null) return { title: "", url: "", snippet: "" };
-                  const r = item as Record<string, unknown>;
-                  return {
-                    title: typeof r.title === "string" ? r.title : "",
-                    url: typeof r.url === "string" ? r.url : "",
-                    snippet: typeof r.snippet === "string" ? r.snippet : "",
-                  };
-                });
-                break;
-              }
-            }
-          } catch (e) {
-            if (e instanceof Error && e.message.startsWith("Open-WebSearch")) throw e;
-          }
-        }
-      }
-
-      const searchResult: SearchResult[] = results.map((r, i) => ({
-        position: i + 1,
-        site_name: new URL(r.url).hostname,
-        title: r.title,
-        snippet: r.snippet,
-        url: sanitizeUrl(r.url) ?? r.url,
-        publishedAt: undefined,
-      }));
-
-      return { results: searchResult, total: searchResult.length, source: "mcp" };
-    } finally {
-      clearTimeout(timeout);
-      controller.abort();
+    const res = await this.mcpPost(callPayload, MCP_TIMEOUT_MS, abortSignal);
+    if (!res.ok) {
+      this.resetMcpState();
+      throw new Error(`Open-WebSearch MCP search failed: ${res.status}`);
     }
+
+    const toolResult = this.extractToolResult(res.messages, callId);
+    let rawResults: unknown[] = [];
+    if (Array.isArray(toolResult)) {
+      rawResults = toolResult;
+    } else if (toolResult && typeof toolResult === "object") {
+      const obj = toolResult as Record<string, unknown>;
+      if (Array.isArray(obj.results)) rawResults = obj.results;
+      else if (Array.isArray(obj.content)) rawResults = obj.content;
+    }
+
+    const results: SearchResult[] = rawResults
+      .map((item, i) => {
+        if (!item || typeof item !== "object") return null;
+        const r = item as Record<string, unknown>;
+        const title = typeof r.title === "string" ? r.title : "";
+        const rawUrl = typeof r.url === "string" ? r.url : "";
+        const snippet =
+          typeof r.description === "string"
+            ? r.description
+            : typeof r.snippet === "string"
+              ? r.snippet
+              : typeof r.content === "string"
+                ? r.content
+                : "";
+        const url = sanitizeUrl(rawUrl) ?? rawUrl;
+        if (!title || !url) return null;
+        let siteName = "web";
+        try {
+          siteName = new URL(url).hostname;
+        } catch {}
+        return {
+          position: i + 1,
+          site_name: siteName,
+          title,
+          snippet,
+          url,
+          publishedAt: typeof r.publishedAt === "string" ? r.publishedAt : undefined,
+        } as SearchResult;
+      })
+      .filter((r): r is SearchResult => r !== null)
+      .slice(0, limit);
+
+    return { results, total: results.length, source: "mcp" };
   }
 
   private async mcpScrape(url: string, abortSignal?: AbortSignal): Promise<ScrapedContent | null> {
     const safeUrl = sanitizeUrl(url);
     if (!safeUrl) return null;
 
-    // Initialize MCP session if needed
     const initialized = await this.mcpInitialize(abortSignal);
     if (!initialized) throw new Error("Open-WebSearch MCP not initialized");
 
-    const controller = new AbortController();
-    const combinedSignal = abortSignal
-      ? combineAbortSignals(abortSignal, controller.signal)
-      : controller.signal;
-    const timeout = setTimeout(() => controller.abort(), MCP_TIMEOUT_MS);
-
-    try {
-      const callPayload = {
-        jsonrpc: "2.0",
-        id: Date.now(),
-        method: "tools/call",
-        params: {
-          name: "fetchWebContent",
-          arguments: {
-            url: safeUrl,
-            maxChars: 20000,
-            renderMode: "auto",
-            readability: true,
-            includeLinks: false,
-          },
+    const callId = Date.now();
+    const callPayload = {
+      jsonrpc: "2.0",
+      id: callId,
+      method: "tools/call",
+      params: {
+        name: "fetchWebContent",
+        arguments: {
+          url: safeUrl,
+          maxChars: 20000,
+          renderMode: "auto",
+          readability: true,
+          includeLinks: false,
         },
-      };
+      },
+    };
 
-      const response = await fetch(this.mcpUrl!, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-          "MCP-Protocol-Version": "2025-06-18",
-          "MCP-Session-Id": this.mcpSessionId!,
-        },
-        body: JSON.stringify(callPayload),
-        signal: combinedSignal,
-      });
-
-      if (!response.ok) {
-        this.resetMcpState();
-        throw new Error(`Open-WebSearch MCP scrape failed: ${response.status}`);
-      }
-
-      const text = await response.text();
-      const lines = text.split("\n");
-      let title = "";
-      let textContent = "";
-
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.error) throw new Error(data.error.message ?? "Open-WebSearch MCP tool error");
-            if (data.result) {
-              const result = data.result;
-              title = typeof result.title === "string" ? result.title : "";
-              textContent = typeof result.content === "string" ? result.content : "";
-              if (title && textContent) break;
-            }
-          } catch (e) {
-            if (e instanceof Error && e.message.startsWith("Open-WebSearch")) throw e;
-          }
-        }
-      }
-
-      if (!textContent) return null;
-
-      return { url: safeUrl, title, text: textContent, source: "mcp" };
-    } finally {
-      clearTimeout(timeout);
-      controller.abort();
+    const res = await this.mcpPost(callPayload, MCP_TIMEOUT_MS, abortSignal);
+    if (!res.ok) {
+      this.resetMcpState();
+      throw new Error(`Open-WebSearch MCP scrape failed: ${res.status}`);
     }
+
+    const toolResult = this.extractToolResult(res.messages, callId);
+    let title = "";
+    let textContent = "";
+    let finalUrl = safeUrl;
+
+    if (toolResult && typeof toolResult === "object" && !Array.isArray(toolResult)) {
+      const obj = toolResult as Record<string, unknown>;
+      title = typeof obj.title === "string" ? obj.title : "";
+      textContent = typeof obj.content === "string" ? obj.content : "";
+      if (typeof obj.finalUrl === "string") finalUrl = sanitizeUrl(obj.finalUrl) ?? safeUrl;
+      if (typeof obj.url === "string" && !textContent) finalUrl = sanitizeUrl(obj.url) ?? finalUrl;
+    } else if (typeof toolResult === "string") {
+      textContent = toolResult;
+    }
+
+    if (!textContent) return null;
+    return { url: finalUrl, title, text: textContent, source: "mcp" };
   }
 
   /** Build DuckDuckGo headers that look like a real browser. */
@@ -699,50 +749,13 @@ export class WebSearchRouter {
 
     // Check Open-WebSearch MCP availability (primary provider)
     if (this.mcpUrl) {
-      const controller = new AbortController();
-      const combinedSignal = abortSignal
-        ? combineAbortSignals(abortSignal, controller.signal)
-        : controller.signal;
-      const timeout = setTimeout(() => controller.abort(), MCP_TIMEOUT_MS);
-
       try {
-        const initPayload = {
-          jsonrpc: "2.0",
-          id: 1,
-          method: "initialize",
-          params: {
-            protocolVersion: "2025-06-18",
-            capabilities: {},
-            clientInfo: { name: "lobot-tecnoindicator", version: "1.0.0" },
-          },
-        };
-
-        const response = await fetch(this.mcpUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json, text/event-stream",
-            "MCP-Protocol-Version": "2025-06-18",
-          },
-          body: JSON.stringify(initPayload),
-          signal: combinedSignal,
-        });
-
-        mcpAvailable = response.ok;
-        if (mcpAvailable) {
-          const sessionId = response.headers.get("mcp-session-id");
-          if (sessionId) {
-            this.mcpSessionId = sessionId;
-          }
-        } else {
-          this.resetMcpState();
-        }
+        // Try a fresh initialize probe
+        this.resetMcpState();
+        mcpAvailable = await this.mcpInitialize(abortSignal);
       } catch {
         mcpAvailable = false;
         this.resetMcpState();
-      } finally {
-        clearTimeout(timeout);
-        controller.abort();
       }
     }
 
@@ -750,10 +763,13 @@ export class WebSearchRouter {
     try {
       const ddgController = new AbortController();
       const ddgTimeout = setTimeout(() => ddgController.abort(), 8000);
+      const combined = abortSignal
+        ? combineAbortSignals(abortSignal, ddgController.signal)
+        : ddgController.signal;
       // Test the html endpoint we actually use for search
       const ddgResponse = await fetch("https://html.duckduckgo.com/html/?q=test", {
         headers: this.ddgHeaders(),
-        signal: ddgController.signal,
+        signal: combined,
       });
       duckDuckGoAvailable = ddgResponse.ok || ddgResponse.status === 202;
       clearTimeout(ddgTimeout);

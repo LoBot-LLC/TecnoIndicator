@@ -12,9 +12,9 @@ import type { RegionId } from "../_shared/types";
 import { safeParseJson } from "../_shared/validation";
 
 const COMMODITY_QUERIES = [
-  { commodity: "oil", queryTemplate: "Brent crude oil price 2026" },
-  { commodity: "electricity", queryTemplate: "electricity wholesale price 2026" },
-  { commodity: "water", queryTemplate: "water price per cubic meter 2026" },
+  { commodity: "oil", queryTemplate: "Brent crude oil spot price USD per barrel today" },
+  { commodity: "electricity", queryTemplate: "global average electricity price USD per MWh today wholesale" },
+  { commodity: "water", queryTemplate: "global average water tariff price USD per cubic meter today" },
 ];
 
 const PRICE_EXTRACTION_PROMPT = `You are an expert financial data analyst specializing in commodity pricing. Your task is to extract precise price data from search results.
@@ -140,24 +140,22 @@ async function resolvePrices(req: Request): Promise<Response> {
 }
 
 function extractPriceFromText(text: string): number | null {
+  const normalized = text.replace(/,/g, "");
   const pricePatterns = [
-    /\$(\d+(?:\.\d+)?)/g,
-    /(\d+(?:\.\d+)?)\s*USD/g,
-    /(\d+(?:\.\d+)?)\s*dollars?/gi,
-    /(\d+(?:\.\d+)?)\s*€/g,
-    /(\d+(?:\.\d+)?)\s*EUR/g,
-    /(\d+(?:\.\d+)?)\s*¥/g,
-    /(\d+(?:\.\d+)?)\s*元/g,
+    /(?:US\$|USD\s*\$?)\s*(\d+(?:\.\d+)?)/gi,
+    /\$\s*(\d+(?:\.\d+)?)(?:\s*(?:\/|per)\s*(?:bbl|barrel|MWh|kWh|m3|m³|cubic\s*met(?:er|re)|lit(?:er|re)))?/gi,
+    /(\d+(?:\.\d+)?)\s*(?:US\s*dollars?|USD|dollars?)(?:\s*(?:\/|per)\s*(?:bbl|barrel|MWh|kWh|m3|m³|cubic\s*met(?:er|re)|lit(?:er|re)))?/gi,
+    /(?:price|cost|trading\s+at|at)\s*(?:of\s*)?(?:US\$|USD|\$)?\s*(\d+(?:\.\d+)?)/gi,
   ];
 
   for (const pattern of pricePatterns) {
-    const matches = [...text.matchAll(pattern)];
-    if (matches.length > 0) {
-      for (const match of matches) {
-        const price = parseFloat(match[1]);
-        if (price >= 0.01 && price <= 10000) {
-          return price;
-        }
+    const matches = [...normalized.matchAll(pattern)];
+    for (const match of matches) {
+      const price = parseFloat(match[1]);
+      if (!Number.isFinite(price)) continue;
+      // Broad sanity bounds; commodity-specific plausibility checked by caller context
+      if (price >= 0.01 && price <= 10000) {
+        return price;
       }
     }
   }

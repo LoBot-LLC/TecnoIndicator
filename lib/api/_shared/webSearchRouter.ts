@@ -58,6 +58,8 @@ export class WebSearchRouter {
   private mcpUrl: string | null;
   private mcpSessionId: string | null = null;
   private mcpInitialized: boolean = false;
+  private mcpStateless: boolean = false;
+  private mcpProtocolVersion: string = "2025-06-18";
 
   constructor() {
     // Always-on Open-WebSearch MCP server is the primary search provider.
@@ -77,6 +79,8 @@ export class WebSearchRouter {
   private resetMcpState(): void {
     this.mcpSessionId = null;
     this.mcpInitialized = false;
+    this.mcpStateless = false;
+    this.mcpProtocolVersion = "2025-06-18";
   }
 
   /** Initialize/Open a new MCP session with the Open-WebSearch server. */
@@ -134,9 +138,9 @@ export class WebSearchRouter {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
         Accept: "application/json, text/event-stream",
-        "MCP-Protocol-Version": "2025-06-18",
+        "MCP-Protocol-Version": this.mcpProtocolVersion,
       };
-      if (this.mcpSessionId) headers["MCP-Session-Id"] = this.mcpSessionId;
+      if (this.mcpSessionId && !this.mcpStateless) headers["MCP-Session-Id"] = this.mcpSessionId;
 
       const response = await fetch(this.mcpUrl, {
         method: "POST",
@@ -163,34 +167,38 @@ export class WebSearchRouter {
     if (this.mcpInitialized) return true;
     if (!this.mcpUrl) return false;
 
-    try {
-      const initPayload = {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2025-06-18",
-          capabilities: {},
-          clientInfo: { name: "lobot-tecnoindicator", version: "1.0.0" },
-        },
-      };
+    // 1. Try legacy initialize handshake with modern protocol version first.
+    const protocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"];
+    for (const protocolVersion of protocolVersions) {
+      try {
+        const initPayload = {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion,
+            capabilities: {},
+            clientInfo: { name: "lobot-tecnoindicator", version: "1.0.0" },
+          },
+        };
+        const res = await this.mcpPost(initPayload, MCP_TIMEOUT_MS, abortSignal);
+        if (!res.ok) continue;
 
-      const res = await this.mcpPost(initPayload, MCP_TIMEOUT_MS, abortSignal);
-      if (!res.ok) {
-        this.resetMcpState();
-        console.warn(`Open-WebSearch MCP initialize failed: ${res.status} ${res.text?.slice(0, 200) ?? ""}`);
-        return false;
-      }
+        const initMsg = res.messages.find((m) => {
+          const msg = m as { id?: unknown; result?: { protocolVersion?: string }; error?: unknown };
+          if (!msg) return false;
+          if (msg.id === 1) return !msg.error;
+          return msg.result?.protocolVersion !== undefined;
+        }) as { result?: { protocolVersion?: string }; error?: unknown } | undefined;
 
-      if (res.sessionId) this.mcpSessionId = res.sessionId;
+        if (!initMsg) continue;
+        if (initMsg.error) continue; // initialize failed at protocol level
 
-      const initMsg = res.messages.find((m) => {
-        const msg = m as { id?: unknown; result?: { protocolVersion?: string } };
-        return msg && (msg.id === 1 || msg.result?.protocolVersion);
-      }) as { result?: { protocolVersion?: string } } | undefined;
-
-      if (initMsg?.result?.protocolVersion || res.sessionId || res.messages.length > 0) {
+        const protocolVersionAccepted = initMsg.result?.protocolVersion ?? protocolVersion;
+        this.mcpProtocolVersion = protocolVersionAccepted;
         this.mcpInitialized = true;
+        if (res.sessionId) this.mcpSessionId = res.sessionId;
+
         // Send notifications/initialized (best-effort, some servers require it)
         try {
           await this.mcpPost(
@@ -198,19 +206,27 @@ export class WebSearchRouter {
             5000,
             abortSignal
           );
-        } catch {
-          // ignore
-        }
+        } catch {}
+
+        return true;
+      } catch {
+        // try next protocol version
+      }
+    }
+
+    // 2. Fallback: stateless mode. Send tools/list without initialize.
+    try {
+      const listPayload = { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} };
+      const res = await this.mcpPost(listPayload, MCP_TIMEOUT_MS, abortSignal);
+      if (res.ok && res.messages.length > 0) {
+        this.mcpStateless = true;
+        this.mcpInitialized = true;
         return true;
       }
+    } catch {}
 
-      this.resetMcpState();
-      return false;
-    } catch (error) {
-      this.resetMcpState();
-      console.warn("Open-WebSearch MCP initialize error:", error);
-      return false;
-    }
+    this.resetMcpState();
+    return false;
   }
 
   /** Extract tool call result payload from MCP tools/call response. */

@@ -3,7 +3,7 @@ import { kiloRouter } from "../_shared/kiloRouter";
 import { webSearchRouter } from "../_shared/webSearchRouter";
 import { analyticsCacheKey, OPEN_WEBSEARCH_MCP_URL } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
-import { readFactorWindow } from "./factor-analysis";
+import { readFactorWindow, runFactorAnalysis, writeFactorWindow } from "./factor-analysis";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
 import type { AnalyticsSnapshot, RegionalAnalyticsSnapshot } from "../_shared/types";
 
@@ -96,17 +96,34 @@ async function readAnalyticsStatus(scope: "global" | Region): Promise<AnalyticsS
   return { lastFetch, success: lastFetch !== null };
 }
 
-async function readFactorStatus(scope: "global" | Region): Promise<FactorStatus> {
+async function readFactorStatus(scope: "global" | Region, abortSignal?: AbortSignal): Promise<FactorStatus> {
   const window = await readFactorWindow(scope);
-  if (!window) {
-    return { lastRun: null, nextRun: nextCronRun(), aiCurated: false, pollIntervalMs: FACTOR_POLL_INTERVAL_MS };
+  if (window) {
+    return {
+      lastRun: window.updatedAt,
+      nextRun: nextCronRun(),
+      aiCurated: window.aiCurated,
+      pollIntervalMs: FACTOR_POLL_INTERVAL_MS,
+    };
   }
-  return {
-    lastRun: window.updatedAt,
-    nextRun: nextCronRun(),
-    aiCurated: window.aiCurated,
-    pollIntervalMs: FACTOR_POLL_INTERVAL_MS,
-  };
+
+  // No stored window yet — populate one on demand so the health endpoint
+  // reports a real lastRun instead of null until the nightly cron runs.
+  // Use a short bounded attempt so the health check does not time out.
+  try {
+    const factorWindow = await runFactorAnalysis(scope, { abortSignal });
+    await writeFactorWindow(scope, factorWindow.factors, factorWindow.aiCurated);
+    return {
+      lastRun: factorWindow.updatedAt,
+      nextRun: nextCronRun(),
+      aiCurated: factorWindow.aiCurated,
+      pollIntervalMs: FACTOR_POLL_INTERVAL_MS,
+    };
+  } catch {
+    // Fall through to the null-state response.
+  }
+
+  return { lastRun: null, nextRun: nextCronRun(), aiCurated: false, pollIntervalMs: FACTOR_POLL_INTERVAL_MS };
 }
 
 /**
@@ -130,8 +147,8 @@ export async function handleHealth(_req: Request): Promise<Response> {
         webSearchRouter.getWebSearchStatus(abortController.signal),
         readAnalyticsStatus("global"),
         Promise.all(REGIONS.map((region) => readAnalyticsStatus(region))),
-        readFactorStatus("global"),
-        Promise.all(REGIONS.map((region) => readFactorStatus(region))),
+        readFactorStatus("global", abortController.signal),
+        Promise.all(REGIONS.map((region) => readFactorStatus(region, abortController.signal))),
       ]);
 
     // Online model is "connected" when Kilo Gateway is usable and web search
@@ -179,13 +196,25 @@ export async function handleHealth(_req: Request): Promise<Response> {
         error: "Health check temporarily unavailable",
         onlineModelConnected: false,
         kiloGateway: { available: false, usableKeys: 0, configuredKeys: 0, keyFormats: { jwt: 0, opaque: 0, unrecognized: 0 } },
-      webSearch: {
-        available: false,
-        mcpAvailable: false,
-        mcpUrl: OPEN_WEBSEARCH_MCP_URL,
-        duckDuckGoAvailable: true,
-        fallbackUsed: true,
-      },
+        webSearch: {
+          available: false,
+          mcpAvailable: false,
+          mcpUrl: OPEN_WEBSEARCH_MCP_URL,
+          duckDuckGoAvailable: true,
+          fallbackUsed: true,
+        },
+        analytics: {
+          global: { lastFetch: null, success: false },
+          regional: Object.fromEntries(
+            REGIONS.map((region) => [region, { lastFetch: null, success: false }]),
+          ) as Record<Region, { lastFetch: null; success: false }>,
+        },
+        dynamicFactors: {
+          global: { lastRun: null, nextRun: nextCronRun(), aiCurated: false, pollIntervalMs: FACTOR_POLL_INTERVAL_MS },
+          regional: Object.fromEntries(
+            REGIONS.map((region) => [region, { lastRun: null, nextRun: nextCronRun(), aiCurated: false, pollIntervalMs: FACTOR_POLL_INTERVAL_MS }]),
+          ) as Record<Region, { lastRun: null; nextRun: string; aiCurated: false; pollIntervalMs: number }>,
+        },
       },
       { status: 200 },
     );

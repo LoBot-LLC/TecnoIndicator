@@ -18,7 +18,7 @@ A modern, clean, professional single-page web application that delivers energy p
   - Horizon slider (1–10 years)
   - Three commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Electricity (USD/MWh)**, and **Global Water (USD/m³)**
   - Three scenarios per commodity: Average, Optimistic (Min), Pessimistic (Max)
-  - **Per-commodity "Fetch/Re-fetch Live Price"** on each card — retrieves the latest prices from web-searched URLs via **SearXNG MCP** (primary) with **DuckDuckGo HTTP search** fallback (only when SearXNG MCP fails/unavailable) and updates the displayed numbers/quotes
+  - **Per-commodity "Fetch/Re-fetch Live Price"** on each card — retrieves the latest prices from web-searched URLs via the **embedded Streamable HTTP MCP server at `/api/mcp`** (primary, when `SEARXNG_MCP_URL` is unset; proxies to SearXNG `SEARXNG_INSTANCE_URL`, DuckDuckGo HTTP fallback internally) and updates the displayed numbers/quotes
   - Clean data table + interactive line chart (Chart.js)
 - **Real-time Feel** — Live-updating timestamp + “Refresh Data” button that perturbs values within realistic ranges.
 - **Key Factors & Drivers** — Dynamic grid of 8 major price influencers with:
@@ -35,10 +35,10 @@ A modern, clean, professional single-page web application that delivers energy p
   - Accessibility (ARIA labels, keyboard navigation, high contrast)
   - Clear disclaimers throughout
 - **AI Model Integration**
-  - Search and fetch latest commodity prices from web-searched URLs via an always-on **SearXNG MCP server** (`mcp-searxng`, primary) with **DuckDuckGo HTTP search** fallback (only when SearXNG MCP fails/unavailable)
-  - Search, analyze and display 8 dynamic factors (FIFO rolling window) affecting the prices using evidence from SearXNG MCP (primary) / DuckDuckGo fallback
+  - Search and fetch latest commodity prices from web-searched URLs via the **embedded Streamable HTTP MCP server at `/api/mcp`** (primary when `SEARXNG_MCP_URL` is unset; proxies to SearXNG `SEARXNG_INSTANCE_URL`, DuckDuckGo HTTP fallback internally)
+  - Search, analyze and display 8 dynamic factors (FIFO rolling window) affecting the prices using evidence from the embedded MCP server (primary) / DuckDuckGo fallback
   - Updating 3 dynamic AI-powered solutions based on the updating factors
-  - Executed via models from **Kilo Gateway** with evidence gathered through SearXNG MCP (primary) and DuckDuckGo fallback (only on MCP failure)
+  - Executed via models from **Kilo Gateway** with evidence gathered through the embedded MCP server (primary) and DuckDuckGo fallback (only on MCP failure)
 
 ---
 
@@ -58,12 +58,20 @@ A modern, clean, professional single-page web application that delivers energy p
    cp .env.example .env.local
    ```
 
-3. Start the always-on SearXNG MCP server (primary web search provider):
+3. The app embeds a Streamable HTTP MCP server at `/api/mcp` (see `app/api/mcp/route.ts`) as the primary web search provider when `SEARXNG_MCP_URL` is unset. It proxies to a SearXNG instance (`SEARXNG_INSTANCE_URL`) and falls back to DuckDuckGo HTTP search internally.
+
+   To use the embedded server, optionally set a SearXNG instance URL:
+
+   ```bash
+   SEARXNG_INSTANCE_URL=http://localhost:8080
+   ```
+
+   For local-only external MCP server development:
 
    ```bash
    # Ensure a SearXNG instance with JSON search enabled is running (e.g. http://localhost:8080)
    SEARXNG_URL=http://localhost:8080 npm run searxng:mcp
-   # Default MCP endpoint: http://localhost:3000/mcp (set SEARXNG_MCP_URL=http://localhost:3000/mcp)
+   # Default MCP endpoint: http://localhost:3000/mcp (set SEARXNG_MCP_URL=http://localhost:3000/mcp to use this external server instead of the embedded one)
    ```
 
 4. Start the development server on <http://localhost:3000>:
@@ -113,14 +121,15 @@ these as project environment variables.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `SEARXNG_MCP_URL` | Recommended | URL of the always-on **SearXNG MCP server** (streamable HTTP, `mcp-searxng`). Local daemon: `http://localhost:3000/mcp` (start with `SEARXNG_URL=http://localhost:8080 npm run searxng:mcp`). Set to empty string to disable MCP and use DuckDuckGo fallback only. When configured, SearXNG MCP is used by default; DuckDuckGo is used ONLY when SearXNG MCP fails/unreachable. |
+| `SEARXNG_MCP_URL` | Optional | URL of an external **SearXNG MCP server** (streamable HTTP). When unset, the app embeds its own Streamable HTTP MCP server at `/api/mcp` (see `app/api/mcp/route.ts`) which proxies to a SearXNG instance (`SEARXNG_INSTANCE_URL`) and falls back to DuckDuckGo HTTP search internally. Local daemon: `http://localhost:3000/mcp` (start with `SEARXNG_URL=http://localhost:8080 npm run searxng:mcp`). |
+| `SEARXNG_INSTANCE_URL` | Optional | URL of a SearXNG instance with JSON format enabled used by the embedded MCP server at `/api/mcp`, e.g. `http://localhost:8080`. If unset, the embedded MCP server falls back to DuckDuckGo HTTP search. |
 | `PLAYWRIGHT_MCP_URL` | Optional | URL of the always-on Playwright MCP server (streamable HTTP). Local dev: `http://localhost:8931/mcp`. Optional/legacy; not used as the primary web search provider. |
 | `DUCKDUCKGO_ENABLED` | Optional | Informational; DuckDuckGo HTTP search is the **fallback** and is used automatically ONLY when SearXNG MCP is unavailable/fails. No API key required. |
 | `KILO_GATEWAY_KEY` or `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Required for live AI | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional | Upstash Redis REST credentials for a shared cache across serverless instances. `REDIS_URL` / `REDIS_TOKEN` are accepted as aliases. Without Redis an in-memory per-instance cache is used. |
 | `FUEL_BASE_DIESEL_PRICE`, `FUEL_FACTOR`, `GRID_LOSS_FACTOR`, `WATER_SCARCITY_MULTIPLIER` | Optional | Override the deterministic analytics constants. |
 
-**Web search behavior:** The software uses the **SearXNG MCP server** (`mcp-searxng`, https://github.com/ihor-sokoliuk/mcp-searxng) by default for web search (retrieving the latest information and URLs for prices and the 8 dynamic reasons/FIFO factors). `mcp-searxng` brokers requests to a SearXNG instance you operate or trust (multi-engine search, no search-vendor API keys required). The app connects via MCP Streamable HTTP (JSON-RPC over `application/json` or SSE) using protocol negotiation (`2025-06-18`, `2025-03-26`, `2024-11-05`) and session lifecycle, with automatic stateless fallback when the server does not support sessions. It uses the MCP tools `searxng_web_search` (JSON, full detail) and `web_url_read` to gather evidence. **DuckDuckGo HTTP search** (html/lite/instant-answer + direct fetch) is used ONLY when the SearXNG MCP server fails or is unreachable — never by default. Commodity re-fetch actions and factor curation request the latest prices/evidence derived from web-searched URLs/results (SearXNG MCP primary, DuckDuckGo fallback) rather than performing separate ad-hoc live page scrapes. The health endpoint's MCP availability probe uses the same timeout as the runtime MCP client (25s) so a slow cold-start does not falsely report `mcpAvailable:false`.
+**Web search behavior:** When `SEARXNG_MCP_URL` is unset, the app embeds its own Streamable HTTP MCP server at `/api/mcp` (see `app/api/mcp/route.ts`) as the primary web search provider. It exposes the MCP tools `searxng_web_search` (JSON, full detail) and `web_url_read`, proxies to a SearXNG instance (`SEARXNG_INSTANCE_URL`) and falls back to DuckDuckGo HTTP search internally when the instance is unavailable. Kilo Gateway AI models can use search directly through this MCP server. The app connects via MCP Streamable HTTP (JSON-RPC over `application/json` or SSE) using protocol negotiation (`2025-06-18`, `2025-03-26`, `2024-11-05`) and session lifecycle, with automatic stateless fallback when the server does not support sessions. **DuckDuckGo HTTP search** (html/lite/instant-answer + direct fetch) is used only as an internal fallback when SearXNG is unavailable — never by default. Commodity re-fetch actions and factor curation request the latest prices/evidence derived from web-searched URLs/results rather than performing separate ad-hoc live page scrapes. The health endpoint's MCP availability probe uses the same timeout as the runtime MCP client (25s) so a slow cold-start does not falsely report `mcpAvailable:false`.
 
 The site degrades gracefully: with no keys or MCP server available every endpoint still
 returns a response, backed by public benchmark defaults, and the health endpoint
@@ -148,8 +157,9 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js** — Runtime environment (via Next.js on Vercel)
 - **Kilo Gateway API** — AI model orchestration (price extraction, factor curation, solutions, forecasting)
-- **SearXNG MCP Server** (`mcp-searxng`, always-on, primary) — Streamable HTTP MCP server that brokers requests to a SearXNG instance for multi-engine web search/scrape. Used via `searxng_web_search` and `web_url_read` to fetch live prices and evidence for dynamic factors. Client handles legacy `initialize`+`MCP-Session-Id` sessions and falls back to stateless MCP when sessions are unsupported.
-- **DuckDuckGo HTTP search** (fallback) — HTML/Lite/Instant Answer endpoints used ONLY when the SearXNG MCP server fails (health checks are best-effort; fallback is attempted at runtime even in restricted environments)
+- **Embedded Streamable HTTP MCP server** (`app/api/mcp/route.ts`, always-on, primary) — Streamable HTTP MCP server at `/api/mcp` that proxies to a SearXNG instance (`SEARXNG_INSTANCE_URL`) for multi-engine web search/scrape and falls back to DuckDuckGo HTTP search internally. Exposes MCP tools `searxng_web_search` and `web_url_read`. Client handles legacy `initialize`+`MCP-Session-Id` sessions and falls back to stateless MCP when sessions are unsupported.
+- **SearXNG MCP server** (`mcp-searxng`, `mcp/searxng-mcp-server.mjs`) — Optional local-development-only launcher for an external MCP server; not used by default in production.
+- **DuckDuckGo HTTP search** (fallback) — HTML/Lite/Instant Answer endpoints used only as an internal fallback when SearXNG is unavailable
 - **Redis (Upstash / Vercel KV)** — Distributed caching for API responses (optional; in-memory fallback)
 
 #### Data & Models (`src/lib/`)
@@ -189,6 +199,7 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 │   │   │   └── curate-factors/route.ts    # Nightly AI factor re-curation (Vercel cron)
 │   │   ├── dynamic-factors/route.ts       # 8 curated global price factors
 │   │   ├── health/route.ts                # Gateway/key/cache + web search status
+│   │   ├── mcp/route.ts                   # Embedded Streamable HTTP MCP server (primary web search)
 │   │   ├── prices/route.ts                # Live commodity spot prices (oil, electricity, water)
 │   │   ├── rates/route.ts                 # Exchange rates for currency conversion
 │   │   ├── regional-analytics/route.ts    # Regional fuel/electricity/water indices
@@ -227,8 +238,8 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 │           ├── validation.ts              # Zod-free validation helpers
 │           └── webSearchRouter.ts         # SearXNG MCP (primary) + DuckDuckGo fallback
 │
-├── mcp/                                    # Always-on MCP server assets
-│   ├── searxng-mcp-server.mjs             # SearXNG MCP server launcher (streamable HTTP)
+├── mcp/                                    # Local-only MCP server assets
+│   ├── searxng-mcp-server.mjs             # SearXNG MCP server launcher (streamable HTTP, local development only)
 │   ├── playwright-mcp-server.mjs           # Playwright MCP server launcher (streamable HTTP, optional)
 │   └── README.md                           # MCP run/config notes
 │

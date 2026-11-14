@@ -41,17 +41,19 @@ export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
 /**
  * URL of the always-on SearXNG MCP server (streamable HTTP transport).
  * This is the **primary** web search provider for live prices and the 8 dynamic
- * factors (FIFO). `mcp-searxng` (https://github.com/ihor-sokoliuk/mcp-searxng)
- * brokers requests to a self-hosted/trusted SearXNG instance (multi-engine:
- * Google, Bing, DuckDuckGo, Brave, etc.) — no search-vendor API keys required.
+ * factors (FIFO). The MCP server proxies requests to a SearXNG instance
+ * (multi-engine: Google, Bing, DuckDuckGo, Brave, etc.) — no search-vendor
+ * API keys required.
  *
  * Set via `SEARXNG_MCP_URL` environment variable, e.g.:
  *   http://localhost:3000/mcp   (local daemon: `npm run searxng:mcp`)
  *   https://your-searxng-mcp-host/mcp  (remote/cloud MCP server)
  *
- * The mcp-searxng HTTP server is configured separately with `SEARXNG_URL`
- * pointing at the SearXNG instance it proxies to (e.g. `http://localhost:8080`
- * for a local SearXNG, or a public instance you operate/trust).
+ * When unset, the app embeds its own Streamable HTTP MCP server at
+ * `/api/mcp` (see `app/api/mcp/route.ts`). That endpoint proxies to a
+ * SearXNG instance (`SEARXNG_INSTANCE_URL`) and falls back to DuckDuckGo
+ * HTTP search internally, so the app always reports `mcpAvailable: true`
+ * even in cloud deployments without an external MCP server.
  *
  * Set `SEARXNG_MCP_URL` to an empty string to explicitly disable MCP and use
  * DuckDuckGo HTTP fallback only. When SearXNG MCP is configured it is tried
@@ -61,7 +63,11 @@ export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
 export const SEARXNG_MCP_URL: string | null =
   process.env.SEARXNG_MCP_URL !== undefined
     ? (process.env.SEARXNG_MCP_URL.trim() || null)
-    : (process.env.VERCEL ? null : "http://localhost:3000/mcp");
+    : (process.env.VERCEL && process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}/api/mcp`
+        : process.env.VERCEL
+          ? null
+          : "http://localhost:3000/mcp");
 
 /**
  * URL of the always-on Playwright MCP server (streamable HTTP transport).

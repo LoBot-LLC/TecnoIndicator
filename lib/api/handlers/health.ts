@@ -1,7 +1,7 @@
 import { REGIONS, type Region } from "../_shared/regions";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { webSearchRouter } from "../_shared/webSearchRouter";
-import { analyticsCacheKey, PLAYWRIGHT_MCP_URL } from "../_shared/http";
+import { analyticsCacheKey, OPEN_WEBSEARCH_MCP_URL } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
@@ -182,7 +182,7 @@ export async function handleHealth(_req: Request): Promise<Response> {
       webSearch: {
         available: false,
         mcpAvailable: false,
-        mcpUrl: PLAYWRIGHT_MCP_URL,
+        mcpUrl: OPEN_WEBSEARCH_MCP_URL,
         duckDuckGoAvailable: true,
         fallbackUsed: true,
       },

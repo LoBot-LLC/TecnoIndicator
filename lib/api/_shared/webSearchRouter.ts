@@ -260,8 +260,6 @@ export class WebSearchRouter {
     abortSignal?: AbortSignal
   ): Promise<WebSearchResponse> {
     const limit = options.limit ?? 10;
-    // Prefer engines likely to return price-relevant results
-    const engines = ["duckduckgo", "bing", "brave", "exa"];
 
     const initialized = await this.mcpInitialize(abortSignal);
     if (!initialized) throw new Error("Open-WebSearch MCP not initialized");
@@ -276,8 +274,6 @@ export class WebSearchRouter {
         arguments: {
           query,
           limit,
-          engines,
-          searchMode: "auto",
         },
       },
     };
@@ -285,7 +281,7 @@ export class WebSearchRouter {
     const res = await this.mcpPost(callPayload, MCP_TIMEOUT_MS, abortSignal);
     if (!res.ok) {
       this.resetMcpState();
-      throw new Error(`Open-WebSearch MCP search failed: ${res.status}`);
+      throw new Error(`Open-WebSearch MCP search failed: ${res.status} ${res.text?.slice(0, 180) ?? ""}`);
     }
 
     const toolResult = this.extractToolResult(res.messages, callId);
@@ -295,7 +291,17 @@ export class WebSearchRouter {
     } else if (toolResult && typeof toolResult === "object") {
       const obj = toolResult as Record<string, unknown>;
       if (Array.isArray(obj.results)) rawResults = obj.results;
+      else if (Array.isArray(obj.items)) rawResults = obj.items;
+      else if (Array.isArray(obj.data)) rawResults = obj.data;
       else if (Array.isArray(obj.content)) rawResults = obj.content;
+    } else if (typeof toolResult === "string") {
+      try {
+        const parsed = JSON.parse(toolResult);
+        if (Array.isArray(parsed)) rawResults = parsed;
+        else if (parsed && Array.isArray((parsed as any).results)) rawResults = (parsed as any).results;
+      } catch {
+        // ignore
+      }
     }
 
     const results: SearchResult[] = rawResults
@@ -303,7 +309,14 @@ export class WebSearchRouter {
         if (!item || typeof item !== "object") return null;
         const r = item as Record<string, unknown>;
         const title = typeof r.title === "string" ? r.title : "";
-        const rawUrl = typeof r.url === "string" ? r.url : "";
+        const rawUrl =
+          typeof r.url === "string"
+            ? r.url
+            : typeof r.link === "string"
+              ? r.link
+              : typeof r.href === "string"
+                ? r.href
+                : "";
         const snippet =
           typeof r.description === "string"
             ? r.description
@@ -311,7 +324,9 @@ export class WebSearchRouter {
               ? r.snippet
               : typeof r.content === "string"
                 ? r.content
-                : "";
+                : typeof r.summary === "string"
+                  ? r.summary
+                  : "";
         const url = sanitizeUrl(rawUrl) ?? rawUrl;
         if (!title || !url) return null;
         let siteName = "web";
@@ -320,7 +335,12 @@ export class WebSearchRouter {
         } catch {}
         return {
           position: i + 1,
-          site_name: siteName,
+          site_name:
+            typeof r.source === "string" && r.source
+              ? r.source
+              : typeof r.engine === "string" && r.engine
+                ? r.engine
+                : siteName,
           title,
           snippet,
           url,
@@ -329,6 +349,11 @@ export class WebSearchRouter {
       })
       .filter((r): r is SearchResult => r !== null)
       .slice(0, limit);
+
+    if (results.length === 0) {
+      // treat as failure so caller can fall back to DuckDuckGo
+      throw new Error("Open-WebSearch MCP search returned no usable results");
+    }
 
     return { results, total: results.length, source: "mcp" };
   }
@@ -750,9 +775,12 @@ export class WebSearchRouter {
     // Check Open-WebSearch MCP availability (primary provider)
     if (this.mcpUrl) {
       try {
-        // Try a fresh initialize probe
-        this.resetMcpState();
+        // Try to (re)initialize; if an existing session is stale this will recover on next call.
         mcpAvailable = await this.mcpInitialize(abortSignal);
+        if (!mcpAvailable) {
+          this.resetMcpState();
+          mcpAvailable = await this.mcpInitialize(abortSignal);
+        }
       } catch {
         mcpAvailable = false;
         this.resetMcpState();

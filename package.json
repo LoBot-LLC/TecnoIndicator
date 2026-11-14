@@ -9,7 +9,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "playwright:mcp": "node mcp/playwright-mcp-server.mjs",
-    "open-websearch:mcp": "node mcp/open-websearch-mcp-server.mjs"
+    "searxng:mcp": "node mcp/searxng-mcp-server.mjs"
   },
   "dependencies": {
     "@vercel/analytics": "^1.5.0",

@@ -102,8 +102,8 @@ async function resolvePrices(req: Request): Promise<Response> {
     }
   }
 
-  // Bounded live-price attempt: Open-WebSearch MCP search + Kilo extraction.
-  // DuckDuckGo is used only as fallback when the Open-WebSearch MCP server fails.
+  // Bounded live-price attempt: SearXNG MCP search + Kilo extraction.
+  // DuckDuckGo is used only as fallback when the SearXNG MCP server fails.
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), 25000);
 
@@ -231,7 +231,7 @@ async function getLivePricesFromWebSearch(scope: RegionId, abortSignal: AbortSig
           electricity: { ...prices.electricity, isLive: true },
           water: { ...prices.water, isLive: true },
           asOf: new Date().toISOString(),
-          dataSource: "Kilo AI analysis of Open-WebSearch MCP / DuckDuckGo search results",
+          dataSource: "Kilo AI analysis of SearXNG MCP / DuckDuckGo search results",
           isLive: true,
         };
       }
@@ -263,7 +263,7 @@ async function getLivePricesFromWebSearch(scope: RegionId, abortSignal: AbortSig
       electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true },
       water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true },
       asOf: new Date().toISOString(),
-      dataSource: "Open-WebSearch MCP / DuckDuckGo search (deterministic fallback)",
+      dataSource: "SearXNG MCP / DuckDuckGo search (deterministic fallback)",
       isLive: true,
     };
   }
@@ -273,7 +273,7 @@ async function getLivePricesFromWebSearch(scope: RegionId, abortSignal: AbortSig
     electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false },
     water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false },
     asOf: new Date().toISOString(),
-      dataSource: "Open-WebSearch MCP / DuckDuckGo search (insufficient data)",
+    dataSource: "SearXNG MCP / DuckDuckGo search (insufficient data)",
     isLive: false,
   };
 }

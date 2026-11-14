@@ -1,7 +1,7 @@
 import { REGIONS, type Region } from "../_shared/regions";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { webSearchRouter } from "../_shared/webSearchRouter";
-import { analyticsCacheKey, OPEN_WEBSEARCH_MCP_URL } from "../_shared/http";
+import { analyticsCacheKey, SEARXNG_MCP_URL } from "../_shared/http";
 import { peekCache } from "../_shared/cache";
 import { readFactorWindow, runFactorAnalysis, writeFactorWindow } from "./factor-analysis";
 import { getGlobalAnalytics, getRegionalAnalytics } from "../_shared/deterministicAnalytics";
@@ -131,7 +131,7 @@ async function readFactorStatus(scope: "global" | Region, abortSignal?: AbortSig
  * analytics, factor caches, and web search providers. `lastFetch` / `lastRun`
  * / `aiCurated` are derived from what is actually stored.
  *
- * Web search uses an always-on Playwright MCP server (primary) with DuckDuckGo
+ * Web search uses an always-on SearXNG MCP server (primary) with DuckDuckGo
  * HTTP search as fallback when the MCP server is unavailable.
  */
 export async function handleHealth(_req: Request): Promise<Response> {
@@ -199,7 +199,7 @@ export async function handleHealth(_req: Request): Promise<Response> {
         webSearch: {
           available: false,
           mcpAvailable: false,
-          mcpUrl: OPEN_WEBSEARCH_MCP_URL,
+          mcpUrl: SEARXNG_MCP_URL,
           duckDuckGoAvailable: true,
           fallbackUsed: true,
         },

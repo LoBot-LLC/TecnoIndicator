@@ -1,5 +1,5 @@
 import { getCache, setCache } from "./cache";
-import { SEARCH_CACHE_MS, SCRAPE_CACHE_MS, sanitizeUrl, OPEN_WEBSEARCH_MCP_URL } from "./http";
+import { SEARCH_CACHE_MS, SCRAPE_CACHE_MS, sanitizeUrl, SEARXNG_MCP_URL } from "./http";
 import type { Region } from "./regions";
 
 export interface SearchResult {
@@ -62,17 +62,18 @@ export class WebSearchRouter {
   private mcpProtocolVersion: string = "2025-06-18";
 
   constructor() {
-    // Always-on Open-WebSearch MCP server is the primary search provider.
-    // DuckDuckGo HTTP search is used only when the Open-WebSearch MCP server is
-    // unavailable or misconfigured.
+    // Always-on SearXNG MCP server is the primary search provider.
+    // DuckDuckGo HTTP search is used ONLY when the SearXNG MCP server is
+    // unavailable or misconfigured (never by default).
     //
-    // - Set OPEN_WEBSEARCH_MCP_URL to a remote MCP server URL for cloud/deployed
-    //   environments (e.g. http://localhost:3000/mcp for a local `open-websearch` daemon).
-    // - Set OPEN_WEBSEARCH_MCP_URL to an empty string to explicitly disable MCP
+    // - Set SEARXNG_MCP_URL to a remote MCP server URL for cloud/deployed
+    //   environments (e.g. http://localhost:3000/mcp for a local `mcp-searxng`
+    //   daemon started via `npm run searxng:mcp`).
+    // - Set SEARXNG_MCP_URL to an empty string to explicitly disable MCP
     //   and use DuckDuckGo fallback only.
-    // - If unset, defaults to the public hosted instance:
-    //   https://open-web-search.vercel.app/mcp (recommended for production/Edge).
-    this.mcpUrl = OPEN_WEBSEARCH_MCP_URL;
+    // - If unset, defaults to http://localhost:3000/mcp for local dev and
+    //   null on Vercel/cloud (so the health probe does not hang on localhost).
+    this.mcpUrl = SEARXNG_MCP_URL;
   }
 
   /** Reset MCP session state so the next call re-initializes from scratch. */
@@ -278,18 +279,22 @@ export class WebSearchRouter {
     const limit = options.limit ?? 10;
 
     const initialized = await this.mcpInitialize(abortSignal);
-    if (!initialized) throw new Error("Open-WebSearch MCP not initialized");
+    if (!initialized) throw new Error("SearXNG MCP not initialized");
 
     const callId = Date.now();
+    // mcp-searxng tool: searxng_web_search. Request raw JSON with full detail
+    // so result metadata (engine, publishedDate, score) is preserved.
     const callPayload = {
       jsonrpc: "2.0",
       id: callId,
       method: "tools/call",
       params: {
-        name: "search",
+        name: "searxng_web_search",
         arguments: {
           query,
-          limit,
+          num_results: limit,
+          response_format: "json",
+          result_detail: "full",
         },
       },
     };
@@ -297,7 +302,7 @@ export class WebSearchRouter {
     const res = await this.mcpPost(callPayload, MCP_TIMEOUT_MS, abortSignal);
     if (!res.ok) {
       this.resetMcpState();
-      throw new Error(`Open-WebSearch MCP search failed: ${res.status} ${res.text?.slice(0, 180) ?? ""}`);
+      throw new Error(`SearXNG MCP search failed: ${res.status} ${res.text?.slice(0, 180) ?? ""}`);
     }
 
     const toolResult = this.extractToolResult(res.messages, callId);
@@ -368,7 +373,7 @@ export class WebSearchRouter {
 
     if (results.length === 0) {
       // treat as failure so caller can fall back to DuckDuckGo
-      throw new Error("Open-WebSearch MCP search returned no usable results");
+      throw new Error("SearXNG MCP search returned no usable results");
     }
 
     return { results, total: results.length, source: "mcp" };
@@ -379,21 +384,19 @@ export class WebSearchRouter {
     if (!safeUrl) return null;
 
     const initialized = await this.mcpInitialize(abortSignal);
-    if (!initialized) throw new Error("Open-WebSearch MCP not initialized");
+    if (!initialized) throw new Error("SearXNG MCP not initialized");
 
     const callId = Date.now();
+    // mcp-searxng tool: web_url_read. Returns markdown text of the source.
     const callPayload = {
       jsonrpc: "2.0",
       id: callId,
       method: "tools/call",
       params: {
-        name: "fetchWebContent",
+        name: "web_url_read",
         arguments: {
           url: safeUrl,
-          maxChars: 20000,
-          renderMode: "auto",
-          readability: true,
-          includeLinks: false,
+          maxLength: 20000,
         },
       },
     };
@@ -401,7 +404,7 @@ export class WebSearchRouter {
     const res = await this.mcpPost(callPayload, MCP_TIMEOUT_MS, abortSignal);
     if (!res.ok) {
       this.resetMcpState();
-      throw new Error(`Open-WebSearch MCP scrape failed: ${res.status}`);
+      throw new Error(`SearXNG MCP scrape failed: ${res.status}`);
     }
 
     const toolResult = this.extractToolResult(res.messages, callId);
@@ -412,7 +415,14 @@ export class WebSearchRouter {
     if (toolResult && typeof toolResult === "object" && !Array.isArray(toolResult)) {
       const obj = toolResult as Record<string, unknown>;
       title = typeof obj.title === "string" ? obj.title : "";
-      textContent = typeof obj.content === "string" ? obj.content : "";
+      textContent =
+        typeof obj.content === "string"
+          ? obj.content
+          : typeof obj.markdown === "string"
+            ? obj.markdown
+            : typeof obj.text === "string"
+              ? obj.text
+              : "";
       if (typeof obj.finalUrl === "string") finalUrl = sanitizeUrl(obj.finalUrl) ?? safeUrl;
       if (typeof obj.url === "string" && !textContent) finalUrl = sanitizeUrl(obj.url) ?? finalUrl;
     } else if (typeof toolResult === "string") {
@@ -735,19 +745,20 @@ export class WebSearchRouter {
     const cached = await getCache<WebSearchResponse>(cacheKey, SEARCH_CACHE_MS);
     if (cached) return cached;
 
-    // Primary: Open-WebSearch MCP
+    // Primary: SearXNG MCP server. DuckDuckGo HTTP search is used ONLY when
+    // SearXNG MCP fails or is unreachable (never by default).
     if (this.mcpUrl) {
       try {
         const result = await this.mcpSearch(query, options, abortSignal);
         await setCache(cacheKey, result, SEARCH_CACHE_MS);
         return result;
       } catch (error) {
-        console.warn("Open-WebSearch MCP search failed, falling back to DuckDuckGo:", error);
+        console.warn("SearXNG MCP search failed, falling back to DuckDuckGo:", error);
         this.resetMcpState();
       }
     }
 
-    // Fallback: DuckDuckGo (only when MCP fails)
+    // Fallback: DuckDuckGo (only when SearXNG MCP fails)
     // Try html endpoint first, then lite, then instant answer
     const result = await this.duckDuckGoSearch(query, options);
     await setCache(cacheKey, result, SEARCH_CACHE_MS);
@@ -762,7 +773,8 @@ export class WebSearchRouter {
     const cached = await getCache<ScrapedContent>(cacheKey, SCRAPE_CACHE_MS);
     if (cached) return cached;
 
-    // Primary: Open-WebSearch MCP
+    // Primary: SearXNG MCP server. DuckDuckGo HTTP search is used ONLY when
+    // SearXNG MCP fails or is unreachable (never by default).
     if (this.mcpUrl) {
       try {
         const result = await this.mcpScrape(safeUrl, abortSignal);
@@ -771,7 +783,7 @@ export class WebSearchRouter {
           return result;
         }
       } catch (error) {
-        console.warn("Open-WebSearch MCP scrape failed, falling back to DuckDuckGo:", error);
+        console.warn("SearXNG MCP scrape failed, falling back to DuckDuckGo:", error);
         this.resetMcpState();
       }
     }
@@ -788,7 +800,7 @@ export class WebSearchRouter {
     let mcpAvailable = false;
     let duckDuckGoAvailable = false;
 
-    // Check Open-WebSearch MCP availability (primary provider)
+    // Check SearXNG MCP availability (primary provider)
     if (this.mcpUrl) {
       try {
         // Try to (re)initialize; if an existing session is stale this will recover on next call.
@@ -825,7 +837,7 @@ export class WebSearchRouter {
     }
 
     return {
-      // Available if Open-WebSearch MCP is up OR DuckDuckGo is reachable (fallback)
+      // Available if SearXNG MCP is up OR DuckDuckGo is reachable (fallback)
       available: mcpAvailable || duckDuckGoAvailable,
       mcpAvailable,
       mcpUrl: this.mcpUrl,

@@ -48,7 +48,7 @@ import {
   type Commodity,
   type CommodityId,
   type ForecastPoint,
-  type LiveWaterQuote,
+  type LiveCommodityQuote,
   type RegionId,
 } from "../lib/model";
 import { buildMarkdown } from "../lib/markdown";
@@ -321,9 +321,9 @@ interface CommodityCardProps {
   commodity: Commodity;
   today: ForecastPoint;
   horizonBand: ForecastPoint;
-  live: LiveWaterQuote | null;
+  live: LiveCommodityQuote | null;
   fetching: boolean;
-  onFetchWater: () => void;
+  onFetch: () => void;
   regionLabel: string;
 }
 
@@ -333,7 +333,7 @@ function CommodityCard({
   horizonBand,
   live,
   fetching,
-  onFetchWater,
+  onFetch,
   regionLabel,
 }: CommodityCardProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
@@ -356,9 +356,25 @@ function CommodityCard({
   const delta = band.avg - todayBand.avg;
   const deltaPct = (delta / todayBand.avg) * 100;
   const up = delta >= 0;
-  const isWater = commodity.id === "water";
   const flashCls = useFlash(conv(band.avg));
   const spotFlash = useFlash(conv(todayBand.avg));
+  const hasLive = live !== null;
+
+  // Commodity-aware accent colours for the "live" badge / button / price text.
+  const liveBadgeClass =
+    commodity.id === "oil"
+      ? "rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300"
+      : commodity.id === "electricity"
+        ? "rounded-full border border-teal-400/30 bg-teal-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-300"
+        : "rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-300";
+  const liveButtonClass =
+    commodity.id === "oil"
+      ? "flex w-full items-center justify-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs font-semibold text-amber-200 transition-all hover:bg-amber-400/15 disabled:opacity-60"
+      : commodity.id === "electricity"
+        ? "flex w-full items-center justify-center gap-2 rounded-xl border border-teal-400/30 bg-teal-400/10 px-3 py-2.5 text-xs font-semibold text-teal-200 transition-all hover:bg-teal-400/15 disabled:opacity-60"
+        : "flex w-full items-center justify-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/10 px-3 py-2.5 text-xs font-semibold text-sky-200 transition-all hover:bg-sky-400/15 disabled:opacity-60";
+  const livePriceTextClass =
+    commodity.id === "oil" ? "font-semibold text-amber-300" : commodity.id === "electricity" ? "font-semibold text-teal-300" : "font-semibold text-sky-300";
 
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-line bg-panel/70 p-5 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -381,8 +397,8 @@ function CommodityCard({
             </p>
           </div>
         </div>
-        {isWater && live && (
-          <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-300">
+        {hasLive && (
+          <span className={liveBadgeClass}>
             Live
           </span>
         )}
@@ -428,35 +444,33 @@ function CommodityCard({
         <span className="text-slate-600">±{(commodity.maxVol * 100).toFixed(0)}% vol @10y</span>
       </div>
 
-      {isWater && (
-        <div className="relative mt-4 border-t border-line pt-4">
-          <button
-            type="button"
-            onClick={onFetchWater}
-            disabled={fetching}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/10 px-3 py-2.5 text-xs font-semibold text-sky-200 transition-all hover:bg-sky-400/15 disabled:opacity-60"
-          >
-            {fetching ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Waves className="h-3.5 w-3.5" />
-            )}
-            {fetching
-              ? "Fetching live quote…"
-              : live
-                ? "Re-fetch Live Water Price"
-                : "Fetch Live Water Price"}
-          </button>
-          {live && (
-            <p className="mt-2 text-[11px] leading-relaxed text-slate-700 dark:text-slate-400">
-              <span className="font-semibold text-sky-300">
-                {formatPrice(convertWater(live.price, lengthUnit), selectedCurrency)}/{waterLabel(lengthUnit)}
-              </span>{" "}
-              · {live.asOf} · {live.source} · {live.range}
-            </p>
+      <div className="relative mt-4 border-t border-line pt-4">
+        <button
+          type="button"
+          onClick={onFetch}
+          disabled={fetching}
+          className={liveButtonClass}
+        >
+          {fetching ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Waves className="h-3.5 w-3.5" />
           )}
-        </div>
-      )}
+          {fetching
+            ? "Fetching live quote…"
+            : live
+              ? `Re-fetch Live ${commodity.name} Price`
+              : `Fetch Live ${commodity.name} Price`}
+        </button>
+        {live && (
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-700 dark:text-slate-400">
+            <span className={livePriceTextClass}>
+              {formatPrice(conv(live.price), selectedCurrency)}/{unitSuffix}
+            </span>{" "}
+            · {live.asOf} · {live.source} · {live.range}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -470,9 +484,15 @@ interface ForecastToolProps {
   points: ForecastPoint[];
   lastUpdated: Date;
   onRefresh: () => void;
+  onFetchOil: () => void;
+  onFetchElectricity: () => void;
   onFetchWater: () => void;
+  oilFetching: boolean;
+  electricityFetching: boolean;
   waterFetching: boolean;
-  waterLive: LiveWaterQuote | null;
+  oilLive: LiveCommodityQuote | null;
+  electricityLive: LiveCommodityQuote | null;
+  waterLive: LiveCommodityQuote | null;
   isLive: boolean;
   streaming: boolean;
   onToggleLive: () => void;
@@ -487,8 +507,14 @@ export default function ForecastTool({
   points,
   lastUpdated,
   onRefresh,
+  onFetchOil,
+  onFetchElectricity,
   onFetchWater,
+  oilFetching,
+  electricityFetching,
   waterFetching,
+  oilLive,
+  electricityLive,
   waterLive,
   isLive,
   streaming,
@@ -828,27 +854,44 @@ export default function ForecastTool({
 
         {/* commodity cards */}
         <div className="grid gap-4 md:grid-cols-3">
-          {COMMODITIES.map((c, i) => (
-            <Reveal key={c.id} delay={100 + i * 60}>
-              <CommodityCard
-                commodity={{
-                  ...c,
-                  name:
-                    region === "global"
-                      ? c.name
-                      : c.id === "oil"
-                        ? `${regionProfile.oilMarker} Oil`
-                        : `${regionProfile.short} ${c.short}`,
-                }}
-                today={today}
-                horizonBand={horizonBand}
-                live={waterLive}
-                fetching={waterFetching}
-                onFetchWater={onFetchWater}
-                regionLabel={regionProfile.short}
-              />
-            </Reveal>
-          ))}
+          {COMMODITIES.map((c, i) => {
+            const liveByCommodity: Record<CommodityId, LiveCommodityQuote | null> = {
+              oil: oilLive,
+              electricity: electricityLive,
+              water: waterLive,
+            };
+            const fetchingByCommodity: Record<CommodityId, boolean> = {
+              oil: oilFetching,
+              electricity: electricityFetching,
+              water: waterFetching,
+            };
+            const onFetchByCommodity: Record<CommodityId, () => void> = {
+              oil: onFetchOil,
+              electricity: onFetchElectricity,
+              water: onFetchWater,
+            };
+            return (
+              <Reveal key={c.id} delay={100 + i * 60}>
+                <CommodityCard
+                  commodity={{
+                    ...c,
+                    name:
+                      region === "global"
+                        ? c.name
+                        : c.id === "oil"
+                          ? `${regionProfile.oilMarker} Oil`
+                          : `${regionProfile.short} ${c.short}`,
+                  }}
+                  today={today}
+                  horizonBand={horizonBand}
+                  live={liveByCommodity[c.id]}
+                  fetching={fetchingByCommodity[c.id]}
+                  onFetch={onFetchByCommodity[c.id]}
+                  regionLabel={regionProfile.short}
+                />
+              </Reveal>
+            );
+          })}
         </div>
 
         {/* chart */}

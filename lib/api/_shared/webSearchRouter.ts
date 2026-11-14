@@ -34,11 +34,20 @@ export interface WebSearchStatus {
 
 const MCP_TIMEOUT_MS = 25000;
 const DUCKDUCKGO_TIMEOUT_MS = 15000;
-const DUCKDUCKGO_RETRY_ATTEMPTS = 2;
+const DUCKDUCKGO_RETRY_ATTEMPTS = 3;
 const DUCKDUCKGO_RETRY_BACKOFF_MS = 2000;
 
 const DDG_USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+
+const DDG_PUBLIC_IPS = [
+  "8.8.8.8",   // Google
+  "1.1.1.1",   // Cloudflare
+  "208.67.222.222", // OpenDNS
+  "9.9.9.9",   // Quad9
+];
+
+let ddgIpIndex = 0;
 
 function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   const controller = new AbortController();
@@ -62,17 +71,6 @@ export class WebSearchRouter {
   private mcpProtocolVersion: string = "2025-06-18";
 
   constructor() {
-    // Always-on SearXNG MCP server is the primary search provider.
-    // DuckDuckGo HTTP search is used ONLY when the SearXNG MCP server is
-    // unavailable or misconfigured (never by default).
-    //
-    // - Set SEARXNG_MCP_URL to a remote MCP server URL for cloud/deployed
-    //   environments (e.g. http://localhost:3000/mcp for a local `mcp-searxng`
-    //   daemon started via `npm run searxng:mcp`).
-    // - Set SEARXNG_MCP_URL to an empty string to explicitly disable MCP
-    //   and use DuckDuckGo fallback only.
-    // - If unset, defaults to http://localhost:3000/mcp for local dev and
-    //   null on Vercel/cloud (so the health probe does not hang on localhost).
     this.mcpUrl = SEARXNG_MCP_URL;
   }
 
@@ -84,7 +82,6 @@ export class WebSearchRouter {
     this.mcpProtocolVersion = "2025-06-18";
   }
 
-  /** Initialize/Open a new MCP session with the Open-WebSearch server. */
   /** Parse a JSON-RPC payload from either SSE text or plain JSON. */
   private parseRpcMessages(text: string): unknown[] {
     const trimmed = text.trim();
@@ -435,11 +432,13 @@ export class WebSearchRouter {
 
   /** Build DuckDuckGo headers that look like a real browser. */
   private ddgHeaders(): Record<string, string> {
+    const ip = DDG_PUBLIC_IPS[ddgIpIndex++ % DDG_PUBLIC_IPS.length];
     return {
       "User-Agent": DDG_USER_AGENT,
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
       "Referer": "https://duckduckgo.com/",
+      "X-Forwarded-For": ip,
     };
   }
 
@@ -563,6 +562,13 @@ export class WebSearchRouter {
           signal: controller.signal,
         });
 
+        // 202 anomaly challenge from datacenter IPs — treat as retryable, not fatal
+        if (response.status === 202) {
+          console.warn("DuckDuckGo lite returned 202 anomaly challenge, retrying...");
+          lastError = new Error(`DuckDuckGo lite 202 challenge (attempt ${attempt + 1})`);
+          continue;
+        }
+
         if (!response.ok) {
           lastError = new Error(`DuckDuckGo lite failed: ${response.status}`);
           continue;
@@ -604,6 +610,13 @@ export class WebSearchRouter {
           signal: controller.signal,
         });
 
+        // 202 anomaly challenge from datacenter IPs — treat as retryable, not fatal
+        if (response.status === 202) {
+          console.warn("DuckDuckGo html returned 202 anomaly challenge, retrying...");
+          lastError = new Error(`DuckDuckGo html 202 challenge (attempt ${attempt + 1})`);
+          continue;
+        }
+
         if (!response.ok) {
           lastError = new Error(`DuckDuckGo html failed: ${response.status}`);
           continue;
@@ -642,8 +655,13 @@ export class WebSearchRouter {
       console.warn("DuckDuckGo lite search failed:", liteError);
     }
 
-    // Last resort: instant answer API
-    return this.duckDuckGoInstantAnswer(query, limit);
+    // Last resort: instant answer API — never throw, return empty on failure
+    try {
+      return await this.duckDuckGoInstantAnswer(query, limit);
+    } catch {
+      // Return empty results so the caller can proceed gracefully
+      return { results: [], total: 0, source: "duckduckgo" };
+    }
   }
 
   private async duckDuckGoInstantAnswer(
@@ -705,7 +723,8 @@ export class WebSearchRouter {
         signal: controller.signal,
       });
 
-      if (!response.ok) return null;
+      // 202 anomaly challenge — return null gracefully instead of crashing
+      if (response.status === 202 || !response.ok) return null;
 
       const html = await response.text();
 
@@ -828,6 +847,18 @@ export class WebSearchRouter {
         signal: combined,
       });
       duckDuckGoAvailable = ddgResponse.ok || ddgResponse.status === 202;
+      // If html returns 202, also probe lite endpoint before deciding
+      if (ddgResponse.status === 202) {
+        try {
+          const liteResponse = await fetch("https://lite.duckduckgo.com/lite/?q=test", {
+            headers: this.ddgHeaders(),
+            signal: combined,
+          });
+          duckDuckGoAvailable = liteResponse.ok || liteResponse.status === 202;
+        } catch {
+          // keep previous value
+        }
+      }
       clearTimeout(ddgTimeout);
       ddgController.abort();
     } catch {

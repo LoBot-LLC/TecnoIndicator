@@ -400,24 +400,31 @@ export async function runFactorAnalysis(
       ),
     );
     // Flatten results while preserving which source (MCP vs DuckDuckGo) they came from.
-    // When SearXNG MCP is down and DuckDuckGo is the fallback, don't apply the narrow
-    // isReputableSource filter — DuckDuckGo results are already ranked by DDG,
-    // and the reputable-hosts list is too restrictive for keyless search.
-    const candidates = searches
-      .flatMap((r) =>
-        r.results.map((result) => ({
-          ...result,
-          snippet: typeof result.snippet === "string" ? result.snippet : "",
-          source: r.source,
-        })),
-      )
-      .filter((r) => {
-        const recent = isRecentPublishedAt(r.publishedAt);
-        // MCP results: apply reputable-source filter. DuckDuckGo fallback: skip it.
-        const reputable = r.source === "duckduckgo" || isReputableSource(r.url);
-        return recent && reputable;
-      })
-      .slice(0, 15);
+    // The embedded MCP server at /api/mcp may itself fall back to DuckDuckGo scraping,
+    // so a "mcp" response can contain non-reputable URLs. Rather than hard-dropping
+    // those (which starves the curator when reputable hits are scarce), rank reputable
+    // results first but keep the rest as a fallback so the AI always receives evidence.
+    const flattened = searches.flatMap((r) =>
+      r.results.map((result) => ({
+        ...result,
+        snippet: typeof result.snippet === "string" ? result.snippet : "",
+        source: r.source,
+      })),
+    );
+
+    const recentResults = flattened.filter((r) => isRecentPublishedAt(r.publishedAt));
+    const reputableResults = recentResults.filter(
+      (r) => r.source === "duckduckgo" || isReputableSource(r.url),
+    );
+    const otherResults = recentResults.filter(
+      (r) => r.source !== "duckduckgo" && !isReputableSource(r.url),
+    );
+
+    // Prefer reputable sources; only pad with others when reputable hits are thin.
+    const candidates = [
+      ...reputableResults,
+      ...(reputableResults.length >= 5 ? [] : otherResults),
+    ].slice(0, 15);
 
     if (candidates.length === 0) {
       return returnExisting();

@@ -4,9 +4,67 @@
 
 <img width="1984" height="992" alt="image" src="https://github.com/user-attachments/assets/ceaff96a-4022-4f32-9a8b-d194ffd9e484" />
 
-A modern, clean, professional single-page web application that delivers energy price forecasts with interactive data visualization, scenario analysis, and **AI-powered** dynamic factor insights and recommendations. Built with **Next.js (App Router)** and deployed on Vercel: the UI is a React client application, while the market data, AI curation and forecasting live in Next.js route handlers under `app/api/`.
+A modern, clean, professional single-page web application that delivers energy price forecasts with interactive data visualization, scenario analysis, and **AI-powered** dynamic factor insights and recommendations. Built with **Next.js 16 (App Router)** and deployed on **Vercel**: the UI is a React client application, while the market data, AI curation and forecasting live in Next.js route handlers under `app/api/`.
 
 **Live demo:** [https://lobotllc.vercel.app](https://lobotllc.vercel.app)
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| **Framework** | **Next.js 16.4.6** (App Router, React 19 server components) |
+| **Runtime** | **Node.js 22+** |
+| **Language** | **TypeScript** (strict, `tsc --noEmit`) |
+| **Styling** | **Tailwind CSS 4** (`@tailwindcss/postcss`, PostCSS pipeline) |
+| **Deployment** | **Vercel** (native Next.js hosting, edge functions, cron jobs) |
+| **Package Manager** | **npm** |
+
+### Frontend
+- **Next.js 16.4.6** (App Router, React 19 server components) — React framework with server components
+- **React 19** — UI library (concurrent features)
+- **TypeScript 5** — Static type checking across the entire codebase
+- **Tailwind CSS 4** — Utility-first styling via `@tailwindcss/postcss`
+- **Chart.js** — Interactive data visualization (used directly, no React wrapper)
+- **Lucide React** — Clean, consistent icon system
+- **clsx** + **tailwind-merge** — Conditional className utilities
+- **flags** — Feature flag / feature gating support
+- **LoBot logo mark** (`images/lobotlogoonly.svg`) — Brand SVG rendered as an inline React component (`LoBotIcon` in `src/components/icons.tsx`), used for the footer logo mark and the footer company link to the LoBot LLC website.
+- **TecnoIndicator waveform mark** (`images/lobottecnoindicator.svg`) — Brand SVG rendered as an inline React component (`TecnoIndicatorIcon` in `src/components/icons.tsx`), used as the header icon next to the "LoBot TecnoIndicator" wordmark.
+- **LinkedIn "in" mark** — Custom inline SVG component (`LinkedinIcon` in `src/components/icons.tsx`), used as the footer social link to the LoBot LLC LinkedIn page. Lucide v1 removed all brand icons (including LinkedIn), so brand marks like this one are maintained as hand-written SVG components.
+
+### Backend / API Layer
+- **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
+- **Node.js** — Runtime environment (via Next.js on Vercel)
+- **Kilo Gateway API** — AI model orchestration (price extraction, factor curation, solutions, forecasting)
+- **Embedded Streamable HTTP MCP server** (`app/api/mcp/route.ts`, always-on, primary) — Streamable HTTP MCP server at `/api/mcp` that proxies to a SearXNG instance (`SEARXNG_INSTANCE_URL`) for multi-engine web search/scrape and falls back to DuckDuckGo HTTP search internally. Exposes MCP tools `searxng_web_search` and `web_url_read`. Client handles legacy `initialize`+`MCP-Session-Id` sessions and falls back to stateless MCP when sessions are unsupported.
+- **SearXNG MCP server** (`mcp-searxng`, `mcp/searxng-mcp-server.mjs`) — Optional local-development-only launcher for an external MCP server; not used by default in production.
+- **DuckDuckGo HTTP search** (fallback) — HTML/Lite/Instant Answer endpoints used only as an internal fallback when SearXNG is unavailable
+- **Redis (Upstash / Vercel KV)** — Distributed caching for API responses (optional; in-memory fallback)
+
+### Data & Models (`src/lib/`)
+- **Deterministic Analytics Engine** — Fuel levy, grid loss, water scarcity calculations
+- **Currency & Unit Conversion** — Multi-currency support with real-time formatting
+- **Markdown Report Generator** — Export forecasts as `.md` reports
+- **Event & Factor Models** — Structured types for price drivers and scenarios
+
+### Development & Build Tooling
+- **npm** — Fast, reliable package manager (node_modules structure)
+- **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run lint` / `npm run build`)
+- **PostCSS** — Tailwind CSS 4 processing pipeline
+- **Vercel Analytics** — Real-user monitoring (RUM)
+- **Vercel Speed Insights** — Core Web Vitals tracking
+
+### Testing & Quality
+- **Playwright** — End-to-end browser testing (chromium, firefox, webkit)
+- **ESLint** (Next.js config) — Code quality & consistency
+- **Prettier** (via Tailwind plugin) — Opinionated formatting
+
+### Deployment & Infrastructure
+- **Vercel** — Native Next.js hosting, edge functions, cron jobs
+- **Vercel Cron** — Nightly factor re-curation (`0 2 * * *` UTC)
+- **Environment Variables** — Secure secret management (`.env.local` locally, Vercel dashboard in prod)
 
 ---
 
@@ -109,6 +167,9 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/ai-forecast` | 11-year global forecast band |
 | `/api/regional-forecast?region=` | 11-year region-specific forecast band |
 | `/api/cron/curate-factors` | Nightly factor re-curation (Vercel cron, `0 2 * * *` UTC) |
+| `/api/mcp` | Embedded Streamable HTTP MCP server (primary web search provider) |
+| `/api/telemetry` | Client-side analytics ingestion |
+| `/api/rates` | Exchange rates for currency conversion |
 
 All factor producers and consumers share a single canonical cache key,
 `dynamic-factors:{global|region}`, so the reasons shown in the UI are exactly
@@ -138,56 +199,9 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 ### Keyboard Shortcuts
 - Press `/` (when focused on the page) to jump to the horizon slider.
 
-### Tech stack
-
-#### Frontend
-- **Next.js 16** (App Router) — React framework with server components
-- **React 19** — UI library (concurrent features)
-- **TypeScript 5** — Static type checking across the entire codebase
-- **Tailwind CSS 4** — Utility-first styling via `@tailwindcss/postcss`
-- **Chart.js** — Interactive data visualization (used directly, no React wrapper)
-- **Lucide React** — Clean, consistent icon system
-- **clsx** + **tailwind-merge** — Conditional className utilities
-- **flags** — Feature flag / feature gating support
-- **LoBot logo mark** (`images/lobotlogoonly.svg`) — Brand SVG rendered as an inline React component (`LoBotIcon` in `src/components/icons.tsx`), used for the footer logo mark and the footer company link to the LoBot LLC website.
-- **TecnoIndicator waveform mark** (`images/lobottecnoindicator.svg`) — Brand SVG rendered as an inline React component (`TecnoIndicatorIcon` in `src/components/icons.tsx`), used as the header icon next to the "LoBot TecnoIndicator" wordmark.
-- **LinkedIn "in" mark** — Custom inline SVG component (`LinkedinIcon` in `src/components/icons.tsx`), used as the footer social link to the LoBot LLC LinkedIn page. Lucide v1 removed all brand icons (including LinkedIn), so brand marks like this one are maintained as hand-written SVG components.
-
-#### Backend / API Layer
-- **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
-- **Node.js** — Runtime environment (via Next.js on Vercel)
-- **Kilo Gateway API** — AI model orchestration (price extraction, factor curation, solutions, forecasting)
-- **Embedded Streamable HTTP MCP server** (`app/api/mcp/route.ts`, always-on, primary) — Streamable HTTP MCP server at `/api/mcp` that proxies to a SearXNG instance (`SEARXNG_INSTANCE_URL`) for multi-engine web search/scrape and falls back to DuckDuckGo HTTP search internally. Exposes MCP tools `searxng_web_search` and `web_url_read`. Client handles legacy `initialize`+`MCP-Session-Id` sessions and falls back to stateless MCP when sessions are unsupported.
-- **SearXNG MCP server** (`mcp-searxng`, `mcp/searxng-mcp-server.mjs`) — Optional local-development-only launcher for an external MCP server; not used by default in production.
-- **DuckDuckGo HTTP search** (fallback) — HTML/Lite/Instant Answer endpoints used only as an internal fallback when SearXNG is unavailable
-- **Redis (Upstash / Vercel KV)** — Distributed caching for API responses (optional; in-memory fallback)
-
-#### Data & Models (`src/lib/`)
-- **Deterministic Analytics Engine** — Fuel levy, grid loss, water scarcity calculations
-- **Currency & Unit Conversion** — Multi-currency support with real-time formatting
-- **Markdown Report Generator** — Export forecasts as `.md` reports
-- **Event & Factor Models** — Structured types for price drivers and scenarios
-
-#### Development & Build Tooling
-- **npm** — Fast, reliable package manager (node_modules structure)
-- **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run lint` / `npm run build`)
-- **PostCSS** — Tailwind CSS 4 processing pipeline
-- **Vercel Analytics** — Real-user monitoring (RUM)
-- **Vercel Speed Insights** — Core Web Vitals tracking
-
-#### Testing & Quality
-- **Playwright** — End-to-end browser testing (chromium, firefox, webkit)
-- **ESLint** (Next.js config) — Code quality & consistency
-- **Prettier** (via Tailwind plugin) — Opinionated formatting
-
-#### Deployment & Infrastructure
-- **Vercel** — Native Next.js hosting, edge functions, cron jobs
-- **Vercel Cron** — Nightly factor re-curation (`0 2 * * *` UTC)
-- **Environment Variables** — Secure secret management (`.env.local` locally, Vercel dashboard in prod)
-
 ---
 
-## 📁 Project Structure
+## 📂 Project Structure
 
 ```
 .
@@ -299,8 +313,76 @@ reports `onlineModelConnected: false`. All TinyFish API keys and integrations ha
 ├── README.md                              # This file
 ├── tsconfig.json                          # TypeScript configuration
 └── vercel.json                            # Vercel deployment config (crons, headers)
-
 ```
+
+---
+
+## 🔎 Web Search Architecture
+
+The app uses a three-tier web search stack. When `SEARXNG_MCP_URL` is unset, the **embedded Streamable HTTP MCP server** at `app/api/mcp/route.ts` is the primary provider:
+
+1. **Embedded Streamable HTTP MCP server** (`/api/mcp`, primary)
+   - Served at `app/api/mcp/route.ts` as a Next.js route handler with `dynamic = "force-dynamic"`.
+   - Implements MCP Streamable HTTP (JSON-RPC 2.0 over `application/json` or SSE) with protocol negotiation (`2025-06-18`, `2025-03-26`, `2024-11-05`) and session lifecycle (`MCP-Session-Id`), falling back to stateless mode when sessions are unsupported.
+   - Exposes two MCP tools: `searxng_web_search` (query, num_results, response_format, result_detail) and `web_url_read` (url, maxLength).
+   - Proxies search requests to a SearXNG instance (`SEARXNG_INSTANCE_URL`) using `format=json`, returning structured results with URLs, titles, snippets, source engines, and publication dates.
+   - Falls back to DuckDuckGo HTTP search internally when SearXNG is unavailable or returns no usable results.
+   - All outbound requests use realistic browser headers including a random public `X-Forwarded-For` IP rotation to avoid datacenter IP blocking.
+
+2. **SearXNG proxy** (`SEARXNG_INSTANCE_URL`)
+   - Configured via the `SEARXNG_INSTANCE_URL` environment variable (e.g. `http://localhost:8080`).
+   - The embedded MCP server calls `/search?q=...&format=json&language=en&safesearch=1` on the instance.
+   - Used as the upstream engine behind `searxng_web_search` when an instance is configured.
+
+3. **DuckDuckGo multi-endpoint fallback** (internal fallback only)
+   - Used **only** when SearXNG MCP is unavailable or fails — never by default.
+   - Tries endpoints in order: `html.duckduckgo.com/html/`, then `lite.duckduckgo.com/lite/`, then `api.duckduckgo.com/` (instant answer API).
+   - Each HTML endpoint supports up to 3 retry attempts with 2s backoff.
+   - **202 anomaly handling:** HTTP `202` responses (datacenter IP anomaly challenges) are treated as retryable, not fatal; the router rotates to the next endpoint rather than failing immediately.
+   - `X-Forwarded-For` header rotation across a pool of public DNS IPs (8.8.8.8, 1.1.1.1, 208.67.222.222, 9.9.9.9) to reduce rate limiting.
+   - `web_url_read` direct page fetch is used for scraping evidence pages with the same 202 handling.
+
+The `webSearchRouter` (`lib/api/_shared/webSearchRouter.ts`) caches search results (`SEARCH_CACHE_MS`) and scraped content (`SCRAPE_CACHE_MS`), initializes MCP sessions with retry across protocol versions, and reports availability through the `/api/health` endpoint using the same 25s MCP timeout as the runtime client.
+
+---
+
+## 💰 Price Extraction
+
+Live commodity spot prices come from `/api/prices` via `lib/api/handlers/prices.ts`:
+
+1. **9 commodity queries** — 3 per commodity, run in parallel via `webSearchRouter.webSearch`:
+   - Oil: Brent crude oil spot price USD per barrel today; crude oil price per barrel 2026; oil market price today USD bbl
+   - Electricity: global average electricity price USD per MWh today wholesale; electricity price per MWh 2026; power market price USD per megawatt hour
+   - Water: global average water tariff price USD per cubic meter today; water price per cubic meter 2026; municipal water tariff USD m3
+
+2. **9 regex patterns** (`PRICE_PATTERNS`) matched against search result snippets for deterministic extraction:
+   - `US\$|USD $` prefixed amounts
+   - `$` amounts with optional unit suffix (`/per bbl/barrel/MWh/kWh/m3/m³/cubic meter/liter`)
+   - Numbers followed by `US dollars|USD|dollars` with optional unit
+   - `price|cost|trading at|at` prefixed amounts
+   - `per barrel` / `barrel at` prefixed amounts
+   - `USD|US\$|$` number `per barrel|MWh|cubic`
+   - Number `per barrel|bbl|MWh|megawatt|cubic meter|m3`
+   - `spot|market|current price|rate` prefixed amounts
+
+3. **Commodity-specific bounds** enforced during candidate filtering (`COMMODITY_PRICE_BOUNDS`):
+   - Oil: `$30–$200`
+   - Electricity: `$20–$500`
+   - Water: `$0.50–$10`
+
+4. **Median-of-candidates selection** — all matching prices across all 9 queries are collected per commodity, sorted, and the median (`sorted[Math.floor(n/2)]`) is selected as the final spot price. Kilo Gateway AI analysis is attempted first with a strict JSON extraction prompt; the deterministic regex fallback applies the same median logic when AI extraction fails or returns incomplete data.
+
+---
+
+## ⚖️ Factor Analysis
+
+Factor curation runs in `lib/api/handlers/factor-analysis.ts` and powers `/api/dynamic-factors`, `/api/regional-factors`, and `/api/cron/curate-factors`:
+
+- Searches 3 region-specific queries via SearXNG MCP (primary) / DuckDuckGo (fallback), flattened into candidates with their source (`mcp` or `duckduckgo`).
+- Reputable sources are ranked first via `isReputableSource()`; non-reputable hits are kept as a **padding fallback** rather than hard-dropped, so the AI curator always receives evidence even when reputable hits are thin.
+- Candidates are sliced to 15 and scraped for full text via `web_url_read` / direct fetch before being passed to Kilo Gateway for validation and importance scoring (0–100).
+- Results merge into a rolling window of up to 8 factors (FIFO by `createdAt`); re-curated factors keep their original `id`/`createdAt` so age stays meaningful.
+- Static per-region fallback factors are used only when nothing has been curated yet.
 
 ---
 

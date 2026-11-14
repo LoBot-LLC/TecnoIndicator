@@ -13,8 +13,14 @@ import { safeParseJson } from "../_shared/validation";
 
 const COMMODITY_QUERIES = [
   { commodity: "oil", queryTemplate: "Brent crude oil spot price USD per barrel today" },
+  { commodity: "oil", queryTemplate: "crude oil price per barrel 2026" },
+  { commodity: "oil", queryTemplate: "oil market price today USD bbl" },
   { commodity: "electricity", queryTemplate: "global average electricity price USD per MWh today wholesale" },
+  { commodity: "electricity", queryTemplate: "electricity price per MWh 2026" },
+  { commodity: "electricity", queryTemplate: "power market price USD per megawatt hour" },
   { commodity: "water", queryTemplate: "global average water tariff price USD per cubic meter today" },
+  { commodity: "water", queryTemplate: "water price per cubic meter 2026" },
+  { commodity: "water", queryTemplate: "municipal water tariff USD m3" },
 ];
 
 const PRICE_EXTRACTION_PROMPT = `You are an expert financial data analyst specializing in commodity pricing. Your task is to extract precise price data from search results.
@@ -139,27 +145,49 @@ async function resolvePrices(req: Request): Promise<Response> {
   return Response.json(fallbackResult, { status: 200 });
 }
 
-function extractPriceFromText(text: string): number | null {
-  const normalized = text.replace(/,/g, "");
-  const pricePatterns = [
-    /(?:US\$|USD\s*\$?)\s*(\d+(?:\.\d+)?)/gi,
-    /\$\s*(\d+(?:\.\d+)?)(?:\s*(?:\/|per)\s*(?:bbl|barrel|MWh|kWh|m3|m³|cubic\s*met(?:er|re)|lit(?:er|re)))?/gi,
-    /(\d+(?:\.\d+)?)\s*(?:US\s*dollars?|USD|dollars?)(?:\s*(?:\/|per)\s*(?:bbl|barrel|MWh|kWh|m3|m³|cubic\s*met(?:er|re)|lit(?:er|re)))?/gi,
-    /(?:price|cost|trading\s+at|at)\s*(?:of\s*)?(?:US\$|USD|\$)?\s*(\d+(?:\.\d+)?)/gi,
-  ];
+const COMMODITY_PRICE_BOUNDS = {
+  oil: { min: 30, max: 200 },
+  electricity: { min: 20, max: 500 },
+  water: { min: 0.5, max: 10 },
+};
 
-  for (const pattern of pricePatterns) {
-    const matches = [...normalized.matchAll(pattern)];
-    for (const match of matches) {
-      const price = parseFloat(match[1]);
+const PRICE_PATTERNS: RegExp[] = [
+  /(?:US\$|USD\s*\$?)\s*(\d+(?:\.\d+)?)/gi,
+  /\$\s*(\d+(?:\.\d+)?)(?:\s*(?:\/|per)\s*(?:bbl|barrel|MWh|kWh|m3|m³|cubic\s*met(?:er|re)|lit(?:er|re)))?/gi,
+  /(\d+(?:\.\d+)?)\s*(?:US\s*dollars?|USD|dollars?)(?:\s*(?:\/|per)\s*(?:bbl|barrel|MWh|kWh|m3|m³|cubic\s*met(?:er|re)|lit(?:er|re)))?/gi,
+  /(?:price|cost|trading\s+at|at)\s*(?:of\s*)?(?:US\$|USD|\$)?\s*(\d+(?:\.\d+)?)/gi,
+  /per\s+barrel\s+(?:of\s*)?(?:US\$|USD|\$)?\s*(\d+(?:\.\d+)?)/gi,
+  /barrel\s+(?:at\s*)?(?:US\$|USD|\$)?\s*(\d+(?:\.\d+)?)/gi,
+  /(?:USD|US\$|\$)\s*(\d+(?:\.\d+)?)\s*per\s+(?:barrel|MWh|cubic)/gi,
+  /(\d+(?:\.\d+)?)\s*(?:per\s+)?(?:barrel|bbl|MWh|megawatt|cubic\s*meter|m3)/gi,
+  /(?:spot|market|current)\s+(?:price|rate)\s+(?:of\s*)?(?:US\$|USD|\$)?\s*(\d+(?:\.\d+)?)/gi,
+];
+
+function extractPriceFromText(text: string, bounds?: { min: number; max: number }): number | null {
+  const normalized = text.replace(/,/g, "");
+  const candidates: number[] = [];
+
+  for (const pattern of PRICE_PATTERNS) {
+    for (const match of normalized.matchAll(pattern)) {
+      const price = Number.parseFloat(match[1]);
       if (!Number.isFinite(price)) continue;
-      // Broad sanity bounds; commodity-specific plausibility checked by caller context
-      if (price >= 0.01 && price <= 10000) {
-        return price;
-      }
+      const min = bounds?.min ?? 0.01;
+      const max = bounds?.max ?? 10000;
+      if (price < min || price > max) continue;
+      candidates.push(price);
     }
   }
-  return null;
+
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  const sorted = [...candidates].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function pickMedian(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
 }
 
 async function getLivePricesFromWebSearch(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
@@ -240,28 +268,53 @@ async function getLivePricesFromWebSearch(scope: RegionId, abortSignal: AbortSig
     console.warn("Kilo AI price analysis failed, falling back to deterministic extraction:", error);
   }
 
-  const prices: Record<string, { price: number | null; source: string }> = {
+  const commodityCandidates: Record<string, number[]> = {
+    oil: [],
+    electricity: [],
+    water: [],
+  };
+  const commoditySources: Record<string, string> = {
+    oil: "",
+    electricity: "",
+    water: "",
+  };
+
+  // Try extracting from ALL result snippets, trying multiple patterns per result,
+  // and keep the best price within commodity-specific bounds.
+  searchResults.forEach((result, index) => {
+    const commodity = COMMODITY_QUERIES[index].commodity as "oil" | "electricity" | "water";
+    const bounds = COMMODITY_PRICE_BOUNDS[commodity];
+    if (!bounds) return;
+
+    for (const res of result.results ?? []) {
+      const price = extractPriceFromText(`${res.title} ${res.snippet}`, bounds);
+      if (price === null) continue;
+      commodityCandidates[commodity].push(price);
+      if (!commoditySources[commodity]) {
+        commoditySources[commodity] = sanitizeUrl(res.url) || res.url;
+      }
+    }
+  });
+
+  // Apply median selection per commodity
+  const finalPrices: Record<string, { price: number | null; source: string }> = {
     oil: { price: null, source: "" },
     electricity: { price: null, source: "" },
     water: { price: null, source: "" },
   };
 
-  searchResults.forEach((result, index) => {
-    const commodity = COMMODITY_QUERIES[index].commodity;
-    for (const res of result.results ?? []) {
-      const price = extractPriceFromText(`${res.title} ${res.snippet}`);
-      if (price !== null) {
-        prices[commodity] = { price, source: sanitizeUrl(res.url) || res.url };
-        break;
-      }
+  for (const commodity of ["oil", "electricity", "water"]) {
+    const median = pickMedian(commodityCandidates[commodity]);
+    if (median !== null) {
+      finalPrices[commodity] = { price: median, source: commoditySources[commodity] || "" };
     }
-  });
+  }
 
-  if (Object.values(prices).every((p) => p.price !== null)) {
+  if (Object.values(finalPrices).every((p) => p.price !== null)) {
     return {
-      oil: { price: prices.oil.price as number, unit: getCommodityUnit("oil"), source: prices.oil.source, isLive: true },
-      electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true },
-      water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true },
+      oil: { price: finalPrices.oil.price as number, unit: getCommodityUnit("oil"), source: finalPrices.oil.source, isLive: true },
+      electricity: { price: finalPrices.electricity.price as number, unit: getCommodityUnit("electricity"), source: finalPrices.electricity.source, isLive: true },
+      water: { price: finalPrices.water.price as number, unit: getCommodityUnit("water"), source: finalPrices.water.source, isLive: true },
       asOf: new Date().toISOString(),
       dataSource: "SearXNG MCP / DuckDuckGo search (deterministic fallback)",
       isLive: true,

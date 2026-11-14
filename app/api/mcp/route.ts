@@ -107,13 +107,44 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   return controller.signal;
 }
 
+function generateRandomPublicIp(): string {
+  const privateRanges = [
+    { start: 0x0a000000, end: 0x0affffff },      // 10.0.0.0/8
+    { start: 0xac100000, end: 0xac1fffff },      // 172.16.0.0/12
+    { start: 0xc0a80000, end: 0xc0a8ffff },      // 192.168.0.0/16
+    { start: 0x7f000000, end: 0x7fffffff },      // 127.0.0.0/8
+    { start: 0xa9fe0000, end: 0xa9feffff },      // 169.254.0.0/16
+    { start: 0x64400000, end: 0x647fffff },      // 100.64.0.0/10 (CGNAT)
+    { start: 0xe0000000, end: 0xffffffff },      // 224.0.0.0/4 (multicast/reserved)
+    { start: 0x00000000, end: 0x00ffffff },      // 0.0.0.0/8
+  ];
+
+  while (true) {
+    const ip = Math.floor(Math.random() * 0xffffffff);
+    if (privateRanges.some((r) => ip >= r.start && ip <= r.end)) continue;
+    return `${(ip >>> 24) & 0xff}.${(ip >>> 16) & 0xff}.${(ip >>> 8) & 0xff}.${ip & 0xff}`;
+  }
+}
+
 function getBrowserHeaders(referer?: string): Record<string, string> {
   const headers: Record<string, string> = {
     "User-Agent": USER_AGENT,
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    DNT: "1",
+    Connection: "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
+    "X-Forwarded-For": generateRandomPublicIp(),
   };
-  if (referer) headers.Referer = referer;
+  if (referer) {
+    headers.Referer = referer;
+    headers["Sec-Fetch-Site"] = "cross-site";
+  }
   return headers;
 }
 
@@ -149,8 +180,8 @@ async function searchSearxng(query: string, numResults: number): Promise<SearchR
         typeof item.content === "string"
           ? item.content
           : typeof item.snippet === "string"
-          ? item.snippet
-          : "";
+            ? item.snippet
+            : "";
       if (!url || !title) continue;
       results.push({
         url,
@@ -201,19 +232,173 @@ function parseDuckDuckGoHtml(html: string, limit: number): SearchResultItem[] {
   return results;
 }
 
-async function searchDuckDuckGo(query: string, numResults: number): Promise<SearchResultItem[]> {
-  const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+function parseDuckDuckGoLite(html: string, limit: number): SearchResultItem[] {
+  const results: SearchResultItem[] = [];
 
-  const response = await fetchWithTimeout(searchUrl, {
-    headers: getBrowserHeaders("https://duckduckgo.com/"),
-  });
+  const linkRegex = /<a[^>]*class="[^"]*result-link[^"]*"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gis;
+  const snippetRegex = /<td[^>]*class="[^"]*result-snippet[^"]*"[^>]*>(.*?)<\/td>/gis;
 
-  if (!response.ok) {
-    throw new Error(`DuckDuckGo search failed: ${response.status}`);
+  const links: { url: string; title: string }[] = [];
+  let match;
+  while ((match = linkRegex.exec(html)) !== null) {
+    let url = match[1];
+    const title = match[2].replace(/<[^>]*>/g, "").trim();
+
+    if (url.startsWith("//")) url = "https:" + url;
+    if (url.includes("duckduckgo.com/l/?")) {
+      try {
+        const u = new URL(url);
+        const uddg = u.searchParams.get("uddg");
+        if (uddg) url = decodeURIComponent(uddg);
+      } catch {}
+    }
+
+    if (url && title) {
+      links.push({ url, title });
+    }
   }
 
-  const html = await response.text();
-  return parseDuckDuckGoHtml(html, numResults);
+  const snippets: string[] = [];
+  while ((match = snippetRegex.exec(html)) !== null) {
+    snippets.push(match[1].replace(/<[^>]*>/g, "").trim());
+  }
+
+  for (let i = 0; i < links.length && results.length < limit; i++) {
+    results.push({
+      url: links[i].url,
+      title: links[i].title,
+      content: snippets[i] || "",
+      engine: "duckduckgo",
+    });
+  }
+
+  return results;
+}
+
+function parseDuckDuckGoInstant(query: string, limit: number, data: unknown): SearchResultItem[] {
+  const results: SearchResultItem[] = [];
+  if (!data || typeof data !== "object") return results;
+
+  const d = data as Record<string, unknown>;
+
+  const abstractText = typeof d.AbstractText === "string" ? d.AbstractText : "";
+  const abstractSource = typeof d.AbstractSource === "string" ? d.AbstractSource : "";
+  const abstractUrl = typeof d.AbstractURL === "string" ? d.AbstractURL : "";
+
+  if (abstractUrl && abstractText) {
+    results.push({
+      url: abstractUrl,
+      title: abstractSource || query,
+      content: abstractText,
+      engine: "duckduckgo",
+    });
+  }
+
+  const relatedTopics = Array.isArray(d.RelatedTopics) ? d.RelatedTopics : [];
+  for (const topic of relatedTopics) {
+    if (results.length >= limit) break;
+    if (!topic || typeof topic !== "object") continue;
+    const t = topic as Record<string, unknown>;
+
+    if (typeof t.Text === "string" && typeof t.FirstURL === "string") {
+      results.push({
+        url: t.FirstURL as string,
+        title: (t.Text as string).split(" - ")[0] || query,
+        content: typeof t.Text === "string" ? t.Text as string : "",
+        engine: "duckduckgo",
+      });
+      continue;
+    }
+
+    const subTopics = Array.isArray(t.SubTopics) ? t.SubTopics : [];
+    for (const sub of subTopics) {
+      if (results.length >= limit) break;
+      if (!sub || typeof sub !== "object") continue;
+      const s = sub as Record<string, unknown>;
+      if (typeof s.Text === "string" && typeof s.FirstURL === "string") {
+        results.push({
+          url: s.FirstURL as string,
+          title: (s.Text as string).split(" - ")[0] || query,
+          content: typeof s.Text === "string" ? s.Text as string : "",
+          engine: "duckduckgo",
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+async function searchDuckDuckGo(query: string, numResults: number): Promise<SearchResultItem[]> {
+  const encodedQuery = encodeURIComponent(query);
+  const errors: string[] = [];
+
+  const referer = "https://duckduckgo.com/";
+
+  // Endpoint 1: html.duckduckgo.com/html/
+  try {
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
+    const response = await fetchWithTimeout(searchUrl, {
+      headers: getBrowserHeaders(referer),
+    });
+
+    if (response.status === 202) {
+      console.warn("[DDG] html endpoint returned 202 (anomaly challenge), trying lite endpoint");
+      errors.push("html: 202 anomaly challenge");
+    } else if (response.ok) {
+      const html = await response.text();
+      const results = parseDuckDuckGoHtml(html, numResults);
+      if (results.length > 0) return results;
+      errors.push("html: no results found");
+    } else {
+      errors.push(`html: HTTP ${response.status}`);
+    }
+  } catch (error) {
+    errors.push(`html: ${error instanceof Error ? error.message : "unknown error"}`);
+  }
+
+  // Endpoint 2: lite.duckduckgo.com/lite/
+  try {
+    const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodedQuery}`;
+    const response = await fetchWithTimeout(searchUrl, {
+      headers: getBrowserHeaders(referer),
+    });
+
+    if (response.status === 202) {
+      console.warn("[DDG] lite endpoint returned 202 (anomaly challenge), trying instant answer API");
+      errors.push("lite: 202 anomaly challenge");
+    } else if (response.ok) {
+      const html = await response.text();
+      const results = parseDuckDuckGoLite(html, numResults);
+      if (results.length > 0) return results;
+      errors.push("lite: no results found");
+    } else {
+      errors.push(`lite: HTTP ${response.status}`);
+    }
+  } catch (error) {
+    errors.push(`lite: ${error instanceof Error ? error.message : "unknown error"}`);
+  }
+
+  // Endpoint 3: DuckDuckGo Instant Answer API
+  try {
+    const searchUrl = `https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1&skip_disambig=1`;
+    const response = await fetchWithTimeout(searchUrl, {
+      headers: getBrowserHeaders(referer),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const results = parseDuckDuckGoInstant(query, numResults, data);
+      if (results.length > 0) return results;
+      errors.push("instant: no results found");
+    } else {
+      errors.push(`instant: HTTP ${response.status}`);
+    }
+  } catch (error) {
+    errors.push(`instant: ${error instanceof Error ? error.message : "unknown error"}`);
+  }
+
+  throw new Error(`All DuckDuckGo endpoints failed: ${errors.join("; ")}`);
 }
 
 async function searchWeb(
@@ -389,14 +574,14 @@ export async function POST(request: Request): Promise<NextResponse> {
           break;
         }
 
-if (toolName === "searxng_web_search") {
-           const query = args?.query as string | undefined;
-           const numResults = (args?.num_results as number) ?? 10;
+        if (toolName === "searxng_web_search") {
+          const query = args?.query as string | undefined;
+          const numResults = (args?.num_results as number) ?? 10;
 
-           if (!query || typeof query !== "string") {
-             response = createErrorResponse(rpcRequest.id, -32602, "Invalid params: query is required");
-             break;
-           }
+          if (!query || typeof query !== "string") {
+            response = createErrorResponse(rpcRequest.id, -32602, "Invalid params: query is required");
+            break;
+          }
 
           const { results, source } = await searchWeb(query, Math.min(numResults, 50));
 

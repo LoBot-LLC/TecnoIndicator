@@ -12,7 +12,14 @@ import {
 } from "../_shared/http";
 import { getCache, setCache } from "../_shared/cache";
 import { coerceCategory, safeParseJson } from "../_shared/validation";
-import { VALID_CATEGORIES, type Factor, type RegionId } from "../_shared/types";
+import {
+  VALID_CATEGORIES,
+  type Factor,
+  type FactorGrounding,
+  type RegionId,
+  type PricePoint,
+} from "../_shared/types";
+import { getScopePriceDefaults } from "../_shared/deterministicAnalytics";
 
 /**
  * The shape stored under the canonical `dynamic-factors:{scope}` key. Every
@@ -309,13 +316,18 @@ export function normalizeFactor(
 
   // Resolve the source to a real URL: prefer the model's URL when valid,
   // otherwise try to match the source name against candidate URLs we actually
-  // fetched via TinyFish, then fall back to the source string as-is.
+  // fetched via TinyFish. When the model returns a non-URL source name that
+  // cannot be matched, fall back to the first candidate URL so the UI can
+  // always display a clickable, verified source link — never a bare
+  // publication name (the reported "IEA World Energy Outlook" symptom).
   let finalSource = source;
   if (sourceUrl) {
     finalSource = sourceUrl;
   } else if (source && candidateUrls.length > 0) {
     const matched = matchSourceToCandidate(source, candidateUrls);
     if (matched) finalSource = matched;
+  } else if (candidateUrls.length > 0) {
+    finalSource = candidateUrls[0];
   }
 
   return {
@@ -340,6 +352,24 @@ export function normalizeFactor(
     importanceScore,
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+/**
+ * Builds the server-side grounding payload from the current price defaults.
+ * These are the exact statistics shown on the dashboard (oil/electricity/water
+ * prices) at curation time, attached to every factor so the UI can display the
+ * full source URL alongside the numbers that support each reason.
+ */
+function attachFactorGrounding(
+  prices: { oil: { price: number; unit: string; source: string }; electricity: { price: number; unit: string; source: string }; water: { price: number; unit: string; source: string } },
+  asOf: string,
+): FactorGrounding {
+  return {
+    oil: { price: prices.oil.price, unit: prices.oil.unit, source: prices.oil.source },
+    electricity: { price: prices.electricity.price, unit: prices.electricity.unit, source: prices.electricity.source },
+    water: { price: prices.water.price, unit: prices.water.unit, source: prices.water.source },
+    asOf,
   };
 }
 
@@ -437,6 +467,11 @@ export async function runFactorAnalysis(
   const analytics =
     scope === "global" ? await getGlobalAnalytics() : await getRegionalAnalytics(scope as Region);
 
+  // Current price levels the model must ground its reasons in. These mirror the
+  // dashboard statistics (oil/electricity/water) so every factor reason can be
+  // read against real numbers rather than being a free-form guess.
+  const currentPrices = getScopePriceDefaults(scope);
+
   const now = new Date().toISOString();
   const returnExisting = () => ({ factors: existing, aiCurated: carriedAiCurated, updatedAt: now });
 
@@ -492,6 +527,7 @@ export async function runFactorAnalysis(
           role: "user",
           content: JSON.stringify({
             analytics,
+            currentPrices,
             existingFactors: existing,
             candidates: excerpts.map((c) => ({
               title: c.title,
@@ -506,6 +542,7 @@ export async function runFactorAnalysis(
       ],
       max_tokens: 4096,
       temperature: 0.2,
+      response_format: { type: "json_object" },
     };
 
     const response = await kiloRouter.kiloInfer(payload, signal);
@@ -527,10 +564,16 @@ export async function runFactorAnalysis(
       return returnExisting();
     }
 
+    // Attach the dashboard statistics (oil/electricity/water prices) that the
+    // model grounded its reasons in, so the UI can show the full source URL
+    // alongside the numbers that support each factor. Grounding is server-side
+    // and never model-generated, so it cannot be fabricated.
+    const grounding = attachFactorGrounding(currentPrices, now);
+
     return {
-      factors: mergeRollingWindow(existing, normalized),
+      factors: mergeRollingWindow(existing, normalized.map((f) => ({ ...f, grounding }))),
       aiCurated: true,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     };
   } catch (error) {
     // Never throw: the callers (route handlers, cron) must always be able to

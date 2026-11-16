@@ -73,8 +73,8 @@ export function toFactorsPayload(
 * - Removes markdown links `[text](url)` → keeps only `text`
   * - Removes bare `https?://...` URLs entirely (replaced with empty string)
   * - Collapses resulting double spaces/newlines
-  * - Truncates to 350 chars (a 2-3 sentence summary is well under this)
-  */
+ * - Truncates to 600 chars (a full paragraph from a source is well under this)
+ */
 export function sanitizeExplanation(text: string): string {
   if (typeof text !== "string" || text.trim().length === 0) return "";
   let cleaned = text
@@ -85,6 +85,9 @@ export function sanitizeExplanation(text: string): string {
     // Strip markdown emphasis that may have wrapped URLs
     .replace(/\*+/g, "")
     .replace(/_+/g, "")
+    // Strip a leading bullet/list marker ("- ", "• ", "* ", "– ", "— ") and the
+    // whitespace after it so a pasted article bullet never reaches the UI
+    .replace(/^\s*[-•*–—]+\s+/, "")
     // Collapse multiple spaces
     .replace(/[ \t]+/g, " ")
     // Collapse multiple newlines
@@ -94,9 +97,9 @@ export function sanitizeExplanation(text: string): string {
     .map((line) => line.trim())
     .join("\n")
     .trim();
-  // Hard truncate at 350 chars, cut at a word boundary
-  if (cleaned.length > 350) {
-    const cut = cleaned.slice(0, 350);
+  // Hard truncate at 600 chars, cut at a word boundary
+  if (cleaned.length > 600) {
+    const cut = cleaned.slice(0, 600);
     const lastSpace = cut.lastIndexOf(" ");
     cleaned = (lastSpace > 200 ? cut.slice(0, lastSpace) : cut).trim() + "…";
   }
@@ -112,26 +115,13 @@ export function sanitizeExplanation(text: string): string {
  * Rejection criteria:
  * - Starts with a bullet point ("- ", "• ", "* ")
  * - Starts with a known raw-article starter (publication name, article opening)
- * - Too short (< 30 chars) or too long (> 350 chars for a 2-3 sentence summary)
+ * - Too short (< 30 chars) or too long (> 600 chars for a 2-3 sentence summary)
  */
 export function validateExplanationQuality(explanation: string): { ok: boolean; reason?: string } {
   if (!explanation || typeof explanation !== "string") {
     return { ok: false, reason: "empty" };
   }
   const trimmed = explanation.trim();
-  if (trimmed.length < 30) {
-    return { ok: false, reason: "too short" };
-  }
-  if (trimmed.length > 350) {
-    return { ok: false, reason: "too long" };
-  }
-
-  // Require at least 2 sentences for explanations longer than ~100 chars
-  // Raw scraped fragments often have 0-1 sentences
-  if (trimmed.length > 100 && (trimmed.match(/[.!?]\s+/g)?.length ?? 0) < 1) {
-    return { ok: false, reason: "too few sentences for length" };
-  }
-
   // Reject bullet-point starters — clear sign of raw scraped text
   if (/^[-•*]\s/.test(trimmed)) {
     return { ok: false, reason: "starts with bullet point" };
@@ -180,6 +170,20 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
       }
       break;
     }
+  }
+
+  // Reject explanations that are too short or too long
+  if (trimmed.length < 30) {
+    return { ok: false, reason: "too short" };
+  }
+  if (trimmed.length > 600) {
+    return { ok: false, reason: "too long" };
+  }
+
+  // Require at least 2 sentences for explanations longer than ~100 chars
+  // Raw scraped fragments often have 0-1 sentences
+  if (trimmed.length > 100 && (trimmed.match(/[.!?]\s+/g)?.length ?? 0) < 1) {
+    return { ok: false, reason: "too few sentences for length" };
   }
 
   return { ok: true };
@@ -635,14 +639,14 @@ export function buildFactorsFromCandidates(
     const text = (candidate.text ?? "").trim();
 
     // Explanation must be a real sentence from the article: prefer the snippet
-    // (first ~200 chars), otherwise the scraped body (up to 200 chars).
+    // (first ~600 chars), otherwise the scraped body (up to 600 chars).
     let explanation = "";
     if (snippet) {
-      explanation = snippet.slice(0, 200);
+      explanation = snippet.slice(0, 600);
     } else if (text) {
       explanation = text;
     }
-    explanation = explanation.slice(0, 200).trim();
+    explanation = explanation.slice(0, 600).trim();
     if (!explanation) return;
 
     const name = (title || explanation.slice(0, 160) || `Market update: ${candidate.url}`).slice(0, 160);
@@ -685,7 +689,7 @@ export function buildFactorsFromCandidates(
       name,
       category,
       commodities: Array.from(new Set(commodities)) as Factor["commodities"],
-      explanation: sanitizeExplanation(explanation).slice(0, 250),
+      explanation: sanitizeExplanation(explanation),
       direction,
       magnitude: "Medium",
       source: candidate.url,

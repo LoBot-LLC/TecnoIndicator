@@ -94,13 +94,95 @@ export function sanitizeExplanation(text: string): string {
     .map((line) => line.trim())
     .join("\n")
     .trim();
-  // Hard truncate at 600 chars, cut at a word boundary
-  if (cleaned.length > 600) {
-    const cut = cleaned.slice(0, 600);
+  // Hard truncate at 250 chars, cut at a word boundary
+  if (cleaned.length > 250) {
+    const cut = cleaned.slice(0, 250);
     const lastSpace = cut.lastIndexOf(" ");
-    cleaned = (lastSpace > 400 ? cut.slice(0, lastSpace) : cut).trim() + "…";
+    cleaned = (lastSpace > 150 ? cut.slice(0, lastSpace) : cut).trim() + "…";
   }
   return cleaned;
+}
+
+/**
+ * Validates that a model-generated explanation looks like a proper 2-3 sentence
+ * summary rather than raw scraped article text. Returns { ok: true } when the
+ * explanation passes, or { ok: false, reason } when it should be rejected or
+ * re-summarized.
+ *
+ * Rejection criteria:
+ * - Starts with a bullet point ("- ", "• ", "* ")
+ * - Starts with a known raw-article starter (publication name, article opening)
+ * - Too short (< 30 chars) or too long (> 350 chars for a 2-3 sentence summary)
+ */
+export function validateExplanationQuality(explanation: string): { ok: boolean; reason?: string } {
+  if (!explanation || typeof explanation !== "string") {
+    return { ok: false, reason: "empty" };
+  }
+  const trimmed = explanation.trim();
+  if (trimmed.length < 30) {
+    return { ok: false, reason: "too short" };
+  }
+  if (trimmed.length > 350) {
+    return { ok: false, reason: "too long" };
+  }
+
+  // Reject bullet-point starters — clear sign of raw scraped text
+  if (/^[-•*]\s/.test(trimmed)) {
+    return { ok: false, reason: "starts with bullet point" };
+  }
+
+  // Reject known raw-article starters that indicate the model copied verbatim
+  const rawStarters = [
+    "opec ", "iea ", "the ", "around ", "according ", "global ", "world ",
+    "four ", "million ", "billion ", "the world ", "in ", "un ", "who ",
+  ];
+  const lower = trimmed.toLowerCase();
+  for (const starter of rawStarters) {
+    if (lower.startsWith(starter)) {
+      // Allow if it starts with commodity+price pattern (e.g. "Oil at $XX...")
+      if (!/^(with\s+(oil|electricity|water)|(oil|electricity|water|crude|brent|wti)\s+(at|is|are|was|were|rose|fell|climbed|dropped|surged|plunged))/i.test(trimmed)) {
+        return { ok: false, reason: `starts with raw-article text ("${starter.trim()}")` };
+      }
+      break;
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Second-pass summarization: takes a raw explanation that failed quality
+ * checks and asks Kilo to rewrite it into a proper 2-3 sentence summary.
+ * Used as a repair round before rejecting a factor entirely.
+ */
+async function reSummarizeExplanation(
+  rawExplanation: string,
+  currentPrices: {
+    oil: { price: number; unit: string };
+    electricity: { price: number; unit: string };
+    water: { price: number; unit: string };
+  },
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const prompt = `Rewrite the following text into exactly 2-3 sentences. Start with the commodity and the current price number (e.g. "with oil at $104.86/bbl..."). Write in your own words — do NOT copy text verbatim. Do NOT include URLs, markdown links, bullet points, or publication names. Keep it under 120 words.\n\nCurrent prices: oil \$${currentPrices.oil.price}/${currentPrices.oil.unit}, electricity \$${currentPrices.electricity.price}/${currentPrices.electricity.unit}, water \$${currentPrices.water.price}/${currentPrices.water.unit}\n\nText to summarize: "${rawExplanation}"`;
+
+  const payload = {
+    messages: [
+      { role: "system", content: "You are a precise summarizer. Output only the 2-3 sentence summary, no preamble, no markdown, no URLs, no bullet points." },
+      { role: "user", content: prompt },
+    ],
+    max_tokens: 300,
+    temperature: 0.1,
+  };
+
+  try {
+    const response = await kiloRouter.kiloInfer(payload, signal);
+    const content = (response.choices?.[0]?.message?.content ?? "").trim();
+    if (!content) return null;
+    return content;
+  } catch {
+    return null;
+  }
 }
 
 const SYSTEM_PROMPT_GLOBAL =
@@ -116,6 +198,30 @@ const SYSTEM_PROMPT_GLOBAL =
 - NEVER output a bare publication name (e.g. "IEA", "OPEC Monthly Oil Market Report", "UN-Water; WRI Aqueduct") in the source field.
 - NEVER invent a URL. If you cannot find a matching URL, copy the URL verbatim from the candidate list.
 - NEVER output markdown or commentary outside the JSON.
+- NEVER output raw scraped text or article snippets verbatim. Always summarize in your own words.
+- NEVER start an explanation with a bullet point ("- ", "• ", "* "), a publication name ("OPEC ", "IEA ", "UN-Water "), or an article opening ("Around ", "According ", "The world ", "Global ").
+
+=== FEW-SHOT EXAMPLES (GOOD vs BAD) ===
+
+GOOD explanation (2-3 sentences, starts with commodity+price, own words, no URLs):
+"With oil at $73.07/bbl, OPEC+ has agreed to extend voluntary production cuts through Q1 2026. The supply restraint is expected to remove roughly 1.2 million b/d from the market and support prices in the short term."
+
+GOOD explanation:
+"With oil at $104.86/bbl, the IEA forecasts global oil demand will fall by 2.7 mb/d in 2026 before rebounding by 2 mb/d in 2027. The year-on-year decline is set to ease to 2.7 mb/d in Q4 2026."
+
+GOOD explanation (water):
+"With water scarcity affecting 4 billion people for at least one month each year, drought-driven supply disruptions are pushing utility tariffs higher. With water at $2.15/M³, scarcity premiums are increasingly reflected in consumer prices."
+
+BAD explanation — raw scraped text, do NOT copy (verbatim from source):
+"OPEC Reference Basket (ORB) rose by 9¢, to average $73.07/b. The global oil demand in 2026 is forecast to grow by 1.4 mb/d, y-o-y. expected to reach 42.7 mb/d,"
+
+BAD explanation — starts with bullet, not summarized:
+"- World oil demand is forecast to fall by 2.7 mb/d in 2026, to 102.3 mb/d, before rebounding by 2 mb/d in 2027."
+
+BAD explanation — raw article opening, no commodity+price start:
+"Around four billion people experience severe water scarcity for at least one month each year, while drought impacts cost an estimated $307 billion annually."
+
+Every explanation you output must follow the GOOD examples: 2-3 sentences, your own words, starts with commodity + current price number from currentPrices, no URLs, no markdown, no bullet points, no raw article text.
 
 === GROUNDING ===
 Every factor's explanation MUST reference the current price numbers supplied in currentPrices. For example: "with oil at $104.86/bbl, OPEC+ output cuts are tightening supply...". Use the numbers, do not paraphrase around them.
@@ -145,6 +251,8 @@ const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
 - NEVER output a bare publication name (e.g. "IEA", "OPEC Monthly Oil Market Report", "UN-Water; WRI Aqueduct") in the source field.
 - NEVER invent a URL. If you cannot find a matching URL, copy the URL verbatim from the candidate list.
 - NEVER output markdown or commentary outside the JSON.
+- NEVER output raw scraped text or article snippets verbatim. Always summarize in your own words.
+- NEVER start an explanation with a bullet point ("- ", "• ", "* "), a publication name ("OPEC ", "IEA ", "UN-Water "), or an article opening ("Around ", "According ", "The world ", "Global ").
 
 === EXPLANATION RULES ===
 - Write the explanation in YOUR OWN WORDS. Never copy text verbatim from the source article.
@@ -154,6 +262,28 @@ const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
 - Start the explanation with the commodity and the current price number from currentPrices (e.g. "with oil at $104.86/bbl...").
 - Keep the explanation under 150 words. Short and punchy is better than long and detailed.
 - If the article is about a price RISE, say prices are rising and why. If about a FALL, say prices are falling and why.
+
+=== FEW-SHOT EXAMPLES (GOOD vs BAD) ===
+
+GOOD explanation (2-3 sentences, starts with commodity+price, own words, no URLs):
+"With oil at $73.07/bbl, OPEC+ has agreed to extend voluntary production cuts through Q1 2026. The supply restraint is expected to remove roughly 1.2 million b/d from the market and support prices in the short term."
+
+GOOD explanation:
+"With oil at $104.86/bbl, the IEA forecasts global oil demand will fall by 2.7 mb/d in 2026 before rebounding by 2 mb/d in 2027. The year-on-year decline is set to ease to 2.7 mb/d in Q4 2026."
+
+GOOD explanation (water):
+"With water scarcity affecting 4 billion people for at least one month each year, drought-driven supply disruptions are pushing utility tariffs higher. With water at $2.15/M³, scarcity premiums are increasingly reflected in consumer prices."
+
+BAD explanation — raw scraped text, do NOT copy (verbatim from source):
+"OPEC Reference Basket (ORB) rose by 9¢, to average $73.07/b. The global oil demand in 2026 is forecast to grow by 1.4 mb/d, y-o-y. expected to reach 42.7 mb/d,"
+
+BAD explanation — starts with bullet, not summarized:
+"- World oil demand is forecast to fall by 2.7 mb/d in 2026, to 102.3 mb/d, before rebounding by 2 mb/d in 2027."
+
+BAD explanation — raw article opening, no commodity+price start:
+"Around four billion people experience severe water scarcity for at least one month each year, while drought impacts cost an estimated $307 billion annually."
+
+Every explanation you output must follow the GOOD examples: 2-3 sentences, your own words, starts with commodity + current price number from currentPrices, no URLs, no markdown, no bullet points, no raw article text.
 
 === GROUNDING ===
 Every factor's explanation MUST reference the current price numbers supplied in currentPrices. For example: "with oil at $104.86/bbl, OPEC+ output cuts are tightening supply...". Use the numbers, do not paraphrase around them.
@@ -410,14 +540,14 @@ export function buildFactorsFromCandidates(
     const text = (candidate.text ?? "").trim();
 
     // Explanation must be a real sentence from the article: prefer the snippet
-    // (first ~200 chars), otherwise the scraped body (up to 1200 chars).
+    // (first ~200 chars), otherwise the scraped body (up to 200 chars).
     let explanation = "";
     if (snippet) {
       explanation = snippet.slice(0, 200);
     } else if (text) {
       explanation = text;
     }
-    explanation = explanation.slice(0, 1200).trim();
+    explanation = explanation.slice(0, 200).trim();
     if (!explanation) return;
 
     const name = (title || explanation.slice(0, 160) || `Market update: ${candidate.url}`).slice(0, 160);
@@ -460,7 +590,7 @@ export function buildFactorsFromCandidates(
       name,
       category,
       commodities: Array.from(new Set(commodities)) as Factor["commodities"],
-      explanation: sanitizeExplanation(explanation),
+      explanation: sanitizeExplanation(explanation).slice(0, 250),
       direction,
       magnitude: "Medium",
       source: candidate.url,
@@ -885,7 +1015,7 @@ export async function runFactorAnalysis(
     // returns invalid JSON or an empty factors array.
     if ((!parsed || !Array.isArray(parsed.factors) || parsed.factors.length === 0) && !signal?.aborted) {
       const candidateUrlHint = candidateObjs.map((c) => c.url).filter(Boolean).join(", ");
-      const retryPrompt = `Return ONLY a strict JSON object of the form {"factors":[...]}. Each factor MUST have: id (string), name (string), category (one of "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"), commodities (array subset of "oil","electricity","water"), explanation (2-3 sentences that start with the commodity and cite the current price numbers from currentPrices, e.g. "with oil at $104.86/bbl..."), direction ("up"|"down"|"mixed"), magnitude ("High"|"Medium"|"Low"), source (EXACTLY one of these URLs, copy verbatim: ${candidateUrlHint}), bias ("short"|"mid"|"long"|"flat"), importanceScore (integer 0-100), drift (object mapping commodity to a small decimal). The source field MUST be a URL copied verbatim from the list above — never a publication name. Ground every explanation in the current price numbers. NEVER include a URL or markdown link inside the explanation field. Write explanations in your own words, 2-3 sentences max, starting with the commodity and current price number. Do not output markdown, commentary, or anything outside the JSON object.`;
+      const retryPrompt = `Return ONLY a strict JSON object of the form {"factors":[...]}. Each factor MUST have: id (string), name (string), category (one of "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"), commodities (array subset of "oil","electricity","water"), explanation (2-3 sentences that start with the commodity and cite the current price numbers from currentPrices, e.g. "with oil at $104.86/bbl..."), direction ("up"|"down"|"mixed"), magnitude ("High"|"Medium"|"Low"), source (EXACTLY one of these URLs, copy verbatim: ${candidateUrlHint}), bias ("short"|"mid"|"long"|"flat"), importanceScore (integer 0-100), drift (object mapping commodity to a small decimal). The source field MUST be a URL copied verbatim from the list above — never a publication name. Ground every explanation in the current price numbers. NEVER include a URL or markdown link inside the explanation field. Write explanations in your own words, 2-3 sentences max, starting with the commodity and current price number. Do NOT copy raw text verbatim — summarize in your own words. NEVER start with a bullet point or publication name. Do not output markdown, commentary, or anything outside the JSON object.`;
 
       console.warn(`Factor analysis: retrying Kilo for scope "${scope}" after invalid/empty response (content length ${content.length}, factors ${Array.isArray(parsed?.factors) ? parsed.factors.length : 0})`);
 
@@ -923,11 +1053,34 @@ export async function runFactorAnalysis(
       return returnExisting();
     }
 
-    const normalized = parsed.factors
-      .map((f) => normalizeFactor(f, scope, candidateObjs))
-      .filter((f): f is Factor => f !== null)
-      .filter((f) => f.scope === scope)
-      .slice(0, FACTOR_COUNT);
+    const normalized: Factor[] = [];
+    for (const raw of parsed.factors) {
+      const f = normalizeFactor(raw, scope, candidateObjs);
+      if (!f) continue;
+      if (f.scope !== scope) continue;
+
+      const quality = validateExplanationQuality(f.explanation);
+      if (!quality.ok) {
+        console.warn(`Factor analysis: explanation failed quality check ("${quality.reason}") for factor "${f.name}" scope "${scope}"; attempting re-summarization`);
+        const reSummary = await reSummarizeExplanation(f.explanation, currentPrices, signal);
+        if (reSummary) {
+          const reQuality = validateExplanationQuality(reSummary);
+          if (reQuality.ok) {
+            f.explanation = reSummary;
+            console.warn(`Factor analysis: re-summarization succeeded for factor "${f.name}" scope "${scope}"`);
+          } else {
+            console.warn(`Factor analysis: re-summarization still failed quality ("${reQuality.reason}") for factor "${f.name}" scope "${scope}"; rejecting`);
+            continue;
+          }
+        } else {
+          console.warn(`Factor analysis: re-summarization returned null for factor "${f.name}" scope "${scope}"; rejecting`);
+          continue;
+        }
+      }
+
+      normalized.push(f);
+      if (normalized.length >= FACTOR_COUNT) break;
+    }
 
     if (normalized.length === 0) {
       console.warn(`Factor analysis: all model-returned factors were rejected for scope "${scope}" (parsed ${parsed.factors.length}, normalized ${normalized.length}); building deterministic factors from ${candidates.length} TinyFish candidates`);

@@ -70,11 +70,11 @@ export function toFactorsPayload(
  * ignores the "no URLs in explanation" instruction, the server never renders
  * a bare URL inside the reason prose.
  *
- * - Removes markdown links `[text](url)` → keeps only `text`
- * - Removes bare `https?://...` URLs entirely (replaced with empty string)
- * - Collapses resulting double spaces/newlines
- * - Truncates to 600 chars (a 2-3 sentence summary is well under this)
- */
+* - Removes markdown links `[text](url)` → keeps only `text`
+  * - Removes bare `https?://...` URLs entirely (replaced with empty string)
+  * - Collapses resulting double spaces/newlines
+  * - Truncates to 350 chars (a 2-3 sentence summary is well under this)
+  */
 export function sanitizeExplanation(text: string): string {
   if (typeof text !== "string" || text.trim().length === 0) return "";
   let cleaned = text
@@ -94,11 +94,11 @@ export function sanitizeExplanation(text: string): string {
     .map((line) => line.trim())
     .join("\n")
     .trim();
-  // Hard truncate at 250 chars, cut at a word boundary
-  if (cleaned.length > 250) {
-    const cut = cleaned.slice(0, 250);
+  // Hard truncate at 350 chars, cut at a word boundary
+  if (cleaned.length > 350) {
+    const cut = cleaned.slice(0, 350);
     const lastSpace = cut.lastIndexOf(" ");
-    cleaned = (lastSpace > 150 ? cut.slice(0, lastSpace) : cut).trim() + "…";
+    cleaned = (lastSpace > 200 ? cut.slice(0, lastSpace) : cut).trim() + "…";
   }
   return cleaned;
 }
@@ -169,6 +169,7 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     // Common article openings not covered above
     "the ", "around ", "according ", "global ", "world ",
     "four ", "million ", "billion ", "the world ",
+    "demand ", "supply ",
   ];
   const lower = trimmed.toLowerCase();
   for (const starter of rawStarters) {
@@ -269,7 +270,7 @@ export async function validateAndRepairWindow(
       console.warn(`validateAndRepairWindow: re-summarization returned null for factor "${f.name}"; using last-resort sanitization`);
     }
     // Last resort: sanitize and truncate heavily, never drop the factor
-    const sanitized = sanitizeExplanation(f.explanation).slice(0, 200);
+    const sanitized = sanitizeExplanation(f.explanation);
     if (sanitized) {
       repaired.push({ ...f, explanation: sanitized });
     } else {

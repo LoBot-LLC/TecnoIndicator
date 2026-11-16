@@ -63,7 +63,7 @@ function FactorCard({
   const width = Math.min(100, Math.round((relevance / 2.0) * 100));
   const isNew = isNewFactor(factor.createdAt);
   const [isExpanded, setIsExpanded] = useState(false);
-  const MAX_CHARS = 200;
+  const MAX_CHARS = 350;
   const shouldTruncate = factor.explanation.length > MAX_CHARS;
   const displayText = isExpanded || !shouldTruncate
     ? factor.explanation

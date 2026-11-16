@@ -155,30 +155,44 @@ function FactorCard({
       </div>
 
       {factor.grounding && factor.commodities.some((id) => factor.grounding?.[id]) && (
-        <div className="mt-4 rounded-lg border border-line bg-base/40 px-2.5 py-2">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-            Grounded in dashboard prices
+        <div className="mt-5 rounded-lg border border-line bg-base/50 px-3 py-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+            Grounded in live dashboard prices
           </div>
-          <div className="flex flex-wrap gap-x-3 gap-y-1">
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
             {factor.commodities.map((id) => {
               const p = factor.grounding?.[id];
               if (!p) return null;
               const c = COMMODITIES.find((x) => x.id === id)!;
               return (
-                <span
+                <div
                   key={id}
-                  className="inline-flex items-center gap-1 text-[10px] text-slate-700 dark:text-slate-300"
+                  className="inline-flex flex-col items-start gap-1 text-[11px] text-slate-700 dark:text-slate-300"
                 >
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
-                  <span className="font-semibold">{c.short}</span>
-                  <span className="tabular-nums">
-                    ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-slate-500 dark:text-slate-400">{p.unit.replace("USD/", "/")}</span>
-                </span>
+                  <div className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
+                    <span className="font-semibold">{c.short}</span>
+                    <span className="tabular-nums font-bold">
+                      ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400 text-[10px]">
+                      {p.unit.replace("USD/", "/")}
+                    </span>
+                  </div>
+                  {p.source && (
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                      {p.source}
+                    </span>
+                  )}
+                </div>
               );
             })}
           </div>
+          {factor.grounding?.asOf && (
+            <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 italic">
+              Prices as of {factor.grounding.asOf}
+            </p>
+          )}
         </div>
       )}
 
@@ -208,8 +222,8 @@ function FactorCard({
         </div>
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
-        <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-500">
+      <div className="mt-3">
+        <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-500 block mb-1">
           Source URL
         </span>
         {isHttpUrl(factor.source) ? (
@@ -217,13 +231,13 @@ function FactorCard({
             href={factor.source}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[10px] text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
+            className="block text-[10px] text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
           >
             {factor.source}
-            <ExternalLink className="ml-1 h-3 w-3 fill-current" aria-label="Open source" />
+            <ExternalLink className="ml-1 inline h-3 w-3 fill-current" aria-label="Open source" />
           </a>
         ) : (
-          <span className="text-[10px] text-slate-600 dark:text-slate-500 break-all">{factor.source}</span>
+          <span className="block text-[10px] text-slate-600 dark:text-slate-500 break-all">{factor.source}</span>
         )}
       </div>
     </article>

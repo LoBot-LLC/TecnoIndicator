@@ -365,49 +365,65 @@ function RegionalFactorCard({
       </div>
 
       {factor.grounding && factor.commodities.some((id) => factor.grounding?.[id]) && (
-        <div className="mt-2 rounded-lg border border-line bg-base/40 px-2 py-1.5">
-          <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-            Grounded in dashboard prices
+        <div className="mt-2 rounded-lg border border-line bg-base/50 px-2 py-2">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+            Grounded in live dashboard prices
           </div>
-          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
             {factor.commodities.map((id) => {
               const p = factor.grounding?.[id];
               if (!p) return null;
               const c = COMMODITIES.find((x) => x.id === id)!;
               return (
-                <span
+                <div
                   key={id}
-                  className="inline-flex items-center gap-1 text-[9px] text-slate-700 dark:text-slate-300"
+                  className="inline-flex flex-col items-start gap-1 text-[10px] text-slate-700 dark:text-slate-300"
                 >
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
-                  <span className="font-semibold">{c.short}</span>
-                  <span className="tabular-nums">
-                    ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-slate-500 dark:text-slate-400">{p.unit.replace("USD/", "/")}</span>
-                </span>
+                  <div className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
+                    <span className="font-semibold">{c.short}</span>
+                    <span className="tabular-nums font-bold">
+                      ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400 text-[9px]">
+                      {p.unit.replace("USD/", "/")}
+                    </span>
+                  </div>
+                  {p.source && (
+                    <span className="text-[9px] text-slate-500 dark:text-slate-400">
+                      {p.source}
+                    </span>
+                  )}
+                </div>
               );
             })}
           </div>
+          {factor.grounding?.asOf && (
+            <p className="mt-1.5 text-[9px] text-slate-500 dark:text-slate-400 italic">
+              Prices as of {factor.grounding.asOf}
+            </p>
+          )}
         </div>
       )}
 
-      <p className="mt-1 text-[9px] text-slate-600 dark:text-slate-400 line-clamp-1">
-        Source:{" "}
+      <div className="mt-2">
+        <span className="text-[9px] font-semibold text-slate-600 dark:text-slate-500 block mb-0.5">
+          Source URL
+        </span>
         {isHttpUrl(factor.source) ? (
           <a
             href={factor.source}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
+            className="block text-[9px] text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
           >
             {factor.source}
             <ExternalLink className="ml-1 inline h-3 w-3" aria-label="Open source" />
           </a>
         ) : (
-          <span className="break-all">{factor.source}</span>
+          <span className="block text-[9px] text-slate-600 dark:text-slate-500 break-all">{factor.source}</span>
         )}
-      </p>
+      </div>
     </article>
   );
 }

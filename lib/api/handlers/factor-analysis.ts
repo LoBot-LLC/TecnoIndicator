@@ -65,10 +65,62 @@ export function toFactorsPayload(
 }
 
 const SYSTEM_PROMPT_GLOBAL =
-  "You are a Senior Commodity Risk Analyst. You are provided with current global market analytics, an existing list of global price factors, and fresh validated news excerpts collected through TinyFish.\n\nValidate each candidate trend against the supplied current global market conditions and source evidence.\n\nDetermine whether each candidate is a legitimate market-moving trend or noise at a global scale. Reject stale, duplicate, promotional, speculative, unsupported, irrelevant, or weakly evidenced claims.\n\nFor each legitimate trend, evaluate its expected effect on global oil, electricity, or water prices. Assign an integer importance score from 0 to 100 based on evidence quality, geographic scope, affected commodities, expected price impact, duration, and immediacy.\n\nExplain why each approved trend is legitimate and globally relevant right now. Use only the supplied analytics, factors, excerpts, and source URLs. Do not invent sources or facts.\n\nJSON schema for each factor: { id: string; name: string; category: \"Market\"|\"Policy\"|\"Structural\"|\"Infrastructure\"|\"Environmental\"|\"Geopolitical\"|\"Technological\"; commodities: string[] (subset of oil, electricity, water); explanation: string (2-3 sentences summarizing the reason found in the supplied source URL); direction: \"up\"|\"down\"|\"mixed\"; magnitude: \"High\"|\"Medium\"|\"Low\"; source: string (the exact URL of the candidate excerpt that supports this reason — must be one of the candidate source URLs supplied); bias: \"short\"|\"mid\"|\"long\"|\"flat\"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }. The `source` field MUST be an exact URL from the supplied candidate list.\n\nReturn strict JSON only. Do not return markdown or commentary outside JSON.\n\nThe response must contain up to eight validated global factors matching the required schema. If a new legitimate trend is identified, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.";
+`You are a Senior Commodity Risk Analyst. You are provided with current global market analytics, an existing list of global price factors, and fresh validated news excerpts collected through TinyFish.
+
+=== STEPS (follow in order) ===
+1. Read EVERY candidate's title, snippet, and full text carefully.
+2. Identify the CONCRETE reason the article gives for an oil, electricity, or water price movement. This is a factual claim the article itself makes, not your own inference.
+3. Write that reason in 2-3 sentences in the explanation field. Start with the commodity and the current price number from currentPrices (e.g. "with oil at $104.86/bbl..."). Use the numbers; do not paraphrase around them.
+4. Set the source field to the EXACT URL string from the candidate list — copy it verbatim, character for character. Never write a publication name.
+
+=== FORBIDDEN ===
+- NEVER output a bare publication name (e.g. "IEA", "OPEC Monthly Oil Market Report", "UN-Water; WRI Aqueduct") in the source field.
+- NEVER invent a URL. If you cannot find a matching URL, copy the URL verbatim from the candidate list.
+- NEVER output markdown or commentary outside the JSON.
+
+=== GROUNDING ===
+Every factor's explanation MUST reference the current price numbers supplied in currentPrices. For example: "with oil at $104.86/bbl, OPEC+ output cuts are tightening supply...". Use the numbers, do not paraphrase around them.
+
+=== WORKED EXAMPLE ===
+{"id":"example-1","name":"OPEC+ output restraint","category":"Market","commodities":["oil"],"explanation":"OPEC+ members have agreed to extend voluntary production cuts through Q1 2026, tightening global supply. With oil at $104.86/bbl, the cutback is expected to remove roughly 1.2 million b/d from the market and support prices in the short term.","direction":"up","magnitude":"High","source":"https://www.iea.org/reports/world-energy-outlook-2026","bias":"short","importanceScore":82,"drift":{"oil":0.5}}
+
+=== JSON SCHEMA ===
+Each factor object must be exactly: { id: string; name: string; category: "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"; commodities: string[] (subset of oil, electricity, water); explanation: string (2-3 sentences summarizing the reason found in the supplied source URL); direction: "up"|"down"|"mixed"; magnitude: "High"|"Medium"|"Low"; source: string (the EXACT URL string from the candidate list — a URL, never a publication name); bias: "short"|"mid"|"long"|"flat"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }.
+
+The source field MUST be an exact URL string from the supplied candidate list. It is a URL, never a publication name.
+
+Return strict JSON only. Do not return markdown or commentary outside JSON.
+
+The response must contain up to eight validated global factors matching the required schema. If a new legitimate trend is identified, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.`;
 
 const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
-  `You are a Senior Commodity Risk Analyst specializing in ${regionName} energy and water markets. You are provided with current ${regionName}-specific market analytics, an existing list of ${regionName} price factors, and fresh validated news excerpts collected through TinyFish that are relevant to ${regionName}.\n\nValidate each candidate trend against the supplied current ${regionName} market conditions and source evidence.\n\nDetermine whether each candidate is a legitimate market-moving trend or noise within ${regionName}. Reject stale, duplicate, promotional, speculative, unsupported, irrelevant, or weakly evidenced claims. Reject any trend that is purely global with no demonstrated ${regionName}-specific price impact.\n\nFor each legitimate trend, evaluate its expected effect on ${regionName} oil, electricity, or water prices specifically. Assign an integer importance score from 0 to 100 based on evidence quality, ${regionName} geographic scope, affected commodities, expected regional price impact, duration, and immediacy within ${regionName}.\n\nExplain why each approved trend is legitimate and relevant to ${regionName} right now. Use only the supplied analytics, factors, excerpts, and source URLs. Do not invent sources or facts.\n\nJSON schema for each factor: { id: string; name: string; category: \"Market\"|\"Policy\"|\"Structural\"|\"Infrastructure\"|\"Environmental\"|\"Geopolitical\"|\"Technological\"; commodities: string[] (subset of oil, electricity, water); explanation: string (2-3 sentences summarizing the reason found in the supplied source URL); direction: \"up\"|\"down\"|\"mixed\";              magnitude: \"High\"|\"Medium\"|\"Low\"; source: string (the exact URL of the candidate excerpt that supports this reason — must be one of the candidate source URLs supplied); bias: \"short\"|\"mid\"|\"long\"|\"flat\"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }. The source field MUST be an exact URL from the supplied candidate list.\n\nReturn strict JSON only. Do not return markdown or commentary outside JSON.\n\nThe response must contain up to eight validated ${regionName} factors matching the required schema. If a new legitimate trend is identified for ${regionName}, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.`;
+`You are a Senior Commodity Risk Analyst specializing in ${regionName} energy and water markets. You are provided with current ${regionName}-specific market analytics, an existing list of ${regionName} price factors, and fresh validated news excerpts collected through TinyFish that are relevant to ${regionName}.
+
+=== STEPS (follow in order) ===
+1. Read EVERY candidate's title, snippet, and full text carefully.
+2. Identify the CONCRETE reason the article gives for an oil, electricity, or water price movement. This is a factual claim the article itself makes, not your own inference.
+3. Write that reason in 2-3 sentences in the explanation field. Start with the commodity and the current price number from currentPrices (e.g. "with oil at $104.86/bbl..."). Use the numbers; do not paraphrase around them.
+4. Set the source field to the EXACT URL string from the candidate list — copy it verbatim, character for character. Never write a publication name.
+
+=== FORBIDDEN ===
+- NEVER output a bare publication name (e.g. "IEA", "OPEC Monthly Oil Market Report", "UN-Water; WRI Aqueduct") in the source field.
+- NEVER invent a URL. If you cannot find a matching URL, copy the URL verbatim from the candidate list.
+- NEVER output markdown or commentary outside the JSON.
+
+=== GROUNDING ===
+Every factor's explanation MUST reference the current price numbers supplied in currentPrices. For example: "with oil at $104.86/bbl, OPEC+ output cuts are tightening supply...". Use the numbers, do not paraphrase around them.
+
+=== WORKED EXAMPLE ===
+{"id":"example-1","name":"OPEC+ output restraint","category":"Market","commodities":["oil"],"explanation":"OPEC+ members have agreed to extend voluntary production cuts through Q1 2026, tightening global supply. With oil at $104.86/bbl, the cutback is expected to remove roughly 1.2 million b/d from the market and support prices in the short term.","direction":"up","magnitude":"High","source":"https://www.iea.org/reports/world-energy-outlook-2026","bias":"short","importanceScore":82,"drift":{"oil":0.5}}
+
+=== JSON SCHEMA ===
+Each factor object must be exactly: { id: string; name: string; category: "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"; commodities: string[] (subset of oil, electricity, water); explanation: string (2-3 sentences summarizing the reason found in the supplied source URL); direction: "up"|"down"|"mixed"; magnitude: "High"|"Medium"|"Low"; source: string (the EXACT URL string from the candidate list — a URL, never a publication name); bias: "short"|"mid"|"long"|"flat"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }.
+
+The source field MUST be an exact URL string from the supplied candidate list. It is a URL, never a publication name.
+
+Return strict JSON only. Do not return markdown or commentary outside JSON.
+
+The response must contain up to eight validated ${regionName} factors matching the required schema. If a new legitimate trend is identified for ${regionName}, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.`;
 
 const GLOBAL_QUERIES = [
   "global oil market prices OPEC supply demand 2026",
@@ -265,7 +317,7 @@ export function buildFallbackFactors(scope: RegionId): Factor[] {
 export function normalizeFactor(
   raw: unknown,
   scope: RegionId,
-  candidateUrls: string[] = [],
+  candidates: Array<{ url: string; title?: string; site_name?: string }> = [],
 ): Factor | null {
   if (!raw || typeof raw !== "object") return null;
   const f = raw as Record<string, unknown>;
@@ -322,9 +374,9 @@ export function normalizeFactor(
   let finalSource = source;
   if (sourceUrl) {
     finalSource = sourceUrl;
-  } else if (candidateUrls.length > 0) {
-    const matched = source ? matchSourceToCandidate(source, candidateUrls) : null;
-    finalSource = matched ?? candidateUrls[0];
+  } else if (candidates.length > 0) {
+    const matched = source ? matchSourceToCandidate(source, candidates) : null;
+    finalSource = matched ?? (source ? bestLooseCandidate(source, candidates) : null) ?? candidates[0]?.url ?? "";
   }
 
   return {
@@ -374,32 +426,105 @@ function attachFactorGrounding(
  * When the model returns a non-URL source name (e.g. "IEA" or "OPEC Monthly
  * Oil Market Report"), try to match it to one of the candidate URLs we
  * actually fetched via TinyFish so the UI can display a real source link.
+ * 
+ * Now supports multi-word matching against candidate URL hostname+path,
+ * as well as against title and site_name fields carried in candidate objects.
  */
-function matchSourceToCandidate(source: string, candidateUrls: string[]): string | null {
-  const sourceLower = source.toLowerCase();
-  // 1) Hostname match: e.g. source "Reuters" matches reuters.com
-  for (const url of candidateUrls) {
+function matchSourceToCandidate(source: string, candidates: Array<{ url: string; title?: string; site_name?: string }>): string | null {
+  const sourceLower = source.toLowerCase().trim();
+  if (!sourceLower) return null;
+
+  // If source is already a valid URL, return it
+  const urlMatch = sanitizeUrl(sourceLower);
+  if (urlMatch) return urlMatch;
+
+  // Tokenize source: words of length >= 3
+  const tokens = Array.from(new Set(sourceLower.split(/[^a-z0-9]+/).filter((t) => t.length >= 3)));
+  if (tokens.length === 0) return null;
+
+  let best: { url: string; score: number } | null = null;
+
+  for (const c of candidates) {
+    if (!c || !c.url) continue;
+    let text = c.url.toLowerCase();
+    if (c.title) text += " " + c.title.toLowerCase();
+    if (c.site_name) text += " " + c.site_name.toLowerCase();
+
+    // Parse hostname and path for token matching
+    let host = "";
+    let domainLabel = "";
     try {
-      const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-      if (sourceLower.includes(host)) return url;
-    } catch {
-      /* ignore invalid URLs */
-    }
-  }
-  // 2) Keyword/domain match: e.g. source "OPEC" matches opec.org
-  const firstToken = sourceLower.split(/\s+/)[0];
-  if (firstToken && firstToken.length > 2) {
-    for (const url of candidateUrls) {
-      try {
-        const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-        const domainLabel = host.split(".")[0];
-        if (domainLabel === firstToken || sourceLower.includes(domainLabel)) return url;
-      } catch {
-        /* ignore invalid URLs */
+      const u = new URL(c.url);
+      host = u.hostname.replace(/^www\./, "").toLowerCase();
+      domainLabel = u.hostname.split(".")[0].toLowerCase();
+      text += " " + host + " " + u.pathname.toLowerCase();
+    } catch {}
+
+    let score = 0;
+    for (const t of tokens) {
+      if (text.includes(t)) {
+        score += t.length >= 5 ? 3 : t.length >= 4 ? 2 : 1;
+      } else {
+        // Domain label exact/partial match
+        if (domainLabel && (domainLabel === t || domainLabel.includes(t) || t.includes(domainLabel))) {
+          score += 3;
+        }
+        // Hostname token match
+        if (host && host.includes(t)) score += 2;
       }
     }
+
+    // Require at least one meaningful token match
+    if (score > 0 && (!best || score > best.score)) best = { url: c.url, score };
   }
-  return null;
+
+  if (!best) return null;
+
+  // For single-token sources, a score of 1 is acceptable.
+  // For multi-token sources, require at least half the tokens match.
+  const minScore = tokens.length <= 2 ? 1 : Math.ceil(tokens.length / 2);
+  return best.score >= minScore ? best.url : null;
+}
+
+/**
+ * Best-effort fallback: picks the candidate URL whose hostname best matches
+ * any token in the source name, even below the normal threshold. Used when
+ * the model returns a bare publication name that cannot be matched otherwise.
+ */
+function bestLooseCandidate(source: string, candidates: Array<{ url: string; title?: string; site_name?: string }>): string | null {
+  const sourceLower = source.toLowerCase().trim();
+  if (!sourceLower) return null;
+
+  let best: { url: string; score: number } | null = null;
+
+  for (const c of candidates) {
+    if (!c || !c.url) continue;
+    let text = c.url.toLowerCase();
+    if (c.title) text += " " + c.title.toLowerCase();
+    if (c.site_name) text += " " + c.site_name.toLowerCase();
+
+    let host = "";
+    try {
+      const u = new URL(c.url);
+      host = u.hostname.replace(/^www\./, "").toLowerCase();
+      text += " " + host;
+    } catch {}
+
+    let score = 0;
+    // Match hostname label
+    const label = host.split(".")[0];
+    if (label && sourceLower.includes(label)) score += 3;
+    if (host && sourceLower.includes(host)) score += 5;
+
+    // Match individual tokens
+    for (const t of sourceLower.split(/[^a-z0-9]+/).filter((t) => t.length >= 3)) {
+      if (text.includes(t)) score += 2;
+    }
+
+    if (!best || score > best.score) best = { url: c.url, score };
+  }
+
+  return best?.url ?? null;
 }
 
 /**
@@ -517,6 +642,21 @@ export async function runFactorAnalysis(
       }),
     );
 
+    // Log scrape success rate
+    const scrapedCount = excerpts.filter((e) => (e as { text?: string }).text && (e as { text?: string }).text!.length > 0).length;
+    if (scrapedCount === 0 && candidates.length > 0) {
+      console.warn(`Factor analysis: all ${candidates.length} candidate scrapes failed for scope "${scope}"; proceeding with search snippets only`);
+    } else if (scrapedCount < candidates.length) {
+      console.warn(`Factor analysis: ${candidates.length - scrapedCount}/${candidates.length} scrapes failed for scope "${scope}"`);
+    }
+
+    // Build candidate objects (with title/site_name) for source matching
+    const candidateObjs = excerpts.map((c) => ({
+      url: c.url,
+      title: c.title,
+      site_name: (c as { site_name?: string }).site_name,
+    }));
+
     const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
     const payload = {
       messages: [
@@ -544,17 +684,42 @@ export async function runFactorAnalysis(
     };
 
     const response = await kiloRouter.kiloInfer(payload, signal);
-    const content = response.choices?.[0]?.message?.content ?? "";
-    const parsed = safeParseJson<{ factors?: unknown[] }>(content);
-    if (!parsed?.factors || !Array.isArray(parsed.factors)) {
-      console.warn(`Factor analysis: model did not return a valid factors array for scope "${scope}" (content length ${content.length}); falling back to existing factors`);
+    let content = response.choices?.[0]?.message?.content ?? "";
+    let parsed = safeParseJson<{ factors?: unknown[] }>(content);
+
+    // Retry once with a more explicit, insistent prompt if first attempt
+    // returns invalid JSON or an empty factors array.
+    if ((!parsed || !Array.isArray(parsed.factors) || parsed.factors.length === 0) && !signal?.aborted) {
+      const candidateUrlHint = candidateObjs.map((c) => c.url).filter(Boolean).join(", ");
+      const retryPrompt = `Return ONLY a strict JSON object of the form {"factors":[...]}. Each factor MUST have: id (string), name (string), category (one of "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"), commodities (array subset of "oil","electricity","water"), explanation (2-3 sentences that start with the commodity and cite the current price numbers from currentPrices, e.g. "with oil at $104.86/bbl..."), direction ("up"|"down"|"mixed"), magnitude ("High"|"Medium"|"Low"), source (EXACTLY one of these URLs, copy verbatim: ${candidateUrlHint}), bias ("short"|"mid"|"long"|"flat"), importanceScore (integer 0-100), drift (object mapping commodity to a small decimal). The source field MUST be a URL copied verbatim from the list above — never a publication name. Ground every explanation in the current price numbers. Do not output markdown, commentary, or anything outside the JSON object.`;
+
+      console.warn(`Factor analysis: retrying Kilo for scope "${scope}" after invalid/empty response (content length ${content.length}, factors ${Array.isArray(parsed?.factors) ? parsed.factors.length : 0})`);
+
+      const retryPayload = {
+        ...payload,
+        messages: [
+          { role: "system", content: retryPrompt },
+          payload.messages[1],
+        ],
+      };
+
+      try {
+        const retryResponse = await kiloRouter.kiloInfer(retryPayload, signal);
+        content = retryResponse.choices?.[0]?.message?.content ?? "";
+        parsed = safeParseJson<{ factors?: unknown[] }>(content);
+        console.warn(`Factor analysis: retry complete for scope "${scope}" (content length ${content.length}, factors ${Array.isArray(parsed?.factors) ? parsed.factors.length : 0})`);
+      } catch (error) {
+        console.error(`Factor analysis: retry failed for scope "${scope}":`, error);
+      }
+    }
+
+    if (!parsed?.factors || !Array.isArray(parsed.factors) || parsed.factors.length === 0) {
+      console.warn(`Factor analysis: model did not return a valid non-empty factors array for scope "${scope}" even after retry (content length ${content.length}); falling back to existing factors`);
       return returnExisting();
     }
 
-    const candidateUrls = excerpts.map((c) => c.url).filter(Boolean);
-
     const normalized = parsed.factors
-      .map((f) => normalizeFactor(f, scope, candidateUrls))
+      .map((f) => normalizeFactor(f, scope, candidateObjs))
       .filter((f): f is Factor => f !== null)
       .filter((f) => f.scope === scope)
       .slice(0, FACTOR_COUNT);

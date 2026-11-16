@@ -4,7 +4,7 @@
 
 <img width="1984" height="992" alt="image" src="https://github.com/user-attachments/assets/ceaff96a-4022-4f32-9a8b-d194ffd9e484" />
 
-A modern, clean, professional single-page web application that delivers energy price forecasts with interactive data visualization, scenario analysis, and **AI-powered** dynamic factor insights and recommendations. Built with **Next.js (App Router)** and deployed on Vercel: the UI is a React client application, while the market data, AI curation and forecasting live in Next.js route handlers under `app/api/`.
+A commodity price forecasting dashboard for **oil**, **electricity**, and **water** that delivers interactive 10-year forecasts with scenario analysis, regional breakdowns, and **AI-curated factor insights** — every factor grounded in live dashboard statistics and linked to the exact source URLs the AI analyzed. Built with **Next.js (App Router)** and deployed on Vercel: the UI is a React client application, while market data, AI curation, and forecasting live in Next.js route handlers under `app/api/`.
 
 **Live demo:** [https://lobotllc.vercel.app](https://lobotllc.vercel.app)
 
@@ -12,24 +12,24 @@ A modern, clean, professional single-page web application that delivers energy p
 
 ## ✨ Features
 
-- **Hero Dashboard** — Clean landing with project name, tagline, current date, and prominent “Start Forecast” CTA.
-- **Currency Selector** - Predict the prices at your country's currency, at any moment
+- **Hero Dashboard** — Clean landing with project name, tagline, current date, and prominent "Start Forecast" CTA.
+- **Currency Selector** — Predict prices in your country's currency at any moment.
 - **Interactive Prediction Tool**
   - Horizon slider (1–10 years)
-  - Two commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Water (USD/M^3)** and **Global Electricity (USD/MWh)**
+  - Three commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Water (USD/M³)**, and **Global Electricity (USD/MWh)**
   - Three scenarios per commodity: Average, Optimistic (Min), Pessimistic (Max)
-  - Clean data table + interactive line chart (Chart.js)
-- **Real-time Feel** — Live-updating timestamp + “Refresh Data” button that perturbs values within realistic ranges. Each commodity card (oil, electricity, water) also has its own “Re-fetch Live … Price” button that re-fetches the live TinyFish source and displays the fetched source URL, the fetched timestamp, and the live/benchmark range — the same pattern previously only available for water.
+  - Interactive line chart (Chart.js) + clean data table
+- **Real-time Feel** — Live-updating timestamp + "Refresh Data" button. Each commodity card has its own "Re-fetch Live … Price" button that re-fetches the live TinyFish source and displays the fetched source URL, timestamp, and live/benchmark range.
 - **Key Factors & Drivers** — Dynamic grid of 8 major price influencers with:
   - Factor name + explanation (reasons summarized from TinyFish-fetched source URLs, not hard-coded)
   - Impact direction & magnitude (↑/↓ High/Medium/Low)
   - **Grounded in dashboard prices** — the oil/electricity/water spot prices the model evaluated its reasons against, so every reason is supported by the numbers shown on the dashboard
   - Full clickable source URL linking to the exact TinyFish-fetched page the model analyzed (never a bare publication name)
   - Horizon-aware highlighting (longer forecasts emphasize structural drivers)
-- **Regional Intelligence** — The same 8-factor grid scoped to a region, with the same grounding prices and full clickable source URLs on every card
-- **Export Options** — Download the chart as PNG or the forecast table as CSV or Markdown (`.md`). In **Regional Intelligence**, select a region then open the **Export region** menu to download that same region as a CSV table or a Markdown (`.md`) report.
-- **View all global continents** — One click, and you can have a glimpse on the data of all the continents on Earth - whether it's the Americans, Europe, Asia, and more!
-- **Technical Transparency** — Collapsible “Show underlying assumptions” section.
+- **Regional Intelligence** — The same 8-factor grid scoped to a region, with the same grounding prices and full clickable source URLs on every card.
+- **Export Options** — Download the chart as PNG or the forecast table as CSV or Markdown (`.md`). In **Regional Intelligence**, select a region then open the **Export region** menu to download that region as a CSV table or a Markdown (`.md`) report.
+- **View all global continents** — One click to explore data for all continents: the Americas, Europe, Asia, Africa, Oceania.
+- **Technical Transparency** — Collapsible "Show underlying assumptions" section.
 - **Production Polish**
   - Dark-mode friendly design with teal/navy accents
   - Fully responsive (desktop + mobile)
@@ -38,9 +38,9 @@ A modern, clean, professional single-page web application that delivers energy p
   - Clear disclaimers throughout
 - **AI Model Integration**
   - Search and fetch current prices
-  - Search, analyze and display 8 dynamic factors affecting the prices, each linked to its TinyFish-fetched source URL
-  - Updating 3 dynamic AI-powered solutions based on the updating factors
-  - Executed via models from Kilo Gateway and TinyFish API
+  - Search, analyze and display 8 dynamic factors affecting prices, each linked to its TinyFish-fetched source URL
+  - Up to 3 dynamic AI-powered solutions based on the updating factors
+  - Executed via Kilo Gateway (OpenAI-compatible inference) and TinyFish API (search + scraping)
 
 ---
 
@@ -79,6 +79,15 @@ npm run build   # next build
 npm start       # next start
 ```
 
+### Scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start Next.js dev server |
+| `npm run build` | Build for production (`next build`) |
+| `npm start` | Serve the production build (`next start`) |
+| `npm run typecheck` | Run `tsc --noEmit` for strict type checking |
+
 ### API endpoints
 
 The backend runs as Next.js route handlers. The client calls these relative paths:
@@ -100,22 +109,34 @@ All factor producers and consumers share a single canonical cache key,
 `dynamic-factors:{global|region}`, so the reasons shown in the UI are exactly
 the reasons the solutions were generated from.
 
-The curation pipeline is resilient and grounded:
+### Factor Curation Pipeline
 
-- **Live prices drive the reasons.** The current oil/electricity/water spot prices
-  (the same numbers shown on the dashboard) are injected into the curation prompt
-  and attached to every factor as server-side `grounding`, so each reason can be
-  read against the statistics that support it.
-- **JSON mode.** The Kilo Gateway call requests a `json_object` response and the
-  shared `safeParseJson` helper tolerates markdown code fences and surrounding
-  prose, so a wrapped response no longer silently falls back to static factors.
-- **Real, clickable sources.** If TinyFish's reputable-host filter removes every
-  search result, curation retries with all recent results. Non-URL model source
-  names (e.g. "IEA World Energy Outlook") are resolved to the actual TinyFish
-  URL that was fetched and analyzed, so each card links to a real page.
-- The `aiCurated` flag on each API response tells the UI whether factors are live
-  or static fallbacks, and each scrape carries a short `purpose` statement so
-  TinyFish tailors extraction to the price-relevance goal.
+The curation flow runs end-to-end whenever factors are requested (on-demand or via the Vercel cron):
+
+1. **TinyFish Search** — A broad search query (with recency constraints) hits `api.search.tinyfish.ai` to gather candidate source URLs.
+2. **Reputable + Recent Filter** — Results are filtered to reputable hosts and recent content. If that filter removes everything, curation retries with all recent results.
+3. **TinyFish Scrape** — Each candidate URL is scraped via `api.fetch.tinyfish.ai`, with a short `purpose` statement so TinyFish tailors extraction to the price-relevance goal.
+4. **Kilo Gateway JSON Curation** — The scraped content is sent to Kilo Gateway (`api.kilo.ai/api/gateway`, OpenAI-compatible) with a `json_object` response request. The shared `safeParseJson` helper tolerates markdown code fences and surrounding prose.
+5. **Server-side Grounding** — Live oil/electricity/water spot prices (from `getScopePriceDefaults`, the same numbers shown on the dashboard) are injected into the curation prompt and attached to every factor as server-side `grounding`. The model cannot fabricate these.
+6. **Rolling Window Merge** — Curated factors are stored under the canonical `dynamic-factors:{scope}` cache key (in-memory + optional Upstash Redis) with a `FactorWindow` shape (`{ factors, aiCurated, updatedAt }`). On each request, a fresh window is served if available; otherwise re-curation runs.
+7. **UI Consumption** — The UI consumes factors through `/api/dynamic-factors` (and `/api/regional-factors?region=`), reads the `aiCurated` flag to know whether factors are live or static fallbacks, and renders each card with its grounding prices and clickable source URL.
+
+The `aiCurated` flag on each API response tells the UI whether factors are live or static fallbacks, and each scrape carries a short `purpose` statement so TinyFish tailors extraction to the price-relevance goal.
+
+### Key Factors & Drivers UI
+
+Each factor card in the UI shows:
+
+- **Factor name** and **explanation** (reason summarized from TinyFish-fetched content, not hard-coded).
+- **Impact direction & magnitude** (↑/↓ with High/Medium/Low).
+- **Grounding prices** — the current oil/electricity/water spot prices (from `getScopePriceDefaults`) that the model evaluated its reasons against, displayed alongside the reason so every statement is supported by the numbers shown on the dashboard.
+- **Full clickable source URL** — a link to the exact TinyFish-fetched page the model analyzed. Never a bare publication name.
+
+The same pattern applies to the regional factors view: each regional card carries the same grounding and a real clickable source URL.
+
+### Static Fallback Behavior
+
+When live curation is unavailable — TinyFish search/scrape fails, Kilo Gateway is down, or all retries are exhausted — the UI falls back to static `FACTORS` / `REGIONAL_FACTORS` defined in `src/lib/model.ts`. These static factors contain **publication-name sources** (e.g., "IEA World Energy Outlook") rather than clickable URLs. This is the known degraded state: the `aiCurated` flag is set to `false`, and the cards display publication names instead of links. The production goal is to eliminate this fallback by ensuring live curation succeeds reliably.
 
 ### Environment variables
 
@@ -126,8 +147,11 @@ these as project environment variables.
 | --- | --- | --- |
 | `TINYFISH_KEY_1` … `TINYFISH_KEY_5` | Required | TinyFish search/fetch API keys used to gather and scrape market evidence. Without them the app still runs and serves deterministic fallback data. |
 | `KILO_GATEWAY_KEY` or `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Required | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. |
+| `FUEL_BASE_DIESEL_PRICE` | Optional | Override the base diesel price for fuel-levy calculations. |
+| `FUEL_FACTOR` | Optional | Override the fuel levy factor. |
+| `GRID_LOSS_FACTOR` | Optional | Override the electricity grid-loss factor. |
+| `WATER_SCARCITY_MULTIPLIER` | Optional | Override the water scarcity multiplier. |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional | Upstash Redis REST credentials for a shared cache across serverless instances. `REDIS_URL` / `REDIS_TOKEN` are accepted as aliases. Without Redis an in-memory per-instance cache is used. |
-| `FUEL_BASE_DIESEL_PRICE`, `FUEL_FACTOR`, `GRID_LOSS_FACTOR`, `WATER_SCARCITY_MULTIPLIER` | Optional | Override the deterministic analytics constants. |
 
 The site degrades gracefully: with no keys configured every endpoint still
 returns a response, backed by public benchmark defaults, and the health endpoint
@@ -144,41 +168,30 @@ reports `onlineModelConnected: false`.
 - **TypeScript 5** — Static type checking across the entire codebase
 - **Tailwind CSS 4** — Utility-first styling via `@tailwindcss/postcss`
 - **Chart.js** — Interactive data visualization (used directly, no React wrapper)
-- **Lucide React** — Clean, consistent icon system
+- **lucide-react** — Clean, consistent icon system
 - **clsx** + **tailwind-merge** — Conditional className utilities
 - **flags** — Feature flag / feature gating support
-- **LoBot logo mark** (`images/lobotlogoonly.svg`) — Brand SVG rendered as an inline React component (`LoBotIcon` in `src/components/icons.tsx`), used for the footer logo mark and the footer company link to the LoBot LLC website.
-- **TecnoIndicator waveform mark** (`images/lobottecnoindicator.svg`) — Brand SVG rendered as an inline React component (`TecnoIndicatorIcon` in `src/components/icons.tsx`), used as the header icon next to the "LoBot TecnoIndicator" wordmark.
-- **LinkedIn "in" mark** — Custom inline SVG component (`LinkedinIcon` in `src/components/icons.tsx`), used as the footer social link to the LoBot LLC LinkedIn page. Lucide v1 removed all brand icons (including LinkedIn), so brand marks like this one are maintained as hand-written SVG components.
 
 #### Backend / API Layer
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js** — Runtime environment (via Next.js on Vercel)
-- **Kilo Gateway API** — AI model orchestration (price extraction, factor curation, solutions, forecasting)
-- **TinyFish API** — Market data search & scraping; each scrape carries a `purpose` statement to tailor extraction to price-relevance.
-- **Redis (Upstash / Vercel KV)** — Distributed caching for API responses (optional; in-memory fallback)
+- **Kilo AI Gateway** — OpenAI-compatible inference API at `api.kilo.ai/api/gateway` (price extraction, factor curation, solutions, forecasting)
+- **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search) and `api.fetch.tinyfish.ai` (URL scraping); each scrape carries a `purpose` statement to tailor extraction to price-relevance.
+- **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis for cross-instance sharing
 
 #### Data & Models (`src/lib/`)
-- **Deterministic Analytics Engine** — Fuel levy, grid loss, water scarcity calculations
+- **Forecast Engine** (`model.ts`) — Client-side forecast computations, `FACTORS` / `REGIONAL_FACTORS` static fallbacks, commodity types, and scenario math
+- **Deterministic Analytics** — Fuel levy, grid loss, water scarcity calculations
 - **Currency & Unit Conversion** — Multi-currency support with real-time formatting
 - **Markdown Report Generator** — Export forecasts as `.md` reports
-- **Event & Factor Models** — Structured types for price drivers and scenarios
 
 #### Development & Build Tooling
-- **pnpm** — Fast, disk-efficient package manager
-- **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run lint` / `npm run build`)
+- **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run typecheck` / `npm run build`)
 - **PostCSS** — Tailwind CSS 4 processing pipeline
-- **Vercel Analytics** — Real-user monitoring (RUM)
-- **Vercel Speed Insights** — Core Web Vitals tracking
-
-#### Testing & Quality
-- **Playwright** — End-to-end browser testing (chromium, firefox, webkit)
-- **ESLint** (Next.js config) — Code quality & consistency
-- **Prettier** (via Tailwind plugin) — Opinionated formatting
 
 #### Deployment & Infrastructure
 - **Vercel** — Native Next.js hosting, edge functions, cron jobs
-- **Vercel Cron** — Nightly factor re-curation (`0 2 * * *` UTC)
+- **Vercel Cron** (`vercel.json`) — Nightly factor re-curation (`0 2 * * *` UTC)
 - **Environment Variables** — Secure secret management (`.env.local` locally, Vercel dashboard in prod)
 
 ---
@@ -190,16 +203,16 @@ reports `onlineModelConnected: false`.
 ├── app/                                    # Next.js App Router (frontend + API)
 │   ├── api/                               # API route handlers (serverless functions)
 │   │   ├── ai-forecast/route.ts           # 11-year global forecast band
+│   │   ├── analytics/route.ts             # Global fuel/electricity/water indices
 │   │   ├── cron/
 │   │   │   └── curate-factors/route.ts    # Nightly AI factor re-curation (Vercel cron)
 │   │   ├── dynamic-factors/route.ts       # 8 curated global price factors
 │   │   ├── health/route.ts                # Gateway/key/cache status
-│   │   ├── prices/route.ts                # Live commodity spot prices (oil, electricity, water)
+│   │   ├── prices/route.ts                # Live commodity spot prices
 │   │   ├── rates/route.ts                 # Exchange rates for currency conversion
 │   │   ├── regional-analytics/route.ts    # Regional fuel/electricity/water indices
 │   │   ├── regional-factors/route.ts      # 8 curated factors for a region
 │   │   ├── regional-forecast/route.ts     # 11-year region-specific forecast
-│   │   ├── regional/route.ts              # Region metadata & list
 │   │   ├── solutions/route.ts             # Up to 3 AI-curated strategy recommendations
 │   │   └── telemetry/route.ts             # Client-side analytics ingestion
 │   ├── globals.css                        # Global styles + Tailwind CSS 4 imports
@@ -215,7 +228,7 @@ reports `onlineModelConnected: false`.
 │       │   ├── analytics.ts               # Global indices computation
 │       │   ├── cron-curate-factors.ts     # Nightly curation job
 │       │   ├── dynamic-factors.ts         # Global factor curation
-│       │   ├── factor-analysis.ts         # Factor impact analysis
+│       │   ├── factor-analysis.ts         # Factor curation pipeline (TinyFish → Kilo → grounding → cache)
 │       │   ├── health.ts                  # Health check implementation
 │       │   ├── prices.ts                  # Price fetching & fallbacks
 │       │   ├── regional-analytics.ts      # Regional indices computation
@@ -223,15 +236,15 @@ reports `onlineModelConnected: false`.
 │       │   ├── regional-forecast.ts       # Regional forecast generation
 │       │   └── solutions.ts               # AI solution generation
 │       └── _shared/                       # Cross-cutting utilities
-│           ├── cache.ts                   # Redis + in-memory cache abstraction
-│           ├── deterministicAnalytics.ts  # Fuel/grid/water math
+│           ├── cache.ts                   # In-memory + optional Redis cache with TTLs
+│           ├── deterministicAnalytics.ts  # Fuel/grid/water math + getScopePriceDefaults
 │           ├── http.ts                    # TinyFish/Kilo HTTP clients
 │           ├── kiloRouter.ts              # Kilo Gateway model routing
-│           ├── redis.ts                   # Upstash Redis client
+│           ├── redis.ts                   # Upstash Redis client (optional)
 │           ├── regions.ts                 # Region definitions & metadata
 │           ├── tinyfishRouter.ts          # TinyFish search/scrape routing
 │           ├── types.ts                   # Shared TypeScript interfaces
-│           └── validation.ts              # Zod schemas for request validation
+│           └── validation.ts              # Request validation helpers
 │
 ├── src/                                    # Frontend source code
 │   ├── components/                        # React UI components
@@ -241,7 +254,7 @@ reports `onlineModelConnected: false`.
 │   │   ├── Footer.tsx                     # Site footer
 │   │   ├── ForecastTool.tsx               # Main prediction UI (slider, cards, chart, table)
 │   │   ├── Hero.tsx                       # Landing hero with CTA
-│   │   ├── icons.tsx                      # Custom SVG icon components (GithubIcon, LinkedinIcon, LoBotIcon, TecnoIndicatorIcon)
+│   │   ├── icons.tsx                      # Custom SVG icon components
 │   │   ├── Logo.tsx                       # Brand logo
 │   │   ├── MarketIndexStrip.tsx           # Live market ticker
 │   │   ├── Navbar.tsx                     # Top navigation + export menu
@@ -264,12 +277,12 @@ reports `onlineModelConnected: false`.
 │       ├── events.ts                      # Event bus for cross-component comms
 │       ├── fonts.ts                       # Font definitions & loading
 │       ├── markdown.ts                    # Markdown report generation
-│       ├── model.ts                       # Forecast types & computations
+│       ├── model.ts                       # Forecast engine + static FACTORS/REGIONAL_FACTORS
 │       └── units.ts                       # Unit conversion & display
 │
 ├── images/                                 # Brand assets
-│   ├── lobotlogoonly.svg                   # LoBot logo mark (SVG) — inline LoBotIcon component
-│   ├── lobottecnoindicator.svg             # TecnoIndicator waveform mark (SVG) — inline TecnoIndicatorIcon component
+│   ├── lobotlogoonly.svg                   # LoBot logo mark (SVG)
+│   ├── lobottecnoindicator.svg             # TecnoIndicator waveform mark (SVG)
 │   └── LoBot-Trademark.png                 # LoBot brand wordmark (PNG)
 ├── sandbox-quickstart/                     # Standalone dev sandbox (separate package.json)
 │   ├── .gitignore
@@ -282,12 +295,11 @@ reports `onlineModelConnected: false`.
 ├── next.config.ts                         # Next.js configuration
 ├── package.json                           # Root dependencies & scripts
 ├── package-lock.json                      # npm lockfile
-├── pnpm-lock.yaml                         # pnpm lockfile (preferred)
+├── pnpm-lock.yaml                         # pnpm lockfile
 ├── postcss.config.mjs                     # PostCSS + Tailwind CSS 4 config
 ├── README.md                              # This file
 ├── tsconfig.json                          # TypeScript configuration
 └── vercel.json                            # Vercel deployment config (crons, headers)
-
 ```
 
 ---
@@ -306,8 +318,8 @@ We welcome contributions from everyone, including **AI-generated and AI-assisted
 - **AI-generated / AI-assisted contributions are explicitly allowed**, but **you must rigorously test the codebase** before pushing to the main repository.
 - Always run the site in multiple browsers and test responsiveness, chart rendering, data exports, and edge cases (horizon = 1 and horizon = 10).
 - Open a Pull Request with a clear description of changes.
-- You are required to justify why your UI looks better and more consistent compared to the original one (e.g better functionality, etc...) if your Pull Requests has a different UI from the original or if you want to remove a feature.
-- Ensure that your code has to work via the autotester before submitting a Pull Request.
+- You are required to justify why your UI looks better and more consistent compared to the original one (e.g. better functionality, etc.) if your Pull Request has a different UI from the original or if you want to remove a feature.
+- Ensure that your code passes the autotester before submitting a Pull Request.
 - Reference any related issues.
 
 Violations of this Code of Conduct may result in temporary or permanent bans from the project.
@@ -322,8 +334,7 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 ## 👤 Credits
 
-**Author & Maintainer**  
+**Author & Maintainer**
 [LoBot LLC](https://github.com/LoBot-LLC)
 
 We would like to give special thanks to the open-source community for Tailwind CSS and Chart.js.
-

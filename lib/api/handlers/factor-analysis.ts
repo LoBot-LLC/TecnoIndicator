@@ -322,11 +322,9 @@ export function normalizeFactor(
   let finalSource = source;
   if (sourceUrl) {
     finalSource = sourceUrl;
-  } else if (source && candidateUrls.length > 0) {
-    const matched = matchSourceToCandidate(source, candidateUrls);
-    if (matched) finalSource = matched;
   } else if (candidateUrls.length > 0) {
-    finalSource = candidateUrls[0];
+    const matched = source ? matchSourceToCandidate(source, candidateUrls) : null;
+    finalSource = matched ?? candidateUrls[0];
   }
 
   return {
@@ -502,6 +500,7 @@ export async function runFactorAnalysis(
     }
 
     if (candidates.length === 0) {
+      console.warn(`Factor analysis: no TinyFish candidates for scope "${scope}" after reputable + recent filters; falling back to existing factors`);
       return returnExisting();
     }
 
@@ -548,6 +547,7 @@ export async function runFactorAnalysis(
     const content = response.choices?.[0]?.message?.content ?? "";
     const parsed = safeParseJson<{ factors?: unknown[] }>(content);
     if (!parsed?.factors || !Array.isArray(parsed.factors)) {
+      console.warn(`Factor analysis: model did not return a valid factors array for scope "${scope}" (content length ${content.length}); falling back to existing factors`);
       return returnExisting();
     }
 
@@ -560,6 +560,7 @@ export async function runFactorAnalysis(
       .slice(0, FACTOR_COUNT);
 
     if (normalized.length === 0) {
+      console.warn(`Factor analysis: all model-returned factors were rejected for scope "${scope}" (parsed ${parsed.factors.length}, normalized ${normalized.length}); falling back to existing factors`);
       return returnExisting();
     }
 

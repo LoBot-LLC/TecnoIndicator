@@ -239,10 +239,6 @@ interface FactorsSectionProps {
 
 const FACTOR_COUNT = 8;
 
-function normalizeName(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
 export default function FactorsSection({
   horizon,
   dynamicFactors,
@@ -252,19 +248,13 @@ export default function FactorsSection({
   const isOnline = healthStatus === "Online Model Connected";
   const hasLiveFactors = aiCurated && dynamicFactors && dynamicFactors.length > 0;
 
-  // When we have live (URL-analyzed) factors but fewer than 8, supplement with
-  // static fallbacks so the grid always shows 8 cards while maximizing the
-  // number of reasons backed by real fetched URLs.
+  // When we have live (URL-analyzed) factors, show only those — never
+  // supplement with static publication-name fallbacks, so every card displays
+  // a real TinyFish source URL backed by dashboard statistics. If live
+  // curation returns fewer than 8, the grid shows exactly the live factors.
   let activeFactors: Factor[];
   if (hasLiveFactors) {
-    const live = dynamicFactors!;
-    if (live.length >= FACTOR_COUNT) {
-      activeFactors = live.slice(0, FACTOR_COUNT);
-    } else {
-      const liveNames = new Set(live.map((f) => normalizeName(f.name)));
-      const supplemental = FACTORS.filter((f) => !liveNames.has(normalizeName(f.name)));
-      activeFactors = [...live, ...supplemental].slice(0, FACTOR_COUNT);
-    }
+    activeFactors = dynamicFactors!.slice(0, FACTOR_COUNT);
   } else {
     activeFactors = FACTORS;
   }

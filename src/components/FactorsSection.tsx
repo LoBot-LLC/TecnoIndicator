@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   ChevronDown,
   ChevronUp,
+  ExternalLink,
   GitBranch,
   Minus,
   TrendingDown,
@@ -31,6 +32,15 @@ function isNewFactor(createdAt: string): boolean {
   const now = new Date();
   const diffMs = now.getTime() - created.getTime();
   return diffMs <= 10 * 60 * 1000;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function DirectionIcon({ direction }: { direction: Direction }) {
@@ -170,7 +180,24 @@ function FactorCard({
         </div>
       </div>
 
-      <p className="mt-3 text-[10px] text-slate-600">Source: {factor.source}</p>
+      <div className="mt-3 flex items-center gap-2">
+        <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-500">
+          Source URL
+        </span>
+        {isHttpUrl(factor.source) ? (
+          <a
+            href={factor.source}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
+          >
+            {factor.source}
+            <ExternalLink className="ml-1 h-3 w-3 fill-current" aria-label="Open source" />
+          </a>
+        ) : (
+          <span className="text-[10px] text-slate-600 dark:text-slate-500 break-all">{factor.source}</span>
+        )}
+      </div>
     </article>
   );
 }

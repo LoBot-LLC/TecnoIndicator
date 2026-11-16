@@ -59,10 +59,10 @@ export function toFactorsPayload(
 }
 
 const SYSTEM_PROMPT_GLOBAL =
-  "You are a Senior Commodity Risk Analyst. You are provided with current global market analytics, an existing list of global price factors, and fresh validated news excerpts collected through TinyFish.\n\nValidate each candidate trend against the supplied current global market conditions and source evidence.\n\nDetermine whether each candidate is a legitimate market-moving trend or noise at a global scale. Reject stale, duplicate, promotional, speculative, unsupported, irrelevant, or weakly evidenced claims.\n\nFor each legitimate trend, evaluate its expected effect on global oil, electricity, or water prices. Assign an integer importance score from 0 to 100 based on evidence quality, geographic scope, affected commodities, expected price impact, duration, and immediacy.\n\nExplain why each approved trend is legitimate and globally relevant right now. Use only the supplied analytics, factors, excerpts, and source URLs. Do not invent sources or facts.\n\nReturn strict JSON only. Do not return markdown or commentary outside JSON.\n\nThe response must contain up to eight validated global factors matching the required schema. If a new legitimate trend is identified, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.";
+  "You are a Senior Commodity Risk Analyst. You are provided with current global market analytics, an existing list of global price factors, and fresh validated news excerpts collected through TinyFish.\n\nValidate each candidate trend against the supplied current global market conditions and source evidence.\n\nDetermine whether each candidate is a legitimate market-moving trend or noise at a global scale. Reject stale, duplicate, promotional, speculative, unsupported, irrelevant, or weakly evidenced claims.\n\nFor each legitimate trend, evaluate its expected effect on global oil, electricity, or water prices. Assign an integer importance score from 0 to 100 based on evidence quality, geographic scope, affected commodities, expected price impact, duration, and immediacy.\n\nExplain why each approved trend is legitimate and globally relevant right now. Use only the supplied analytics, factors, excerpts, and source URLs. Do not invent sources or facts.\n\nJSON schema for each factor: { id: string; name: string; category: \"Market\"|\"Policy\"|\"Structural\"|\"Infrastructure\"|\"Environmental\"|\"Geopolitical\"|\"Technological\"; commodities: string[] (subset of oil, electricity, water); explanation: string (2-3 sentences summarizing the reason found in the supplied source URL); direction: \"up\"|\"down\"|\"mixed\"; magnitude: \"High\"|\"Medium\"|\"Low\"; source: string (the exact URL of the candidate excerpt that supports this reason — must be one of the candidate source URLs supplied); bias: \"short\"|\"mid\"|\"long\"|\"flat\"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }. The `source` field MUST be an exact URL from the supplied candidate list.\n\nReturn strict JSON only. Do not return markdown or commentary outside JSON.\n\nThe response must contain up to eight validated global factors matching the required schema. If a new legitimate trend is identified, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.";
 
 const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
-  `You are a Senior Commodity Risk Analyst specializing in ${regionName} energy and water markets. You are provided with current ${regionName}-specific market analytics, an existing list of ${regionName} price factors, and fresh validated news excerpts collected through TinyFish that are relevant to ${regionName}.\n\nValidate each candidate trend against the supplied current ${regionName} market conditions and source evidence.\n\nDetermine whether each candidate is a legitimate market-moving trend or noise within ${regionName}. Reject stale, duplicate, promotional, speculative, unsupported, irrelevant, or weakly evidenced claims. Reject any trend that is purely global with no demonstrated ${regionName}-specific price impact.\n\nFor each legitimate trend, evaluate its expected effect on ${regionName} oil, electricity, or water prices specifically. Assign an integer importance score from 0 to 100 based on evidence quality, ${regionName} geographic scope, affected commodities, expected regional price impact, duration, and immediacy within ${regionName}.\n\nExplain why each approved trend is legitimate and relevant to ${regionName} right now. Use only the supplied analytics, factors, excerpts, and source URLs. Do not invent sources or facts.\n\nReturn strict JSON only. Do not return markdown or commentary outside JSON.\n\nThe response must contain up to eight validated ${regionName} factors matching the required schema. If a new legitimate trend is identified for ${regionName}, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.`;
+  `You are a Senior Commodity Risk Analyst specializing in ${regionName} energy and water markets. You are provided with current ${regionName}-specific market analytics, an existing list of ${regionName} price factors, and fresh validated news excerpts collected through TinyFish that are relevant to ${regionName}.\n\nValidate each candidate trend against the supplied current ${regionName} market conditions and source evidence.\n\nDetermine whether each candidate is a legitimate market-moving trend or noise within ${regionName}. Reject stale, duplicate, promotional, speculative, unsupported, irrelevant, or weakly evidenced claims. Reject any trend that is purely global with no demonstrated ${regionName}-specific price impact.\n\nFor each legitimate trend, evaluate its expected effect on ${regionName} oil, electricity, or water prices specifically. Assign an integer importance score from 0 to 100 based on evidence quality, ${regionName} geographic scope, affected commodities, expected regional price impact, duration, and immediacy within ${regionName}.\n\nExplain why each approved trend is legitimate and relevant to ${regionName} right now. Use only the supplied analytics, factors, excerpts, and source URLs. Do not invent sources or facts.\n\nJSON schema for each factor: { id: string; name: string; category: \"Market\"|\"Policy\"|\"Structural\"|\"Infrastructure\"|\"Environmental\"|\"Geopolitical\"|\"Technological\"; commodities: string[] (subset of oil, electricity, water); explanation: string (2-3 sentences summarizing the reason found in the supplied source URL); direction: \"up\"|\"down\"|\"mixed\";              magnitude: \"High\"|\"Medium\"|\"Low\"; source: string (the exact URL of the candidate excerpt that supports this reason — must be one of the candidate source URLs supplied); bias: \"short\"|\"mid\"|\"long\"|\"flat\"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }. The source field MUST be an exact URL from the supplied candidate list.\n\nReturn strict JSON only. Do not return markdown or commentary outside JSON.\n\nThe response must contain up to eight validated ${regionName} factors matching the required schema. If a new legitimate trend is identified for ${regionName}, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.`;
 
 const GLOBAL_QUERIES = [
   "global oil market prices OPEC supply demand 2026",
@@ -256,7 +256,11 @@ export function buildFallbackFactors(scope: RegionId): Factor[] {
   }));
 }
 
-export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
+export function normalizeFactor(
+  raw: unknown,
+  scope: RegionId,
+  candidateUrls: string[] = [],
+): Factor | null {
   if (!raw || typeof raw !== "object") return null;
   const f = raw as Record<string, unknown>;
   const name = typeof f.name === "string" ? f.name.trim() : "";
@@ -266,8 +270,6 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
     typeof f.id === "string" && f.id.trim()
       ? f.id.trim()
       : `dynamic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  // Tolerant: an unknown label falls back to the safe default instead of
-  // aborting the entire curation run.
   const category = coerceCategory(f.category, VALID_CATEGORIES);
   const direction =
     f.direction === "up" || f.direction === "down" || f.direction === "mixed" ? f.direction : "mixed";
@@ -296,10 +298,25 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
           ? [region]
           : [];
 
-  if (!name || !explanation || !sourceUrl || importanceScore < 20 || commodities.length === 0) return null;
+  // A factor must have a name, explanation, evidence-quality score and at least
+  // one affected commodity. The source is resolved separately below so a
+  // non-URL source string (e.g. a publication name the model returned) does not
+  // by itself invalidate the factor — we fall back to a fetched candidate URL.
+  if (!name || !explanation || importanceScore < 20 || commodities.length === 0) return null;
 
   const now = new Date().toISOString();
   const driftRaw = (f.drift ?? {}) as Record<string, unknown>;
+
+  // Resolve the source to a real URL: prefer the model's URL when valid,
+  // otherwise try to match the source name against candidate URLs we actually
+  // fetched via TinyFish, then fall back to the source string as-is.
+  let finalSource = source;
+  if (sourceUrl) {
+    finalSource = sourceUrl;
+  } else if (source && candidateUrls.length > 0) {
+    const matched = matchSourceToCandidate(source, candidateUrls);
+    if (matched) finalSource = matched;
+  }
 
   return {
     id: id.slice(0, 80),
@@ -309,7 +326,7 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
     explanation: explanation.slice(0, 1200),
     direction,
     magnitude,
-    source: sourceUrl,
+    source: finalSource,
     bias,
     drift: {
       ...(typeof driftRaw.oil === "number" && Number.isFinite(driftRaw.oil) ? { oil: driftRaw.oil } : {}),
@@ -324,6 +341,38 @@ export function normalizeFactor(raw: unknown, scope: RegionId): Factor | null {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/**
+ * When the model returns a non-URL source name (e.g. "IEA" or "OPEC Monthly
+ * Oil Market Report"), try to match it to one of the candidate URLs we
+ * actually fetched via TinyFish so the UI can display a real source link.
+ */
+function matchSourceToCandidate(source: string, candidateUrls: string[]): string | null {
+  const sourceLower = source.toLowerCase();
+  // 1) Hostname match: e.g. source "Reuters" matches reuters.com
+  for (const url of candidateUrls) {
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+      if (sourceLower.includes(host)) return url;
+    } catch {
+      /* ignore invalid URLs */
+    }
+  }
+  // 2) Keyword/domain match: e.g. source "OPEC" matches opec.org
+  const firstToken = sourceLower.split(/\s+/)[0];
+  if (firstToken && firstToken.length > 2) {
+    for (const url of candidateUrls) {
+      try {
+        const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+        const domainLabel = host.split(".")[0];
+        if (domainLabel === firstToken || sourceLower.includes(domainLabel)) return url;
+      } catch {
+        /* ignore invalid URLs */
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -450,8 +499,10 @@ export async function runFactorAnalysis(
       return returnExisting();
     }
 
+    const candidateUrls = excerpts.map((c) => c.url).filter(Boolean);
+
     const normalized = parsed.factors
-      .map((f) => normalizeFactor(f, scope))
+      .map((f) => normalizeFactor(f, scope, candidateUrls))
       .filter((f): f is Factor => f !== null)
       .filter((f) => f.scope === scope)
       .slice(0, FACTOR_COUNT);

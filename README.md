@@ -21,8 +21,9 @@ A modern, clean, professional single-page web application that delivers energy p
   - Clean data table + interactive line chart (Chart.js)
 - **Real-time Feel** — Live-updating timestamp + “Refresh Data” button that perturbs values within realistic ranges. Each commodity card (oil, electricity, water) also has its own “Re-fetch Live … Price” button that re-fetches the live TinyFish source and displays the fetched source URL, the fetched timestamp, and the live/benchmark range — the same pattern previously only available for water.
 - **Key Factors & Drivers** — Dynamic grid of 8 major price influencers with:
-  - Factor name + explanation
+  - Factor name + explanation (reasons summarized from TinyFish-fetched source URLs, not hard-coded)
   - Impact direction & magnitude (↑/↓ High/Medium/Low)
+  - Clickable source URL linking to the exact TinyFish-fetched page the model analyzed
   - Horizon-aware highlighting (longer forecasts emphasize structural drivers)
 - **Export Options** — Download the chart as PNG or the forecast table as CSV or Markdown (`.md`). In **Regional Intelligence**, select a region then open the **Export region** menu to download that same region as a CSV table or a Markdown (`.md`) report.
 - **View all global continents** — One click, and you can have a glimpse on the data of all the continents on Earth - whether it's the Americans, Europe, Asia, and more!
@@ -35,8 +36,8 @@ A modern, clean, professional single-page web application that delivers energy p
   - Clear disclaimers throughout
 - **AI Model Integration**
   - Search and fetch current prices
-  - Search, analyze and display 8 dynamic factors affecting the prices
-  - Updating 3 dynamic AI-powered solutions based on the updating factors 
+  - Search, analyze and display 8 dynamic factors affecting the prices, each linked to its TinyFish-fetched source URL
+  - Updating 3 dynamic AI-powered solutions based on the updating factors
   - Executed via models from Kilo Gateway and TinyFish API
 
 ---

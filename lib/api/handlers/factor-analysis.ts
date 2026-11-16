@@ -73,7 +73,7 @@ export function toFactorsPayload(
 * - Removes markdown links `[text](url)` → keeps only `text`
   * - Removes bare `https?://...` URLs entirely (replaced with empty string)
   * - Collapses resulting double spaces/newlines
- * - Truncates to 600 chars (a full paragraph from a source is well under this)
+ * - Truncates to 2000 chars (a full paragraph from a source is well under this)
  */
 export function sanitizeExplanation(text: string): string {
   if (typeof text !== "string" || text.trim().length === 0) return "";
@@ -97,9 +97,9 @@ export function sanitizeExplanation(text: string): string {
     .map((line) => line.trim())
     .join("\n")
     .trim();
-  // Hard truncate at 600 chars, cut at a word boundary
-  if (cleaned.length > 600) {
-    const cut = cleaned.slice(0, 600);
+  // Hard truncate at 2000 chars, cut at a word boundary
+  if (cleaned.length > 2000) {
+    const cut = cleaned.slice(0, 2000);
     const lastSpace = cut.lastIndexOf(" ");
     cleaned = (lastSpace > 200 ? cut.slice(0, lastSpace) : cut).trim() + "…";
   }
@@ -115,7 +115,7 @@ export function sanitizeExplanation(text: string): string {
  * Rejection criteria:
  * - Starts with a bullet point ("- ", "• ", "* ")
  * - Starts with a known raw-article starter (publication name, article opening)
- * - Too short (< 30 chars) or too long (> 600 chars for a 2-3 sentence summary)
+ * - Too short (< 30 chars) or too long (> 2000 chars for a full paragraph summary)
  */
 export function validateExplanationQuality(explanation: string): { ok: boolean; reason?: string } {
   if (!explanation || typeof explanation !== "string") {
@@ -157,8 +157,7 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     // Question/openers from article titles
     "what ", "when ", "how ", "why ", "where ", "which ", "who ", "whose ",
     // Common article openings not covered above
-    "the ", "around ", "according ", "global ", "world ",
-    "four ", "million ", "billion ", "the world ",
+    "around ", "according ", "four ", "million ", "billion ", "the world ",
     "demand ", "supply ",
   ];
   const lower = trimmed.toLowerCase();
@@ -176,7 +175,7 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
   if (trimmed.length < 30) {
     return { ok: false, reason: "too short" };
   }
-  if (trimmed.length > 600) {
+  if (trimmed.length > 2000) {
     return { ok: false, reason: "too long" };
   }
 
@@ -639,14 +638,14 @@ export function buildFactorsFromCandidates(
     const text = (candidate.text ?? "").trim();
 
     // Explanation must be a real sentence from the article: prefer the snippet
-    // (first ~600 chars), otherwise the scraped body (up to 600 chars).
+    // (first ~2000 chars), otherwise the scraped body (up to 2000 chars).
     let explanation = "";
     if (snippet) {
-      explanation = snippet.slice(0, 600);
+      explanation = snippet.slice(0, 2000);
     } else if (text) {
       explanation = text;
     }
-    explanation = explanation.slice(0, 600).trim();
+    explanation = explanation.slice(0, 2000).trim();
     if (!explanation) return;
 
     const name = (title || explanation.slice(0, 160) || `Market update: ${candidate.url}`).slice(0, 160);
@@ -777,7 +776,7 @@ export function normalizeFactor(
     name: name.slice(0, 160),
     category: category.slice(0, 80),
     commodities: Array.from(new Set(commodities)) as Factor["commodities"],
-    explanation: sanitizeExplanation(explanation).slice(0, 600),
+    explanation: sanitizeExplanation(explanation),
     direction,
     magnitude,
     source: finalSource,

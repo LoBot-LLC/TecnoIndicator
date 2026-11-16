@@ -271,7 +271,7 @@ function RegionalFactorCard({
 }) {
   const isNew = isNewFactor(factor.createdAt);
   const [isExpanded, setIsExpanded] = useState(false);
-  const MAX_CHARS = 600;
+  const MAX_CHARS = 2000;
   const shouldTruncate = factor.explanation.length > MAX_CHARS;
   const displayText = isExpanded || !shouldTruncate
     ? factor.explanation

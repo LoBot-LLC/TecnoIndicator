@@ -300,7 +300,11 @@ export class TinyFishRouter {
     return { results: [], total: 0, keyIndex: -1 };
   }
 
-  async tinyfishScrape(url: string, abortSignal?: AbortSignal): Promise<ScrapedContent | null> {
+  async tinyfishScrape(
+    url: string,
+    abortSignal?: AbortSignal,
+    options: { purpose?: string } = {},
+  ): Promise<ScrapedContent | null> {
     if (!this.initialized) {
       await this.refreshTinyfishStatus(true, abortSignal);
     }
@@ -328,15 +332,23 @@ export class TinyFishRouter {
           continue;
         }
 
+        const body: Record<string, unknown> = {
+          urls: [safeUrl],
+        };
+        // A short purpose statement gives TinyFish additional signal to tailor
+        // extraction to the intent (e.g. "find the price-relevant reason on this
+        // page") and returns better-quality content for the model to summarize.
+        if (options.purpose && options.purpose.trim().length > 0) {
+          body.purpose = options.purpose.trim().slice(0, 2000);
+        }
+
         const response = await fetch(FETCH_URL, {
           method: "POST",
           headers: {
             "X-API-Key": testKey,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            urls: [safeUrl],
-          }),
+          body: JSON.stringify(body),
           signal: abortSignal ?? AbortSignal.timeout(10000),
         });
 

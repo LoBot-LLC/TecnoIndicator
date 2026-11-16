@@ -447,33 +447,36 @@ export async function runFactorAnalysis(
         tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
       ),
     );
-    const candidates = searches
-      .flatMap((r) => r.results)
-      .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+
+    const flatten = <T extends { snippet?: string }>(results: T[] | undefined) =>
+      (results ?? []).map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }));
+
+    const allResults = searches.flatMap((r) => flatten(r.results));
+
+    // Prefer results from reputable hosts, but never let the whitelist starve the
+    // model of real fetched URLs. If the reputable filter removes every result we
+    // retry with all recent results, because a non-whitelisted but real TinyFish
+    // URL is still a valid source the model can summarize (and link to).
+    let candidates = allResults
       .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
       .slice(0, 15);
 
     if (candidates.length === 0) {
-      // The reputable-host whitelist removed every result. Rather than giving up
-      // and falling back to static reasons, retry with all recent results so we
-      // still attempt to surface URL-analyzed factors from whatever TinyFish
-      // returned.
-      const unfiltered = searches
-        .flatMap((r) => r.results)
-        .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+      candidates = allResults
         .filter((r) => isRecentPublishedAt(r.publishedAt))
         .slice(0, 15);
-      if (unfiltered.length === 0) {
-        return returnExisting();
-      }
-      // Use unfiltered results but keep scraping; sources that fail the reputable
-      // check are still real TinyFish-fetched URLs the model can summarize.
+    }
+
+    if (candidates.length === 0) {
+      return returnExisting();
     }
 
     const excerpts = await Promise.all(
       candidates.map(async (r) => {
         try {
-          const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal);
+          const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal, {
+            purpose: `Identify concrete reasons this article gives for ${scopeLabel(scope)} oil, electricity, or water price movements in ${RECENT_MONTH()}.`,
+          });
           return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
         } catch {
           return r;

@@ -102,7 +102,9 @@ The curation pipeline is resilient: if TinyFish's reputable-host filter removes
 every search result, it retries with all recent results so URL-analyzed reasons
 are still surfaced. Each factor card links back to the exact TinyFish-fetched
 source URL the model analyzed, and the `aiCurated` flag on each API response
-tells the UI whether factors are live or static fallbacks.
+tells the UI whether factors are live or static fallbacks. Each scrape also
+carries a short `purpose` statement so TinyFish tailors extraction to the
+price-relevance goal.
 
 ### Environment variables
 
@@ -142,7 +144,7 @@ reports `onlineModelConnected: false`.
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js** — Runtime environment (via Next.js on Vercel)
 - **Kilo Gateway API** — AI model orchestration (price extraction, factor curation, solutions, forecasting)
-- **TinyFish API** — Market data search & scraping
+- **TinyFish API** — Market data search & scraping; each scrape carries a `purpose` statement to tailor extraction to price-relevance.
 - **Redis (Upstash / Vercel KV)** — Distributed caching for API responses (optional; in-memory fallback)
 
 #### Data & Models (`src/lib/`)

@@ -626,7 +626,7 @@ export default function RegionalEvaluation({
     downloadFile(
       `tecnoindicator-region-${selected.region.id}-${horizon}y.md`,
       buildRegionalMarkdown(evals, horizonYear, selected.region.id, {
-        factors: dynamicFactors[selected.region.id] ?? [],
+        factors: activeRegionalFactors,
       }),
       "text/markdown;charset=utf-8",
     );

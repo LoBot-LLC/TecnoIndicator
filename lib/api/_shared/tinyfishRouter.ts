@@ -58,8 +58,11 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   return controller.signal;
 }
 
-function buildSearchUrl(query: string, limit: number): string {
+function buildSearchUrl(query: string, limit: number, purpose?: string): string {
   const params = new URLSearchParams({ query, limit: String(limit) });
+  if (purpose && purpose.trim().length > 0) {
+    params.set("purpose", purpose.trim().slice(0, 2000));
+  }
   return `${SEARCH_URL}?${params.toString()}`;
 }
 
@@ -193,13 +196,16 @@ export class TinyFishRouter {
 
   async tinyfishSearch(
     query: string,
-    options: { limit?: number; region?: Region } = {},
+    options: { limit?: number; region?: Region; purpose?: string } = {},
     abortSignal?: AbortSignal
   ): Promise<TinyFishSearchResponse> {
     if (!this.initialized) {
       await this.refreshTinyfishStatus(true, abortSignal);
     }
 
+    const purpose =
+      options.purpose ??
+      "Find recent articles about oil, electricity, or water price movements and their underlying causes.";
     const cacheKey = `tinyfish:search:${query}:${options.region ?? "global"}`;
     const cached = await getCache<TinyFishSearchResponse>(cacheKey, SEARCH_CACHE_MS);
     if (cached) return cached;
@@ -224,7 +230,7 @@ export class TinyFishRouter {
         const region = options.region ?? "global";
         const regionPrefix = region !== "global" ? `[${region}] ` : "";
 
-         const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.limit ?? 10), {
+         const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.limit ?? 10, purpose), {
            headers: {
              "X-API-Key": testKey,
            },

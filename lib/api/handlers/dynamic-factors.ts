@@ -11,6 +11,8 @@ import { isRegion, type Region } from "../_shared/regions";
 import { sanitizeError } from "../_shared/validation";
 import type { RegionId } from "../_shared/types";
 
+export const maxDuration = 55;
+
 function resolveScope(url: URL): { ok: true; scope: RegionId } | { ok: false; response: Response } {
   const regionParam = url.searchParams.get("region");
   if (regionParam === null || regionParam === "") return { ok: true, scope: "global" };

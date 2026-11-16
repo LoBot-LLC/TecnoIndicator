@@ -156,6 +156,15 @@ const REGION_QUERIES: Record<Region, string[]> = {
   ],
 };
 
+const KNOWN_REPUTABLE_URLS = [
+  "https://www.iea.org/reports/world-energy-outlook",
+  "https://www.opec.org/opec_web/en/",
+  "https://www.eia.gov/petroleum/",
+  "https://www.unwater.org/",
+  "https://www.wri.org/",
+  "https://www.irena.org/",
+];
+
 const FALLBACK_NAMES: Record<RegionId, string[]> = {
   global: [
     "OPEC+ Production Decisions",
@@ -733,7 +742,34 @@ export async function runFactorAnalysis(
     }
 
     if (candidates.length === 0) {
-      console.warn(`Factor analysis: no TinyFish candidates for scope "${scope}" after reputable + recent filters; falling back to existing factors`);
+      console.warn(`Factor analysis: no TinyFish candidates for scope "${scope}"; trying known reputable URLs as fallback`);
+      const knownExcerpts = await Promise.all(
+        KNOWN_REPUTABLE_URLS.map(async (url) => {
+          try {
+            const scraped = await tinyfishRouter.tinyfishScrape(url, signal, {
+              purpose: `Identify concrete reasons this page gives for ${scopeLabel(scope)} oil, electricity, or water price movements in ${RECENT_MONTH()}.`,
+            });
+            return scraped ? { url, title: scraped.title || url, snippet: scraped.text?.slice(0, 500) ?? "", text: scraped.text ?? "" } : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const knownCandidates = knownExcerpts.filter((e): e is { url: string; title: string; snippet: string; text: string } => e !== null);
+      if (knownCandidates.length > 0) {
+        console.warn(`Factor analysis: scraped ${knownCandidates.length} known URLs for scope "${scope}"`);
+        // Build deterministic factors from these known URLs
+        const deterministic = buildFactorsFromCandidates(knownCandidates, scope, currentPrices, now);
+        if (deterministic.length > 0) {
+          console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors from known URLs for scope "${scope}"`);
+          return {
+            factors: mergeRollingWindow(existing, deterministic),
+            aiCurated: false,
+            updatedAt: now,
+          };
+        }
+      }
+      console.warn(`Factor analysis: no candidates from known URLs either; falling back to existing factors`);
       return returnExisting();
     }
 
@@ -886,6 +922,36 @@ export async function runFactorAnalysis(
           updatedAt: now,
         };
       }
+    }
+    try {
+      console.warn(`Factor analysis: trying known reputable URLs as fallback after error for scope "${scope}"`);
+      const knownExcerpts = await Promise.all(
+        KNOWN_REPUTABLE_URLS.map(async (url) => {
+          try {
+            const scraped = await tinyfishRouter.tinyfishScrape(url, signal, {
+              purpose: `Identify concrete reasons this page gives for ${scopeLabel(scope)} oil, electricity, or water price movements in ${RECENT_MONTH()}.`,
+            });
+            return scraped ? { url, title: scraped.title || url, snippet: scraped.text?.slice(0, 500) ?? "", text: scraped.text ?? "" } : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const knownCandidates = knownExcerpts.filter((e): e is { url: string; title: string; snippet: string; text: string } => e !== null);
+      if (knownCandidates.length > 0) {
+        console.warn(`Factor analysis: scraped ${knownCandidates.length} known URLs for scope "${scope}" after error`);
+        const deterministic = buildFactorsFromCandidates(knownCandidates, scope, currentPrices, now);
+        if (deterministic.length > 0) {
+          console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors from known URLs for scope "${scope}" after error`);
+          return {
+            factors: mergeRollingWindow(existing, deterministic),
+            aiCurated: false,
+            updatedAt: now,
+          };
+        }
+      }
+    } catch (fallbackError) {
+      console.error(`Factor analysis: known-URL fallback also failed for scope "${scope}":`, fallbackError);
     }
     return returnExisting();
   }

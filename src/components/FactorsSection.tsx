@@ -154,6 +154,34 @@ function FactorCard({
           ))}
       </div>
 
+      {factor.grounding && factor.commodities.some((id) => factor.grounding?.[id]) && (
+        <div className="mt-4 rounded-lg border border-line bg-base/40 px-2.5 py-2">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+            Grounded in dashboard prices
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            {factor.commodities.map((id) => {
+              const p = factor.grounding?.[id];
+              if (!p) return null;
+              const c = COMMODITIES.find((x) => x.id === id)!;
+              return (
+                <span
+                  key={id}
+                  className="inline-flex items-center gap-1 text-[10px] text-slate-700 dark:text-slate-300"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
+                  <span className="font-semibold">{c.short}</span>
+                  <span className="tabular-nums">
+                    ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-slate-500 dark:text-slate-400">{p.unit.replace("USD/", "/")}</span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="mt-4">
         <div className="mb-1.5 flex items-center justify-between text-[11px]">
           <span className="font-semibold text-slate-700 dark:text-slate-500">Relevance @ {horizon}y</span>

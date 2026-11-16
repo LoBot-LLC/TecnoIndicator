@@ -23,8 +23,10 @@ A modern, clean, professional single-page web application that delivers energy p
 - **Key Factors & Drivers** — Dynamic grid of 8 major price influencers with:
   - Factor name + explanation (reasons summarized from TinyFish-fetched source URLs, not hard-coded)
   - Impact direction & magnitude (↑/↓ High/Medium/Low)
-  - Clickable source URL linking to the exact TinyFish-fetched page the model analyzed
+  - **Grounded in dashboard prices** — the oil/electricity/water spot prices the model evaluated its reasons against, so every reason is supported by the numbers shown on the dashboard
+  - Full clickable source URL linking to the exact TinyFish-fetched page the model analyzed (never a bare publication name)
   - Horizon-aware highlighting (longer forecasts emphasize structural drivers)
+- **Regional Intelligence** — The same 8-factor grid scoped to a region, with the same grounding prices and full clickable source URLs on every card
 - **Export Options** — Download the chart as PNG or the forecast table as CSV or Markdown (`.md`). In **Regional Intelligence**, select a region then open the **Export region** menu to download that same region as a CSV table or a Markdown (`.md`) report.
 - **View all global continents** — One click, and you can have a glimpse on the data of all the continents on Earth - whether it's the Americans, Europe, Asia, and more!
 - **Technical Transparency** — Collapsible “Show underlying assumptions” section.
@@ -98,13 +100,22 @@ All factor producers and consumers share a single canonical cache key,
 `dynamic-factors:{global|region}`, so the reasons shown in the UI are exactly
 the reasons the solutions were generated from.
 
-The curation pipeline is resilient: if TinyFish's reputable-host filter removes
-every search result, it retries with all recent results so URL-analyzed reasons
-are still surfaced. Each factor card links back to the exact TinyFish-fetched
-source URL the model analyzed, and the `aiCurated` flag on each API response
-tells the UI whether factors are live or static fallbacks. Each scrape also
-carries a short `purpose` statement so TinyFish tailors extraction to the
-price-relevance goal.
+The curation pipeline is resilient and grounded:
+
+- **Live prices drive the reasons.** The current oil/electricity/water spot prices
+  (the same numbers shown on the dashboard) are injected into the curation prompt
+  and attached to every factor as server-side `grounding`, so each reason can be
+  read against the statistics that support it.
+- **JSON mode.** The Kilo Gateway call requests a `json_object` response and the
+  shared `safeParseJson` helper tolerates markdown code fences and surrounding
+  prose, so a wrapped response no longer silently falls back to static factors.
+- **Real, clickable sources.** If TinyFish's reputable-host filter removes every
+  search result, curation retries with all recent results. Non-URL model source
+  names (e.g. "IEA World Energy Outlook") are resolved to the actual TinyFish
+  URL that was fetched and analyzed, so each card links to a real page.
+- The `aiCurated` flag on each API response tells the UI whether factors are live
+  or static fallbacks, and each scrape carries a short `purpose` statement so
+  TinyFish tailors extraction to the price-relevance goal.
 
 ### Environment variables
 

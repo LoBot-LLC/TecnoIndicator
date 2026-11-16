@@ -17,6 +17,7 @@ import {
   ChevronUp,
   Download,
   Droplets,
+  ExternalLink,
   FileCode2,
   FileText,
   Fuel,
@@ -252,6 +253,15 @@ function isNewFactor(createdAt: string): boolean {
   return diffMs <= 10 * 60 * 1000;
 }
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function RegionalFactorCard({
   factor,
   index,
@@ -354,7 +364,50 @@ function RegionalFactorCard({
         </span>
       </div>
 
-      <p className="mt-1 text-[9px] text-slate-600 dark:text-slate-400 line-clamp-1">Source: {factor.source}</p>
+      {factor.grounding && factor.commodities.some((id) => factor.grounding?.[id]) && (
+        <div className="mt-2 rounded-lg border border-line bg-base/40 px-2 py-1.5">
+          <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+            Grounded in dashboard prices
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+            {factor.commodities.map((id) => {
+              const p = factor.grounding?.[id];
+              if (!p) return null;
+              const c = COMMODITIES.find((x) => x.id === id)!;
+              return (
+                <span
+                  key={id}
+                  className="inline-flex items-center gap-1 text-[9px] text-slate-700 dark:text-slate-300"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
+                  <span className="font-semibold">{c.short}</span>
+                  <span className="tabular-nums">
+                    ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-slate-500 dark:text-slate-400">{p.unit.replace("USD/", "/")}</span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <p className="mt-1 text-[9px] text-slate-600 dark:text-slate-400 line-clamp-1">
+        Source:{" "}
+        {isHttpUrl(factor.source) ? (
+          <a
+            href={factor.source}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
+          >
+            {factor.source}
+            <ExternalLink className="ml-1 inline h-3 w-3" aria-label="Open source" />
+          </a>
+        ) : (
+          <span className="break-all">{factor.source}</span>
+        )}
+      </p>
     </article>
   );
 }

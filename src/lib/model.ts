@@ -279,6 +279,8 @@ export interface Factor {
   scope: RegionId;
   /** Importance score 0-100 based on evidence quality and expected price impact */
   importanceScore: number;
+  /** Server-attached price grounding (dashboard statistics at curation time). Never model-generated. */
+  grounding?: FactorGrounding;
   createdAt: string;
   updatedAt: string;
 }

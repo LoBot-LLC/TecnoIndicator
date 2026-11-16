@@ -17,7 +17,6 @@ import {
   type Factor,
   type FactorGrounding,
   type RegionId,
-  type PricePoint,
 } from "../_shared/types";
 import { getScopePriceDefaults } from "../_shared/deterministicAnalytics";
 

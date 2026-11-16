@@ -126,6 +126,12 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     return { ok: false, reason: "too long" };
   }
 
+  // Require at least 2 sentences for explanations longer than ~100 chars
+  // Raw scraped fragments often have 0-1 sentences
+  if (trimmed.length > 100 && (trimmed.match(/[.!?]\s+/g)?.length ?? 0) < 1) {
+    return { ok: false, reason: "too few sentences for length" };
+  }
+
   // Reject bullet-point starters — clear sign of raw scraped text
   if (/^[-•*]\s/.test(trimmed)) {
     return { ok: false, reason: "starts with bullet point" };
@@ -133,8 +139,29 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
 
   // Reject known raw-article starters that indicate the model copied verbatim
   const rawStarters = [
-    "opec ", "iea ", "the ", "around ", "according ", "global ", "world ",
-    "four ", "million ", "billion ", "the world ", "in ", "un ", "who ",
+    // Publication names
+    "opec ", "iea ", "un ", "who ", "eia ", "opec+ ",
+    // Regional/country prefixes (common raw article openers)
+    "european ", "asian ", "african ", "american ", "australian ", "south american ",
+    "north american ", "middle eastern ", "southeast asian ", "latin american ",
+    // Modal verbs (clear raw text / fragment)
+    "can ", "could ", "would ", "will ", "may ", "might ", "should ",
+    // Demonstrative pronouns
+    "this ", "these ", "those ",
+    // Prepositional/open-phrase starters
+    "at ", "from ", "by ", "for ", "to ", "as ", "with ", "in ", "on ",
+    // Pronoun openers
+    "it ", "its ", "their ", "there ", "here ", "they ", "them ", "we ", "our ",
+    // Adverb/conjunction openers
+    "now ", "then ", "so ", "but ", "and ", "or ", "nor ", "not ", "no ", "yes ",
+    // Transitional phrases
+    "however ", "meanwhile ", "despite ", "although ", "while ", "whereas ",
+    "therefore ", "thus ", "hence ", "accordingly ", "consequently ",
+    // Question/openers from article titles
+    "what ", "when ", "how ", "why ", "where ", "which ", "who ", "whose ",
+    // Common article openings not covered above
+    "the ", "around ", "according ", "global ", "world ",
+    "four ", "million ", "billion ", "the world ",
   ];
   const lower = trimmed.toLowerCase();
   for (const starter of rawStarters) {
@@ -164,7 +191,7 @@ export async function reSummarizeExplanation(
   },
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const prompt = `Rewrite the following text into exactly 2-3 sentences. Start with the commodity and the current price number (e.g. "with oil at $104.86/bbl..."). Write in your own words — do NOT copy text verbatim. Do NOT include URLs, markdown links, bullet points, or publication names. Keep it under 120 words.\n\nCurrent prices: oil \$${currentPrices.oil.price}/${currentPrices.oil.unit}, electricity \$${currentPrices.electricity.price}/${currentPrices.electricity.unit}, water \$${currentPrices.water.price}/${currentPrices.water.unit}\n\nText to summarize: "${rawExplanation}"`;
+  const prompt = `Rewrite the following text into exactly 2-3 sentences. The first sentence MUST start with "With [commodity] at $[price]/[unit]..." using the exact current price numbers provided below. Write in your own words — do NOT copy text verbatim. Do NOT include URLs, markdown links, bullet points, or publication names. Keep it under 120 words.\n\nCurrent prices: oil \$${currentPrices.oil.price}/${currentPrices.oil.unit}, electricity \$${currentPrices.electricity.price}/${currentPrices.electricity.unit}, water \$${currentPrices.water.price}/${currentPrices.water.unit}\n\nText to summarize: "${rawExplanation}"`;
 
   const payload = {
     messages: [
@@ -1158,6 +1185,8 @@ export async function runFactorAnalysis(
     // alongside the numbers that support each factor. Grounding is server-side
     // and never model-generated, so it cannot be fabricated.
     const grounding = attachFactorGrounding(currentPrices, now);
+
+    console.warn(`Factor analysis: validation complete for scope "${scope}" — ${normalized.length} factors passed, ${parsed.factors.length - normalized.length} factors rejected`);
 
     return {
       factors: await validateAndRepairWindow(mergeRollingWindow(existing, normalized.map((f) => ({ ...f, grounding }))), currentPrices, signal),

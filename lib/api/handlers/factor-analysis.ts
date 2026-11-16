@@ -454,7 +454,20 @@ export async function runFactorAnalysis(
       .slice(0, 15);
 
     if (candidates.length === 0) {
-      return returnExisting();
+      // The reputable-host whitelist removed every result. Rather than giving up
+      // and falling back to static reasons, retry with all recent results so we
+      // still attempt to surface URL-analyzed factors from whatever TinyFish
+      // returned.
+      const unfiltered = searches
+        .flatMap((r) => r.results)
+        .map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }))
+        .filter((r) => isRecentPublishedAt(r.publishedAt))
+        .slice(0, 15);
+      if (unfiltered.length === 0) {
+        return returnExisting();
+      }
+      // Use unfiltered results but keep scraping; sources that fail the reputable
+      // check are still real TinyFish-fetched URLs the model can summarize.
     }
 
     const excerpts = await Promise.all(

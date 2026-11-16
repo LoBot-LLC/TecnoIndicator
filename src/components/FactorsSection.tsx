@@ -206,17 +206,42 @@ interface FactorsSectionProps {
   horizon: number;
   dynamicFactors?: Factor[];
   healthStatus?: "Initializing AI" | "Online Model Connected" | "Offline Model";
+  aiCurated?: boolean;
+}
+
+const FACTOR_COUNT = 8;
+
+function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 export default function FactorsSection({
   horizon,
   dynamicFactors,
   healthStatus,
+  aiCurated = false,
 }: FactorsSectionProps) {
-  const hasDynamicFactors = dynamicFactors && dynamicFactors.length === 8;
-  const activeFactors = hasDynamicFactors ? dynamicFactors : FACTORS;
   const isOnline = healthStatus === "Online Model Connected";
-  const aiCurated = hasDynamicFactors && isOnline;
+  const hasLiveFactors = aiCurated && dynamicFactors && dynamicFactors.length > 0;
+
+  // When we have live (URL-analyzed) factors but fewer than 8, supplement with
+  // static fallbacks so the grid always shows 8 cards while maximizing the
+  // number of reasons backed by real fetched URLs.
+  let activeFactors: Factor[];
+  if (hasLiveFactors) {
+    const live = dynamicFactors!;
+    if (live.length >= FACTOR_COUNT) {
+      activeFactors = live.slice(0, FACTOR_COUNT);
+    } else {
+      const liveNames = new Set(live.map((f) => normalizeName(f.name)));
+      const supplemental = FACTORS.filter((f) => !liveNames.has(normalizeName(f.name)));
+      activeFactors = [...live, ...supplemental].slice(0, FACTOR_COUNT);
+    }
+  } else {
+    activeFactors = FACTORS;
+  }
+
+  const isAiCurated = hasLiveFactors && isOnline;
 
   const sorted = useMemo(
     () =>
@@ -238,7 +263,7 @@ export default function FactorsSection({
               {isOnline ? "AI-Curated Factors" : "Key factors & drivers"}
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-              {aiCurated
+              {isAiCurated
                 ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."
                 : "Twelve researched drivers shape the forecast paths. Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
             </p>

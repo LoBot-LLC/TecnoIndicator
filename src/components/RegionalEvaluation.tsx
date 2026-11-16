@@ -42,6 +42,7 @@ import {
   type RegionEvaluation,
   type RegionId,
   type Factor,
+  REGIONAL_FACTORS,
 } from "../lib/model";
 import { buildRegionalMarkdown } from "../lib/markdown";
 
@@ -366,6 +367,7 @@ interface RegionalEvaluationProps {
   onRegion: (r: RegionId) => void;
   dynamicFactors: Record<string, Factor[]>;
   healthStatus: "Initializing AI" | "Online Model Connected" | "Offline Model";
+  aiCurated?: boolean;
 }
 
 export default function RegionalEvaluation({
@@ -376,6 +378,7 @@ export default function RegionalEvaluation({
   onRegion,
   dynamicFactors,
   healthStatus,
+  aiCurated = false,
 }: RegionalEvaluationProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const { theme } = useTheme();
@@ -396,6 +399,13 @@ export default function RegionalEvaluation({
   const horizonYear = START_YEAR + horizon;
 
   const selected = evals.find((e) => e.region.id === region) ?? evals[0];
+
+  // Use live (URL-analyzed) regional factors when the API reports aiCurated,
+  // otherwise fall back to the static regional factor list.
+  const activeRegionalFactors =
+    aiCurated && dynamicFactors[selected.region.id]?.length
+      ? dynamicFactors[selected.region.id]!
+      : (REGIONAL_FACTORS[selected.region.id] ?? []);
 
   // Close the export menu on outside click or Escape, returning focus to the
   // trigger so keyboard users never lose their place (WAI-ARIA menu button).
@@ -930,11 +940,11 @@ export default function RegionalEvaluation({
                     8 factors per region
                   </span>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(dynamicFactors[selected.region.id] ?? []).map((f, i) => (
-                    <RegionalFactorCard key={f.id} factor={f} index={i} />
-                  ))}
-                </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {activeRegionalFactors.map((f, i) => (
+                      <RegionalFactorCard key={f.id} factor={f} index={i} />
+                    ))}
+                  </div>
               </div>
 
               <button

@@ -86,8 +86,8 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/prices` | Live commodity spot prices (oil, electricity, water) with deterministic fallbacks |
 | `/api/analytics` | Global fuel-levy / electricity / water indices |
 | `/api/regional-analytics?region=` | The same indices for one region |
-| `/api/dynamic-factors` | The 8 curated global price factors |
-| `/api/regional-factors?region=` | The 8 curated factors for one region |
+| `/api/dynamic-factors` | The 8 curated global price factors (includes `aiCurated` flag; falls back to static factors when TinyFish/Kilo curation is unavailable) |
+| `/api/regional-factors?region=` | The 8 curated factors for one region (includes `aiCurated` flag) |
 | `/api/solutions?region=` | Up to 3 AI-curated strategy recommendations |
 | `/api/health` | Gateway/key availability plus real cache status |
 | `/api/ai-forecast` | 11-year global forecast band |
@@ -97,6 +97,12 @@ The backend runs as Next.js route handlers. The client calls these relative path
 All factor producers and consumers share a single canonical cache key,
 `dynamic-factors:{global|region}`, so the reasons shown in the UI are exactly
 the reasons the solutions were generated from.
+
+The curation pipeline is resilient: if TinyFish's reputable-host filter removes
+every search result, it retries with all recent results so URL-analyzed reasons
+are still surfaced. Each factor card links back to the exact TinyFish-fetched
+source URL the model analyzed, and the `aiCurated` flag on each API response
+tells the UI whether factors are live or static fallbacks.
 
 ### Environment variables
 

@@ -39,12 +39,18 @@ export default function HomePage() {
     deltas,
     jitter,
     lastUpdated,
+    oilLive,
+    electricityLive,
     waterLive,
+    oilFetching,
+    electricityFetching,
     waterFetching,
     isLive,
     streaming,
     refresh,
     fetchWater,
+    fetchOil,
+    fetchElectricity,
     toggleLive,
   } = useLiveMarket();
 
@@ -60,6 +66,8 @@ export default function HomePage() {
   );
 
   const handleFetchWater = useCallback(() => void fetchWater(), [fetchWater]);
+  const handleFetchOil = useCallback(() => void fetchOil(), [fetchOil]);
+  const handleFetchElectricity = useCallback(() => void fetchElectricity(), [fetchElectricity]);
 
   /** "global" is already a valid scope id for every /api route. */
   const scope: RegionId = region;
@@ -297,8 +305,14 @@ export default function HomePage() {
             points={points}
             lastUpdated={lastUpdated}
             onRefresh={refresh}
+            onFetchOil={handleFetchOil}
+            onFetchElectricity={handleFetchElectricity}
             onFetchWater={handleFetchWater}
+            oilFetching={oilFetching}
+            electricityFetching={electricityFetching}
             waterFetching={waterFetching}
+            oilLive={oilLive}
+            electricityLive={electricityLive}
             waterLive={waterLive}
             isLive={isLive}
             streaming={streaming}

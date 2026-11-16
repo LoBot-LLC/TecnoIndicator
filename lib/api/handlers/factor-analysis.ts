@@ -155,7 +155,7 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
  * checks and asks Kilo to rewrite it into a proper 2-3 sentence summary.
  * Used as a repair round before rejecting a factor entirely.
  */
-async function reSummarizeExplanation(
+export async function reSummarizeExplanation(
   rawExplanation: string,
   currentPrices: {
     oil: { price: number; unit: string };
@@ -183,6 +183,59 @@ async function reSummarizeExplanation(
   } catch {
     return null;
   }
+}
+
+/**
+ * Final validation+repair pass that runs on ALL factors before they reach the UI,
+ * regardless of source (cache, fresh curation, deterministic fallback, error fallback).
+ * No factor with a bad explanation is ever returned unrepaired.
+ *
+ * For each factor:
+ * - If explanation passes quality check → kept as-is
+ * - If explanation fails → attempts reSummarizeExplanation repair round
+ * - If re-summarization succeeds and passes quality → uses re-summarized text
+ * - If re-summarization fails → last-resort: sanitize + truncate to 200 chars, never drop
+ * - If even sanitized text is empty → uses a safe generic placeholder
+ *
+ * Never drops a factor — better to have a clean short explanation than no factor at all.
+ */
+export async function validateAndRepairWindow(
+  factors: Factor[],
+  currentPrices: {
+    oil: { price: number; unit: string; source: string };
+    electricity: { price: number; unit: string; source: string };
+    water: { price: number; unit: string; source: string };
+  },
+  signal?: AbortSignal,
+): Promise<Factor[]> {
+  const repaired: Factor[] = [];
+  for (const f of factors) {
+    const quality = validateExplanationQuality(f.explanation);
+    if (quality.ok) {
+      repaired.push(f);
+      continue;
+    }
+    console.warn(`validateAndRepairWindow: explanation failed quality ("${quality.reason}") for factor "${f.name}"; attempting re-summarization`);
+    const reSummary = await reSummarizeExplanation(f.explanation, currentPrices, signal);
+    if (reSummary) {
+      const reQuality = validateExplanationQuality(reSummary);
+      if (reQuality.ok) {
+        repaired.push({ ...f, explanation: reSummary });
+        continue;
+      }
+      console.warn(`validateAndRepairWindow: re-summarization still failed quality ("${reQuality.reason}") for factor "${f.name}"; using last-resort sanitization`);
+    } else {
+      console.warn(`validateAndRepairWindow: re-summarization returned null for factor "${f.name}"; using last-resort sanitization`);
+    }
+    // Last resort: sanitize and truncate heavily, never drop the factor
+    const sanitized = sanitizeExplanation(f.explanation).slice(0, 200);
+    if (sanitized) {
+      repaired.push({ ...f, explanation: sanitized });
+    } else {
+      repaired.push({ ...f, explanation: "Price movement driven by market factors reported by the source." });
+    }
+  }
+  return repaired;
 }
 
 const SYSTEM_PROMPT_GLOBAL =
@@ -886,7 +939,6 @@ export async function runFactorAnalysis(
   const currentPrices = getScopePriceDefaults(scope);
 
   const now = new Date().toISOString();
-  const returnExisting = () => ({ factors: existing, aiCurated: carriedAiCurated, updatedAt: now });
   let candidates: Array<{ url: string; title?: string; snippet?: string; text?: string }> = [];
 
   try {
@@ -941,14 +993,15 @@ export async function runFactorAnalysis(
         if (deterministic.length > 0) {
           console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors from known URLs for scope "${scope}"`);
           return {
-            factors: mergeRollingWindow(existing, deterministic),
+            factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal),
             aiCurated: false,
             updatedAt: now,
           };
         }
       }
       console.warn(`Factor analysis: no candidates from known URLs either; falling back to existing factors`);
-      return returnExisting();
+      const repaired = await validateAndRepairWindow(existing, currentPrices, signal);
+      return { factors: repaired, aiCurated: carriedAiCurated, updatedAt: now };
     }
 
     const excerpts = await Promise.all(
@@ -1044,13 +1097,14 @@ export async function runFactorAnalysis(
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}"`);
         return {
-          factors: mergeRollingWindow(existing, deterministic),
+          factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal),
           aiCurated: false,
           updatedAt: now,
         };
       }
       console.warn(`Factor analysis: no deterministic factors could be built for scope "${scope}"; falling back to existing factors`);
-      return returnExisting();
+      const repaired = await validateAndRepairWindow(existing, currentPrices, signal);
+      return { factors: repaired, aiCurated: carriedAiCurated, updatedAt: now };
     }
 
     const normalized: Factor[] = [];
@@ -1089,13 +1143,14 @@ export async function runFactorAnalysis(
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}"`);
         return {
-          factors: mergeRollingWindow(existing, deterministic),
+          factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal),
           aiCurated: false,
           updatedAt: now,
         };
       }
       console.warn(`Factor analysis: no deterministic factors could be built for scope "${scope}"; falling back to existing factors`);
-      return returnExisting();
+      const repaired = await validateAndRepairWindow(existing, currentPrices, signal);
+      return { factors: repaired, aiCurated: carriedAiCurated, updatedAt: now };
     }
 
     // Attach the dashboard statistics (oil/electricity/water prices) that the
@@ -1105,7 +1160,7 @@ export async function runFactorAnalysis(
     const grounding = attachFactorGrounding(currentPrices, now);
 
     return {
-      factors: mergeRollingWindow(existing, normalized.map((f) => ({ ...f, grounding }))),
+      factors: await validateAndRepairWindow(mergeRollingWindow(existing, normalized.map((f) => ({ ...f, grounding }))), currentPrices, signal),
       aiCurated: true,
       updatedAt: now,
     };
@@ -1118,7 +1173,7 @@ export async function runFactorAnalysis(
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}" after error (aiCurated=false)`);
         return {
-          factors: mergeRollingWindow(existing, deterministic),
+          factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal),
           aiCurated: false,
           updatedAt: now,
         };
@@ -1145,7 +1200,7 @@ export async function runFactorAnalysis(
         if (deterministic.length > 0) {
           console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors from known URLs for scope "${scope}" after error`);
           return {
-            factors: mergeRollingWindow(existing, deterministic),
+            factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal),
             aiCurated: false,
             updatedAt: now,
           };
@@ -1154,6 +1209,7 @@ export async function runFactorAnalysis(
     } catch (fallbackError) {
       console.error(`Factor analysis: known-URL fallback also failed for scope "${scope}":`, fallbackError);
     }
-    return returnExisting();
+    const repaired = await validateAndRepairWindow(existing, currentPrices, signal);
+    return { factors: repaired, aiCurated: carriedAiCurated, updatedAt: now };
   }
 }

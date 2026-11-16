@@ -4,11 +4,13 @@ import {
   readFactorWindow,
   runFactorAnalysis,
   toFactorsPayload,
+  validateAndRepairWindow,
   writeFactorWindow,
 } from "./factor-analysis";
 import { FACTORS_CACHE_MS } from "../_shared/http";
 import { isRegion, type Region } from "../_shared/regions";
 import { sanitizeError } from "../_shared/validation";
+import { getScopePriceDefaults } from "../_shared/deterministicAnalytics";
 
 /**
  * GET /api/regional-factors?region=… — same payload and, importantly, the same
@@ -33,8 +35,10 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     if (!force) {
       const stored = await readFactorWindow(region);
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
+        const currentPrices = getScopePriceDefaults(region);
+        const repaired = await validateAndRepairWindow(stored.factors, currentPrices, undefined);
         return Response.json(
-          toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
+          toFactorsPayload(repaired, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
           { status: 200 },
         );
       }
@@ -45,8 +49,10 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     try {
       const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
       const stored = await writeFactorWindow(region, result.factors, result.aiCurated);
+      const currentPrices = getScopePriceDefaults(region);
+      const repaired = await validateAndRepairWindow(stored.factors, currentPrices, abortController.signal);
       return Response.json(
-        toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
+        toFactorsPayload(repaired, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
         { status: 200 },
       );
     } finally {
@@ -56,8 +62,10 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     console.error("Regional factors error:", sanitizeError(String(error)));
     const stored = await readFactorWindow(region).catch(() => null);
     const factors = stored?.factors.length ? stored.factors : buildFallbackFactors(region);
+    const currentPrices = getScopePriceDefaults(region);
+    const repaired = await validateAndRepairWindow(factors, currentPrices, undefined);
     return Response.json(
-      toFactorsPayload(factors, region, stored?.aiCurated ?? false, {
+      toFactorsPayload(repaired, region, stored?.aiCurated ?? false, {
         updatedAt: stored?.updatedAt ?? new Date().toISOString(),
         error: "Regional factors temporarily unavailable; static fallbacks returned",
       }),

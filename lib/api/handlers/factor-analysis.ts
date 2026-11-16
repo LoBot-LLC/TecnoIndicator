@@ -137,8 +137,15 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     return { ok: false, reason: "starts with bullet point" };
   }
 
+  // Reject static fallback factor text — these are placeholders, not real summaries
+  if (/^static\s+/i.test(trimmed) && /fallback factor maintained/i.test(trimmed)) {
+    return { ok: false, reason: "static fallback text" };
+  }
+
   // Reject known raw-article starters that indicate the model copied verbatim
   const rawStarters = [
+    // Static/fallback placeholders
+    "static ",
     // Publication names
     "opec ", "iea ", "un ", "who ", "eia ", "opec+ ",
     // Regional/country prefixes (common raw article openers)
@@ -242,6 +249,13 @@ export async function validateAndRepairWindow(
       repaired.push(f);
       continue;
     }
+
+    // Auto-remove static fallback factors entirely — don't try to repair them
+    if (quality.reason === "static fallback text") {
+      console.warn(`validateAndRepairWindow: removing static fallback factor "${f.name}"`);
+      continue;
+    }
+
     console.warn(`validateAndRepairWindow: explanation failed quality ("${quality.reason}") for factor "${f.name}"; attempting re-summarization`);
     const reSummary = await reSummarizeExplanation(f.explanation, currentPrices, signal);
     if (reSummary) {

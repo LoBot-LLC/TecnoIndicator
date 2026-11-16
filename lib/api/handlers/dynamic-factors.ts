@@ -49,6 +49,8 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
         const currentPrices = getScopePriceDefaults(scope);
         const repaired = await validateAndRepairWindow(stored.factors, currentPrices, undefined);
+        // Write repaired factors back to cache so old bad factors aren't re-served
+        await writeFactorWindow(scope, repaired, stored.aiCurated);
         return Response.json(
           toFactorsPayload(repaired, scope, stored.aiCurated, { updatedAt: stored.updatedAt }),
           { status: 200 },

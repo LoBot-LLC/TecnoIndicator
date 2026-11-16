@@ -64,6 +64,45 @@ export function toFactorsPayload(
   };
 }
 
+/**
+ * Strips embedded URLs and markdown links from a model-generated explanation,
+ * and truncates to a readable length. Defense-in-depth: even if the model
+ * ignores the "no URLs in explanation" instruction, the server never renders
+ * a bare URL inside the reason prose.
+ *
+ * - Removes markdown links `[text](url)` → keeps only `text`
+ * - Removes bare `https?://...` URLs entirely (replaced with empty string)
+ * - Collapses resulting double spaces/newlines
+ * - Truncates to 600 chars (a 2-3 sentence summary is well under this)
+ */
+export function sanitizeExplanation(text: string): string {
+  if (typeof text !== "string" || text.trim().length === 0) return "";
+  let cleaned = text
+    // Strip markdown links: [text](url) → text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    // Strip bare URLs
+    .replace(/https?:\/\/[^\s)]+/g, "")
+    // Strip markdown emphasis that may have wrapped URLs
+    .replace(/\*+/g, "")
+    .replace(/_+/g, "")
+    // Collapse multiple spaces
+    .replace(/[ \t]+/g, " ")
+    // Collapse multiple newlines
+    .replace(/\n{2,}/g, "\n")
+    // Strip leading/trailing whitespace per line
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .trim();
+  // Hard truncate at 600 chars, cut at a word boundary
+  if (cleaned.length > 600) {
+    const cut = cleaned.slice(0, 600);
+    const lastSpace = cut.lastIndexOf(" ");
+    cleaned = (lastSpace > 400 ? cut.slice(0, lastSpace) : cut).trim() + "…";
+  }
+  return cleaned;
+}
+
 const SYSTEM_PROMPT_GLOBAL =
 `You are a Senior Commodity Risk Analyst. You are provided with current global market analytics, an existing list of global price factors, and fresh validated news excerpts collected through TinyFish.
 
@@ -106,6 +145,15 @@ const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
 - NEVER output a bare publication name (e.g. "IEA", "OPEC Monthly Oil Market Report", "UN-Water; WRI Aqueduct") in the source field.
 - NEVER invent a URL. If you cannot find a matching URL, copy the URL verbatim from the candidate list.
 - NEVER output markdown or commentary outside the JSON.
+
+=== EXPLANATION RULES ===
+- Write the explanation in YOUR OWN WORDS. Never copy text verbatim from the source article.
+- The explanation must be a 2-3 sentence summary that a human analyst would write.
+- NEVER include a URL inside the explanation text. The source URL goes ONLY in the "source" field.
+- NEVER include markdown links like [text](url) inside the explanation.
+- Start the explanation with the commodity and the current price number from currentPrices (e.g. "with oil at $104.86/bbl...").
+- Keep the explanation under 150 words. Short and punchy is better than long and detailed.
+- If the article is about a price RISE, say prices are rising and why. If about a FALL, say prices are falling and why.
 
 === GROUNDING ===
 Every factor's explanation MUST reference the current price numbers supplied in currentPrices. For example: "with oil at $104.86/bbl, OPEC+ output cuts are tightening supply...". Use the numbers, do not paraphrase around them.
@@ -412,7 +460,7 @@ export function buildFactorsFromCandidates(
       name,
       category,
       commodities: Array.from(new Set(commodities)) as Factor["commodities"],
-      explanation,
+      explanation: sanitizeExplanation(explanation),
       direction,
       magnitude: "Medium",
       source: candidate.url,
@@ -500,7 +548,7 @@ export function normalizeFactor(
     name: name.slice(0, 160),
     category: category.slice(0, 80),
     commodities: Array.from(new Set(commodities)) as Factor["commodities"],
-    explanation: explanation.slice(0, 1200),
+    explanation: sanitizeExplanation(explanation).slice(0, 600),
     direction,
     magnitude,
     source: finalSource,
@@ -837,7 +885,7 @@ export async function runFactorAnalysis(
     // returns invalid JSON or an empty factors array.
     if ((!parsed || !Array.isArray(parsed.factors) || parsed.factors.length === 0) && !signal?.aborted) {
       const candidateUrlHint = candidateObjs.map((c) => c.url).filter(Boolean).join(", ");
-      const retryPrompt = `Return ONLY a strict JSON object of the form {"factors":[...]}. Each factor MUST have: id (string), name (string), category (one of "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"), commodities (array subset of "oil","electricity","water"), explanation (2-3 sentences that start with the commodity and cite the current price numbers from currentPrices, e.g. "with oil at $104.86/bbl..."), direction ("up"|"down"|"mixed"), magnitude ("High"|"Medium"|"Low"), source (EXACTLY one of these URLs, copy verbatim: ${candidateUrlHint}), bias ("short"|"mid"|"long"|"flat"), importanceScore (integer 0-100), drift (object mapping commodity to a small decimal). The source field MUST be a URL copied verbatim from the list above — never a publication name. Ground every explanation in the current price numbers. Do not output markdown, commentary, or anything outside the JSON object.`;
+      const retryPrompt = `Return ONLY a strict JSON object of the form {"factors":[...]}. Each factor MUST have: id (string), name (string), category (one of "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"), commodities (array subset of "oil","electricity","water"), explanation (2-3 sentences that start with the commodity and cite the current price numbers from currentPrices, e.g. "with oil at $104.86/bbl..."), direction ("up"|"down"|"mixed"), magnitude ("High"|"Medium"|"Low"), source (EXACTLY one of these URLs, copy verbatim: ${candidateUrlHint}), bias ("short"|"mid"|"long"|"flat"), importanceScore (integer 0-100), drift (object mapping commodity to a small decimal). The source field MUST be a URL copied verbatim from the list above — never a publication name. Ground every explanation in the current price numbers. NEVER include a URL or markdown link inside the explanation field. Write explanations in your own words, 2-3 sentences max, starting with the commodity and current price number. Do not output markdown, commentary, or anything outside the JSON object.`;
 
       console.warn(`Factor analysis: retrying Kilo for scope "${scope}" after invalid/empty response (content length ${content.length}, factors ${Array.isArray(parsed?.factors) ? parsed.factors.length : 0})`);
 

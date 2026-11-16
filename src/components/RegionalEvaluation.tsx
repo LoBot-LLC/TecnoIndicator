@@ -447,7 +447,6 @@ export default function RegionalEvaluation({
   onRegion,
   dynamicFactors,
   healthStatus,
-  aiCurated = false,
 }: RegionalEvaluationProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const { theme } = useTheme();
@@ -472,7 +471,7 @@ export default function RegionalEvaluation({
   // Use live (URL-analyzed) regional factors when the API reports aiCurated,
   // otherwise fall back to the static regional factor list.
   const activeRegionalFactors =
-    aiCurated && dynamicFactors[selected.region.id]?.length
+    dynamicFactors[selected.region.id]?.some((f) => isHttpUrl(f.source))
       ? dynamicFactors[selected.region.id]!
       : (REGIONAL_FACTORS[selected.region.id] ?? []);
 

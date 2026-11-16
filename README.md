@@ -1,4 +1,4 @@
-# Lobot TecnoIndicator
+# TecnoIndicator
 
 **Real-time 10-year forecasts for global oil, water & electricity prices.**
 
@@ -95,6 +95,7 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | Endpoint | Purpose |
 | --- | --- |
 | `/api/prices` | Live commodity spot prices (oil, electricity, water) with deterministic fallbacks |
+| `/api/rates` | Exchange rates for currency conversion |
 | `/api/analytics` | Global fuel-levy / electricity / water indices |
 | `/api/regional-analytics?region=` | The same indices for one region |
 | `/api/dynamic-factors` | The 8 curated global price factors (includes `aiCurated` flag; falls back to static factors when TinyFish/Kilo curation is unavailable) |
@@ -104,18 +105,21 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/ai-forecast` | 11-year global forecast band |
 | `/api/regional-forecast?region=` | 11-year region-specific forecast band |
 | `/api/cron/curate-factors` | Nightly factor re-curation (Vercel cron, `0 2 * * *` UTC) |
+| `/api/telemetry` | Client-side analytics ingestion |
 
 All factor producers and consumers share a single canonical cache key,
 `dynamic-factors:{global|region}`, so the reasons shown in the UI are exactly
 the reasons the solutions were generated from.
 
-### Factor Curation Pipeline
+---
+
+## ⚙️ Factor Curation Pipeline
 
 The curation flow runs end-to-end whenever factors are requested (on-demand or via the Vercel cron):
 
 1. **TinyFish Search** — A broad search query (with recency constraints) hits `api.search.tinyfish.ai` to gather candidate source URLs.
 2. **Reputable + Recent Filter** — Results are filtered to reputable hosts and recent content. If that filter removes everything, curation retries with all recent results.
-3. **TinyFish Scrape** — Each candidate URL is scraped via `api.fetch.tinyfish.ai`, with a short `purpose` statement so TinyFish tailors extraction to the price-relevance goal.
+3. **TinyFish Scrape** — Each candidate URL is scraped via `api.fetch.tinyfish.ai`, with a short `purpose` statement so TinyFish tailors extraction to the price-relevance goal. (The `purpose` parameter is supported on fetch/scrape only; search does not accept it.)
 4. **Kilo Gateway JSON Curation** — The scraped content is sent to Kilo Gateway (`api.kilo.ai/api/gateway`, OpenAI-compatible) with a `json_object` response request. The shared `safeParseJson` helper tolerates markdown code fences and surrounding prose.
 5. **Server-side Grounding** — Live oil/electricity/water spot prices (from `getScopePriceDefaults`, the same numbers shown on the dashboard) are injected into the curation prompt and attached to every factor as server-side `grounding`. The model cannot fabricate these.
 6. **Rolling Window Merge** — Curated factors are stored under the canonical `dynamic-factors:{scope}` cache key (in-memory + optional Upstash Redis) with a `FactorWindow` shape (`{ factors, aiCurated, updatedAt }`). On each request, a fresh window is served if available; otherwise re-curation runs.
@@ -123,7 +127,9 @@ The curation flow runs end-to-end whenever factors are requested (on-demand or v
 
 The `aiCurated` flag on each API response tells the UI whether factors are live or static fallbacks, and each scrape carries a short `purpose` statement so TinyFish tailors extraction to the price-relevance goal.
 
-### Key Factors & Drivers UI
+---
+
+## 📊 Key Factors & Drivers UI
 
 Each factor card in the UI shows:
 
@@ -134,35 +140,17 @@ Each factor card in the UI shows:
 
 The same pattern applies to the regional factors view: each regional card carries the same grounding and a real clickable source URL.
 
-### Static Fallback Behavior
+---
+
+## 🔄 Static Fallback Behavior
 
 When live curation is unavailable — TinyFish search/scrape fails, Kilo Gateway is down, or all retries are exhausted — the UI falls back to static `FACTORS` / `REGIONAL_FACTORS` defined in `src/lib/model.ts`. These static factors contain **publication-name sources** (e.g., "IEA World Energy Outlook") rather than clickable URLs. This is the known degraded state: the `aiCurated` flag is set to `false`, and the cards display publication names instead of links. The production goal is to eliminate this fallback by ensuring live curation succeeds reliably.
 
-### Environment variables
+---
 
-Create a `.env.local` file (git-ignored) for local development. On Vercel, set
-these as project environment variables.
+## 🛠️ Tech Stack
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `TINYFISH_KEY_1` … `TINYFISH_KEY_5` | Required | TinyFish search/fetch API keys used to gather and scrape market evidence. Without them the app still runs and serves deterministic fallback data. |
-| `KILO_GATEWAY_KEY` or `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Required | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. |
-| `FUEL_BASE_DIESEL_PRICE` | Optional | Override the base diesel price for fuel-levy calculations. |
-| `FUEL_FACTOR` | Optional | Override the fuel levy factor. |
-| `GRID_LOSS_FACTOR` | Optional | Override the electricity grid-loss factor. |
-| `WATER_SCARCITY_MULTIPLIER` | Optional | Override the water scarcity multiplier. |
-| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional | Upstash Redis REST credentials for a shared cache across serverless instances. `REDIS_URL` / `REDIS_TOKEN` are accepted as aliases. Without Redis an in-memory per-instance cache is used. |
-
-The site degrades gracefully: with no keys configured every endpoint still
-returns a response, backed by public benchmark defaults, and the health endpoint
-reports `onlineModelConnected: false`.
-
-### Keyboard Shortcuts
-- Press `/` (when focused on the page) to jump to the horizon slider.
-
-### Tech stack
-
-#### Frontend
+### Frontend
 - **Next.js 16** (App Router) — React framework with server components
 - **React 19** — UI library (concurrent features)
 - **TypeScript 5** — Static type checking across the entire codebase
@@ -172,24 +160,28 @@ reports `onlineModelConnected: false`.
 - **clsx** + **tailwind-merge** — Conditional className utilities
 - **flags** — Feature flag / feature gating support
 
-#### Backend / API Layer
+### Backend / API Layer
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js** — Runtime environment (via Next.js on Vercel)
 - **Kilo AI Gateway** — OpenAI-compatible inference API at `api.kilo.ai/api/gateway` (price extraction, factor curation, solutions, forecasting)
 - **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search) and `api.fetch.tinyfish.ai` (URL scraping); each scrape carries a `purpose` statement to tailor extraction to price-relevance.
 - **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis for cross-instance sharing
 
-#### Data & Models (`src/lib/`)
+### Data & Models (`src/lib/`)
 - **Forecast Engine** (`model.ts`) — Client-side forecast computations, `FACTORS` / `REGIONAL_FACTORS` static fallbacks, commodity types, and scenario math
 - **Deterministic Analytics** — Fuel levy, grid loss, water scarcity calculations
 - **Currency & Unit Conversion** — Multi-currency support with real-time formatting
 - **Markdown Report Generator** — Export forecasts as `.md` reports
 
-#### Development & Build Tooling
+### Development & Build Tooling
 - **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run typecheck` / `npm run build`)
 - **PostCSS** — Tailwind CSS 4 processing pipeline
+- **Playwright** — End-to-end testing (`playwright` dev dependency)
+- **@vercel/analytics**, **@vercel/speed-insights** — Production analytics
+- **dotenv** — Local environment loading
+- **@vercel/sandbox** — Used in the standalone `sandbox-quickstart/` dev environment
 
-#### Deployment & Infrastructure
+### Deployment & Infrastructure
 - **Vercel** — Native Next.js hosting, edge functions, cron jobs
 - **Vercel Cron** (`vercel.json`) — Nightly factor re-curation (`0 2 * * *` UTC)
 - **Environment Variables** — Secure secret management (`.env.local` locally, Vercel dashboard in prod)
@@ -200,106 +192,115 @@ reports `onlineModelConnected: false`.
 
 ```
 .
-├── app/                                    # Next.js App Router (frontend + API)
-│   ├── api/                               # API route handlers (serverless functions)
-│   │   ├── ai-forecast/route.ts           # 11-year global forecast band
-│   │   ├── analytics/route.ts             # Global fuel/electricity/water indices
+├── AGENT_PROMPT.md                       # Agent instructions (if present)
+├── PRICES_PIPELINE_REPORT.md             # Pipeline documentation
+├── app/                                  # Next.js App Router (frontend + API)
+│   ├── api/                             # API route handlers (serverless functions)
+│   │   ├── ai-forecast/route.ts         # 11-year global forecast band
+│   │   ├── analytics/route.ts           # Global fuel/electricity/water indices
 │   │   ├── cron/
-│   │   │   └── curate-factors/route.ts    # Nightly AI factor re-curation (Vercel cron)
-│   │   ├── dynamic-factors/route.ts       # 8 curated global price factors
-│   │   ├── health/route.ts                # Gateway/key/cache status
-│   │   ├── prices/route.ts                # Live commodity spot prices
-│   │   ├── rates/route.ts                 # Exchange rates for currency conversion
-│   │   ├── regional-analytics/route.ts    # Regional fuel/electricity/water indices
-│   │   ├── regional-factors/route.ts      # 8 curated factors for a region
-│   │   ├── regional-forecast/route.ts     # 11-year region-specific forecast
-│   │   ├── solutions/route.ts             # Up to 3 AI-curated strategy recommendations
-│   │   └── telemetry/route.ts             # Client-side analytics ingestion
-│   ├── globals.css                        # Global styles + Tailwind CSS 4 imports
-│   ├── layout.tsx                         # Root layout (providers, fonts, metadata)
-│   ├── page.tsx                           # Main single-page application entry
-│   ├── robots.ts                          # robots.txt generation
-│   └── sitemap.ts                         # sitemap.xml generation
+│   │   │   └── curate-factors/route.ts  # Nightly AI factor re-curation (Vercel cron)
+│   │   ├── dynamic-factors/route.ts     # 8 curated global price factors
+│   │   ├── health/route.ts              # Gateway/key/cache status
+│   │   ├── prices/route.ts              # Live commodity spot prices
+│   │   ├── rates/route.ts               # Exchange rates for currency conversion
+│   │   ├── regional-analytics/route.ts  # Regional fuel/electricity/water indices
+│   │   ├── regional-factors/route.ts    # 8 curated factors for a region
+│   │   ├── regional-forecast/route.ts   # 11-year region-specific forecast
+│   │   ├── solutions/route.ts           # Up to 3 AI-curated strategy recommendations
+│   │   └── telemetry/route.ts           # Client-side analytics ingestion
+│   ├── globals.css                      # Global styles + Tailwind CSS 4 imports
+│   ├── layout.tsx                       # Root layout (providers, fonts, metadata)
+│   ├── page.tsx                         # Main single-page application entry
+│   ├── robots.ts                        # robots.txt generation
+│   └── sitemap.ts                       # sitemap.xml generation
 │
-├── lib/                                    # Backend API implementation layer
+├── lib/                                  # Backend API implementation layer
 │   └── api/
-│       ├── handlers/                      # Endpoint business logic
-│       │   ├── ai-forecast.ts             # Forecast band generation
-│       │   ├── analytics.ts               # Global indices computation
-│       │   ├── cron-curate-factors.ts     # Nightly curation job
-│       │   ├── dynamic-factors.ts         # Global factor curation
-│       │   ├── factor-analysis.ts         # Factor curation pipeline (TinyFish → Kilo → grounding → cache)
-│       │   ├── health.ts                  # Health check implementation
-│       │   ├── prices.ts                  # Price fetching & fallbacks
-│       │   ├── regional-analytics.ts      # Regional indices computation
-│       │   ├── regional-factors.ts        # Regional factor curation
-│       │   ├── regional-forecast.ts       # Regional forecast generation
-│       │   └── solutions.ts               # AI solution generation
-│       └── _shared/                       # Cross-cutting utilities
-│           ├── cache.ts                   # In-memory + optional Redis cache with TTLs
-│           ├── deterministicAnalytics.ts  # Fuel/grid/water math + getScopePriceDefaults
-│           ├── http.ts                    # TinyFish/Kilo HTTP clients
-│           ├── kiloRouter.ts              # Kilo Gateway model routing
-│           ├── redis.ts                   # Upstash Redis client (optional)
-│           ├── regions.ts                 # Region definitions & metadata
-│           ├── tinyfishRouter.ts          # TinyFish search/scrape routing
-│           ├── types.ts                   # Shared TypeScript interfaces
-│           └── validation.ts              # Request validation helpers
+│       ├── handlers/                    # Endpoint business logic
+│       │   ├── ai-forecast.ts           # Forecast band generation
+│       │   ├── analytics.ts             # Global indices computation
+│       │   ├── cron-curate-factors.ts   # Nightly curation job
+│       │   ├── dynamic-factors.ts       # Global factor curation
+│       │   ├── factor-analysis.ts       # Factor curation pipeline (TinyFish → Kilo → grounding → cache)
+│       │   ├── health.ts                # Health check implementation
+│       │   ├── prices.ts                # Price fetching & fallbacks
+│       │   ├── regional-analytics.ts    # Regional indices computation
+│       │   ├── regional-factors.ts      # Regional factor curation
+│       │   ├── regional-forecast.ts     # Regional forecast generation
+│       │   └── solutions.ts             # AI solution generation
+│       └── _shared/                     # Cross-cutting utilities
+│           ├── cache.ts                 # In-memory + optional Redis cache with TTLs
+│           ├── deterministicAnalytics.ts# Fuel/grid/water math + getScopePriceDefaults
+│           ├── http.ts                  # Constants, key utilities, shared HTTP helpers
+│           ├── kiloRouter.ts            # Kilo Gateway model routing
+│           ├── redis.ts                 # Upstash Redis client (optional)
+│           ├── regions.ts               # Region definitions & metadata
+│           ├── tinyfishRouter.ts        # TinyFish search/scrape routing
+│           ├── types.ts                 # Shared TypeScript interfaces
+│           └── validation.ts            # Request validation helpers
 │
-├── src/                                    # Frontend source code
-│   ├── components/                        # React UI components
-│   │   ├── AboutSection.tsx               # Project description & mission
-│   │   ├── CurrencySelector.tsx           # Multi-currency picker
-│   │   ├── FactorsSection.tsx             # 8 dynamic factors grid
-│   │   ├── Footer.tsx                     # Site footer
-│   │   ├── ForecastTool.tsx               # Main prediction UI (slider, cards, chart, table)
-│   │   ├── Hero.tsx                       # Landing hero with CTA
-│   │   ├── icons.tsx                      # Custom SVG icon components
-│   │   ├── Logo.tsx                       # Brand logo
-│   │   ├── MarketIndexStrip.tsx           # Live market ticker
-│   │   ├── Navbar.tsx                     # Top navigation + export menu
-│   │   ├── RegionalEvaluation.tsx         # Regional intelligence panel
-│   │   ├── Reveal.tsx                     # Scroll/fade animations
-│   │   ├── SettingsMenu.tsx               # Units, theme, currency preferences
-│   │   ├── SolutionsSection.tsx           # AI strategy recommendations
-│   │   ├── Ticker.tsx                     # Animated price ticker
-│   │   └── VercelAnalytics.tsx            # Analytics consent + init
-│   ├── context/                           # React Context providers
-│   │   ├── CurrencyContext.tsx            # Currency state & formatting
-│   │   ├── FontContext.tsx                # Font loading & selection
-│   │   ├── ThemeContext.tsx               # Dark/light mode
-│   │   └── UnitContext.tsx                # Unit system (metric/imperial)
-│   ├── hook/                              # Custom React hooks
-│   │   ├── useFlash.ts                    # Toast/flash notifications
-│   │   └── useLiveMarket.ts               # Live market data polling
-│   └── lib/                               # Frontend business logic
-│       ├── currencies.ts                  # Currency codes, symbols, formatting
-│       ├── events.ts                      # Event bus for cross-component comms
-│       ├── fonts.ts                       # Font definitions & loading
-│       ├── markdown.ts                    # Markdown report generation
-│       ├── model.ts                       # Forecast engine + static FACTORS/REGIONAL_FACTORS
-│       └── units.ts                       # Unit conversion & display
+├── src/                                  # Frontend source code
+│   ├── components/                      # React UI components
+│   │   ├── AboutSection.tsx             # Project description & mission
+│   │   ├── CurrencySelector.tsx         # Multi-currency picker
+│   │   ├── FactorsSection.tsx           # 8 dynamic factors grid
+│   │   ├── Footer.tsx                   # Site footer
+│   │   ├── ForecastTool.tsx             # Main prediction UI (slider, cards, chart, table)
+│   │   ├── Hero.tsx                     # Landing hero with CTA
+│   │   ├── icons.tsx                    # Custom SVG icon components
+│   │   ├── Logo.tsx                     # Brand logo
+│   │   ├── MarketIndexStrip.tsx         # Live market ticker
+│   │   ├── Navbar.tsx                   # Top navigation + export menu
+│   │   ├── RegionalEvaluation.tsx       # Regional intelligence panel
+│   │   ├── Reveal.tsx                   # Scroll/fade animations
+│   │   ├── SettingsMenu.tsx             # Units, theme, currency preferences
+│   │   ├── SolutionsSection.tsx         # AI strategy recommendations
+│   │   ├── Ticker.tsx                   # Animated price ticker
+│   │   └── VercelAnalytics.tsx          # Analytics consent + init
+│   ├── context/                         # React Context providers
+│   │   ├── CurrencyContext.tsx          # Currency state & formatting
+│   │   ├── FontContext.tsx              # Font loading & selection
+│   │   ├── ThemeContext.tsx             # Dark/light mode
+│   │   └── UnitContext.tsx              # Unit system (metric/imperial)
+│   ├── hook/                            # Custom React hooks
+│   │   ├── useFlash.ts                  # Toast/flash notifications
+│   │   └── useLiveMarket.ts             # Live market data polling
+│   ├── lib/                             # Frontend business logic
+│   │   ├── currencies.ts                # Currency codes, symbols, formatting
+│   │   ├── events.ts                    # Event bus for cross-component comms
+│   │   ├── fonts.ts                     # Font definitions & loading
+│   │   ├── markdown.ts                  # Markdown report generation
+│   │   ├── model.ts                     # Forecast engine + static FACTORS/REGIONAL_FACTORS
+│   │   └── units.ts                     # Unit conversion & display
+│   └── utils/                           # Shared frontend utilities
+│       └── cn.ts                        # clsx + tailwind-merge helper
 │
-├── images/                                 # Brand assets
-│   ├── lobotlogoonly.svg                   # LoBot logo mark (SVG)
-│   ├── lobottecnoindicator.svg             # TecnoIndicator waveform mark (SVG)
-│   └── LoBot-Trademark.png                 # LoBot brand wordmark (PNG)
-├── sandbox-quickstart/                     # Standalone dev sandbox (separate package.json)
+├── images/                              # Brand assets
+│   ├── lobotlogoonly.svg                # LoBot logo mark (SVG)
+│   ├── lobottecnoindicator.svg          # TecnoIndicator waveform mark (SVG)
+│   └── LoBot-Trademark.png              # LoBot brand wordmark (PNG)
+├── sandbox-quickstart/                  # Standalone dev sandbox (separate package.json)
 │   ├── .gitignore
 │   ├── index.ts
 │   └── package.json
 │
-├── .env.example                           # Environment variable template
-├── .gitignore                             # Git ignore patterns
-├── LICENSE                                # MIT License
-├── next.config.ts                         # Next.js configuration
-├── package.json                           # Root dependencies & scripts
-├── package-lock.json                      # npm lockfile
-├── pnpm-lock.yaml                         # pnpm lockfile
-├── postcss.config.mjs                     # PostCSS + Tailwind CSS 4 config
-├── README.md                              # This file
-├── tsconfig.json                          # TypeScript configuration
-└── vercel.json                            # Vercel deployment config (crons, headers)
+├── .env.example                         # Environment variable template
+├── .github/
+│   └── workflows/                       # CI/CD workflows
+│       ├── nextjs.yml
+│       └── nodejs.yml
+├── .gitignore
+├── LICENSE                              # MIT License
+├── next.config.ts                       # Next.js configuration
+├── package.json                         # Root dependencies & scripts
+├── package-lock.json                    # npm lockfile
+├── pnpm-lock.yaml                       # pnpm lockfile
+├── postcss.config.mjs                   # PostCSS + Tailwind CSS 4 config
+├── README.md                            # This file
+├── tsconfig.json                        # TypeScript configuration
+├── tsconfig.tsbuildinfo                 # TypeScript incremental build info
+└── vercel.json                          # Vercel deployment config (crons, headers)
 ```
 
 ---
@@ -338,3 +339,30 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 [LoBot LLC](https://github.com/LoBot-LLC)
 
 We would like to give special thanks to the open-source community for Tailwind CSS and Chart.js.
+
+---
+
+## 🔐 Environment variables
+
+Create a `.env.local` file (git-ignored) for local development. On Vercel, set
+these as project environment variables.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `TINYFISH_KEY_1` … `TINYFISH_KEY_5` | Required | TinyFish search/fetch API keys used to gather and scrape market evidence. Without them the app still runs and serves deterministic fallback data. |
+| `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Required | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. Also accepts bare `KILO_GATEWAY_KEY`. |
+| `FUEL_BASE_DIESEL_PRICE` | Optional | Override the base diesel price for fuel-levy calculations. |
+| `FUEL_FACTOR` | Optional | Override the fuel levy factor. |
+| `GRID_LOSS_FACTOR` | Optional | Override the electricity grid-loss factor. |
+| `WATER_SCARCITY_MULTIPLIER` | Optional | Override the water scarcity multiplier. |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional | Upstash Redis REST credentials for a shared cache across serverless instances. `REDIS_URL` / `REDIS_TOKEN` are accepted as aliases. Without Redis an in-memory per-instance cache is used. |
+
+The site degrades gracefully: with no keys configured every endpoint still
+returns a response, backed by public benchmark defaults, and the health endpoint
+reports `onlineModelConnected: false`.
+
+---
+
+## ⌨️ Keyboard Shortcuts
+
+- Press `/` (when focused on the page) to jump to the horizon slider.

@@ -257,10 +257,9 @@ export default function FactorsSection({
   horizon,
   dynamicFactors,
   healthStatus,
-  aiCurated = false,
 }: FactorsSectionProps) {
   const isOnline = healthStatus === "Online Model Connected";
-  const hasLiveFactors = aiCurated && dynamicFactors && dynamicFactors.length > 0;
+  const hasLiveFactors = dynamicFactors?.some((f) => isHttpUrl(f.source)) ?? false;
 
   // When we have live (URL-analyzed) factors, show only those — never
   // supplement with static publication-name fallbacks, so every card displays

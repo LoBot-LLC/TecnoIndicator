@@ -314,6 +314,113 @@ export function buildFallbackFactors(scope: RegionId): Factor[] {
   }));
 }
 
+/**
+ * Deterministic, URL-backed factor construction used when Kilo fails to return
+ * usable factors but TinyFish successfully produced real candidate URLs. Each
+ * factor is built directly from a fetched article — the name from its title, the
+ * explanation from its snippet/scraped text, and the source from the actual
+ * TinyFish URL — so the UI never falls back to bare static publication names.
+ *
+ * These factors carry `aiCurated: false` (they are not AI-summarized), but every
+ * `source` is a genuine, clickable link and every explanation is real article
+ * text. The category/direction/bias fields are inferred from keywords because no
+ * model is summarizing at this point.
+ */
+export function buildFactorsFromCandidates(
+  candidates: Array<{ url: string; title?: string; snippet?: string; text?: string }>,
+  scope: RegionId,
+  currentPrices: {
+    oil: { price: number; unit: string; source: string };
+    electricity: { price: number; unit: string; source: string };
+    water: { price: number; unit: string; source: string };
+  },
+  now: string,
+): Factor[] {
+  const region = scopeRegion(scope);
+  const regions: RegionId[] = scope === "global" ? ["global"] : region ? [region] : [];
+  const grounding = attachFactorGrounding(currentPrices, now);
+
+  const usable = candidates
+    .filter((c) => c && typeof c.url === "string" && c.url.length > 0)
+    .slice(0, FACTOR_COUNT);
+
+  const factors: Factor[] = [];
+
+  usable.forEach((candidate, index) => {
+    const position = index + 1;
+    const title = (candidate.title ?? "").trim();
+    const snippet = (candidate.snippet ?? "").trim();
+    const text = (candidate.text ?? "").trim();
+
+    // Explanation must be a real sentence from the article: prefer the snippet
+    // (first ~200 chars), otherwise the scraped body (up to 1200 chars).
+    let explanation = "";
+    if (snippet) {
+      explanation = snippet.slice(0, 200);
+    } else if (text) {
+      explanation = text;
+    }
+    explanation = explanation.slice(0, 1200).trim();
+    if (!explanation) return;
+
+    const name = (title || explanation.slice(0, 160) || `Market update: ${candidate.url}`).slice(0, 160);
+
+    const haystack = `${title} ${snippet} ${text}`.toLowerCase();
+
+    const commodities: Factor["commodities"] = [];
+    if (/oil|crude|petroleum|\bbbl\b|brent|\bwti\b/.test(haystack)) commodities.push("oil");
+    if (/electricity|power|\bgrid\b|\bmwh\b|megawatt|kilowatt|utilit/.test(haystack))
+      commodities.push("electricity");
+    if (/water|drought|scarcity|hydrolog|aquifer|desalination/.test(haystack))
+      commodities.push("water");
+    if (commodities.length === 0) commodities.push("oil");
+
+    let direction: Factor["direction"] = "mixed";
+    if (/\b(rise|rising|surge|surged|climb|climbed|spike|spiked|jump|jumped|rally|rallied|gain|gained|increase|increased|soar|soared)\b/.test(haystack)) {
+      direction = "up";
+    } else if (/\b(fall|falling|fell|drop|dropped|decline|declined|plunge|plunged|slump|slumped|sink|sank|crash|crashed|decrease|decreased|tumble|tumbled)\b/.test(haystack)) {
+      direction = "down";
+    }
+
+    let category: Factor["category"] = "Structural";
+    if (/supply|opec|production|output|inventor|inventory|\bcuts?\b|restrain|constraint|shortage/.test(haystack)) {
+      category = "Market";
+    } else if (/policy|demand|regulat|mandate|subsid|tariff|\btax\b|\blaw\b|\brule\b/.test(haystack)) {
+      category = "Policy";
+    }
+
+    let bias: Factor["bias"] = "flat";
+    if (/supply|\bcuts?\b|restrain|constraint|shortage|disruption|shortfall/.test(haystack)) {
+      bias = "short";
+    } else if (/demand|growth|surge|rise|rising|increase|expansion/.test(haystack)) {
+      bias = "mid";
+    }
+
+    const importanceScore = Math.max(0, Math.min(100, 70 - position));
+
+    factors.push({
+      id: `deterministic-${scope}-${position}-${Date.now()}`,
+      name,
+      category,
+      commodities: Array.from(new Set(commodities)) as Factor["commodities"],
+      explanation,
+      direction,
+      magnitude: "Medium",
+      source: candidate.url,
+      bias,
+      drift: {},
+      grounding,
+      regions,
+      scope,
+      importanceScore,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  return factors;
+}
+
 export function normalizeFactor(
   raw: unknown,
   scope: RegionId,
@@ -589,13 +696,11 @@ export async function runFactorAnalysis(
   const analytics =
     scope === "global" ? await getGlobalAnalytics() : await getRegionalAnalytics(scope as Region);
 
-  // Current price levels the model must ground its reasons in. These mirror the
-  // dashboard statistics (oil/electricity/water) so every factor reason can be
-  // read against real numbers rather than being a free-form guess.
   const currentPrices = getScopePriceDefaults(scope);
 
   const now = new Date().toISOString();
   const returnExisting = () => ({ factors: existing, aiCurated: carriedAiCurated, updatedAt: now });
+  let candidates: Array<{ url: string; title?: string; snippet?: string; text?: string }> = [];
 
   try {
     const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
@@ -614,14 +719,17 @@ export async function runFactorAnalysis(
     // model of real fetched URLs. If the reputable filter removes every result we
     // retry with all recent results, because a non-whitelisted but real TinyFish
     // URL is still a valid source the model can summarize (and link to).
-    let candidates = allResults
+    candidates = allResults
       .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
       .slice(0, 15);
+
+    console.warn(`Factor analysis: ${candidates.length} reputable+recent candidates for scope "${scope}" after TinyFish search`);
 
     if (candidates.length === 0) {
       candidates = allResults
         .filter((r) => isRecentPublishedAt(r.publishedAt))
         .slice(0, 15);
+      console.warn(`Factor analysis: ${candidates.length} recent candidates for scope "${scope}" (reputable filter yielded none)`);
     }
 
     if (candidates.length === 0) {
@@ -644,6 +752,7 @@ export async function runFactorAnalysis(
 
     // Log scrape success rate
     const scrapedCount = excerpts.filter((e) => (e as { text?: string }).text && (e as { text?: string }).text!.length > 0).length;
+    console.warn(`Factor analysis: ${scrapedCount}/${candidates.length} candidate scrapes succeeded for scope "${scope}"`);
     if (scrapedCount === 0 && candidates.length > 0) {
       console.warn(`Factor analysis: all ${candidates.length} candidate scrapes failed for scope "${scope}"; proceeding with search snippets only`);
     } else if (scrapedCount < candidates.length) {
@@ -686,6 +795,7 @@ export async function runFactorAnalysis(
     const response = await kiloRouter.kiloInfer(payload, signal);
     let content = response.choices?.[0]?.message?.content ?? "";
     let parsed = safeParseJson<{ factors?: unknown[] }>(content);
+    console.warn(`Factor analysis: Kilo response for scope "${scope}" (content length ${content.length}, factors ${Array.isArray(parsed?.factors) ? parsed.factors.length : 0})`);
 
     // Retry once with a more explicit, insistent prompt if first attempt
     // returns invalid JSON or an empty factors array.
@@ -714,7 +824,18 @@ export async function runFactorAnalysis(
     }
 
     if (!parsed?.factors || !Array.isArray(parsed.factors) || parsed.factors.length === 0) {
-      console.warn(`Factor analysis: model did not return a valid non-empty factors array for scope "${scope}" even after retry (content length ${content.length}); falling back to existing factors`);
+      console.warn(`Factor analysis: model did not return a valid non-empty factors array for scope "${scope}" even after retry (content length ${content.length}); building deterministic factors from ${candidates.length} TinyFish candidates`);
+
+      const deterministic = buildFactorsFromCandidates(candidates, scope, currentPrices, now);
+      if (deterministic.length > 0) {
+        console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}"`);
+        return {
+          factors: mergeRollingWindow(existing, deterministic),
+          aiCurated: false,
+          updatedAt: now,
+        };
+      }
+      console.warn(`Factor analysis: no deterministic factors could be built for scope "${scope}"; falling back to existing factors`);
       return returnExisting();
     }
 
@@ -725,7 +846,18 @@ export async function runFactorAnalysis(
       .slice(0, FACTOR_COUNT);
 
     if (normalized.length === 0) {
-      console.warn(`Factor analysis: all model-returned factors were rejected for scope "${scope}" (parsed ${parsed.factors.length}, normalized ${normalized.length}); falling back to existing factors`);
+      console.warn(`Factor analysis: all model-returned factors were rejected for scope "${scope}" (parsed ${parsed.factors.length}, normalized ${normalized.length}); building deterministic factors from ${candidates.length} TinyFish candidates`);
+
+      const deterministic = buildFactorsFromCandidates(candidates, scope, currentPrices, now);
+      if (deterministic.length > 0) {
+        console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}"`);
+        return {
+          factors: mergeRollingWindow(existing, deterministic),
+          aiCurated: false,
+          updatedAt: now,
+        };
+      }
+      console.warn(`Factor analysis: no deterministic factors could be built for scope "${scope}"; falling back to existing factors`);
       return returnExisting();
     }
 
@@ -744,6 +876,17 @@ export async function runFactorAnalysis(
     // Never throw: the callers (route handlers, cron) must always be able to
     // write a window so the health endpoint can report a real `lastRun`.
     console.error(`Factor analysis failed for scope "${scope}":`, error);
+    if (candidates.length > 0) {
+      const deterministic = buildFactorsFromCandidates(candidates, scope, currentPrices, now);
+      if (deterministic.length > 0) {
+        console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}" after error (aiCurated=false)`);
+        return {
+          factors: mergeRollingWindow(existing, deterministic),
+          aiCurated: false,
+          updatedAt: now,
+        };
+      }
+    }
     return returnExisting();
   }
 }

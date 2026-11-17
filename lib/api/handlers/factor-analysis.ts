@@ -169,13 +169,13 @@ export function sanitizeExplanation(text: string): string {
   // is real article content rather than report chrome.
   cleaned = stripLeadingPageChrome(cleaned);
 
-  // Enforce ONE sentence: cut at the first sentence boundary (., !, ?)
-  // followed by whitespace or end-of-string, but only if at least 30 chars from
+  // Allow up to 3 meaningful sentences. Cut at the 3rd sentence boundary
+  // (., !, ?) followed by whitespace or end-of-string, but only if at least 30 chars from
   // the start (avoids cutting at abbreviations like "U.S."). Also avoid common
   // month abbreviations (Jan., Feb., Mar., Apr., Jun., Jul., Aug., Sep., Oct.,
   // Nov., Dec.) which frequently appear in scraped date strings.
   const sentenceBoundaryRegex = /[.!?](?:\s|$)/g;
-  let firstSentenceEnd = -1;
+  let sentenceEnds: number[] = [];
   let match;
   while ((match = sentenceBoundaryRegex.exec(cleaned)) !== null) {
     const pos = match.index;
@@ -186,12 +186,14 @@ export function sanitizeExplanation(text: string): string {
       /[A-Z]\.$/.test(before) || // U.S., U.K., etc.
       /\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.$/i.test(before); // Month abbreviations
     if (!isAbbreviation && pos >= 30) {
-      firstSentenceEnd = pos;
-      break;
+      sentenceEnds.push(pos);
+      if (sentenceEnds.length >= 3) break;
     }
   }
-  if (firstSentenceEnd >= 30) {
-    cleaned = cleaned.slice(0, firstSentenceEnd + 1).trim();
+  if (sentenceEnds.length > 0) {
+    // Take up to 3 sentences
+    const thirdSentenceEnd = sentenceEnds[Math.min(2, sentenceEnds.length - 1)];
+    cleaned = cleaned.slice(0, thirdSentenceEnd + 1).trim();
   } else {
     // No proper sentence boundary found (e.g., table of contents, clipped
     // fragment from a mid-sentence extraction). Truncate at word boundary

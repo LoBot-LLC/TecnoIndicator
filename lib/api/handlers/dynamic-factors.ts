@@ -14,7 +14,7 @@ import { sanitizeError } from "../_shared/validation";
 import { getScopePriceDefaults } from "../_shared/deterministicAnalytics";
 import type { RegionId } from "../_shared/types";
 
-export const maxDuration = 55;
+export const maxDuration = 58;
 
 function resolveScope(url: URL): { ok: true; scope: RegionId } | { ok: false; response: Response } {
   const regionParam = url.searchParams.get("region");
@@ -60,7 +60,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     }
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 55000);
+    const timeoutId = setTimeout(() => abortController.abort(), 58000);
     try {
       const result = await runFactorAnalysis(scope, { abortSignal: abortController.signal });
       const stored = await writeFactorWindow(scope, result.factors, result.aiCurated);

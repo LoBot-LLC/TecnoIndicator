@@ -391,6 +391,11 @@ function pickCleanSnippet(snippet: string): string {
  *   to grow", "the report provides", "provides a detailed analysis") — even if
  *   the opening passes; this catches generic forecasts and meta-analysis that
  *   slipped through the start check.
+ * - Contains generic demand/forecast projection language (e.g. "projected to
+ *   grow", "expected to increase", "anticipated to decline", "poised to expand",
+ *   "set to contract", "estimates demand will", "outlook projects supply",
+ *   "demand is projected to", "consumption is expected to") — these are
+ *   generic forecast statements, not concrete price drivers.
  */
 export function validateExplanationQuality(explanation: string): { ok: boolean; reason?: string } {
   if (!explanation || typeof explanation !== "string") {
@@ -497,6 +502,15 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     /the\s+study\s+examines/i,
     /provides\s+a\s+detailed\s+analysis/i,
     /provides\s+an\s+overview/i,
+    /projected\s+to\s+(?:grow|fall|rise|decline|increase|decrease|expand|contract)/i,
+    /expected\s+to\s+(?:grow|fall|rise|decline|increase|decrease|expand|contract)/i,
+    /anticipated\s+to\s+(?:grow|fall|rise|decline|increase|decrease|expand|contract)/i,
+    /poised\s+to\s+(?:grow|fall|rise|decline|increase|decrease|expand|contract)/i,
+    /set\s+to\s+(?:grow|fall|rise|decline|increase|decrease|expand|contract)/i,
+    /estimates?(?:\s+that|")?\s+(?:demand|supply|consumption|production)\s+(?:will|is|are)/i,
+    /outlook\s+(?:sees|projects|forecasts)\s+(?:demand|supply|consumption|production)/i,
+    /demand\s+(?:is|are)\s+(?:projected|expected|anticipated|poised|set)\s+to/i,
+    /consumption\s+(?:is|are)\s+(?:projected|expected|anticipated|poised|set)\s+to/i,
   ];
   for (const pattern of genericBodyPatterns) {
     if (pattern.test(body)) {
@@ -640,7 +654,7 @@ Text to summarize: "${rawExplanation}"`;
       { role: "system", content: "You are a precise summarizer. Output 1-3 meaningful sentences (under 400 chars total), no preamble, no markdown, no URLs, no bullet points, no dashes at the start, no publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for prices." },
       { role: "user", content: prompt },
     ],
-    max_tokens: 100,
+    max_tokens: 200,
     temperature: 0.1,
   };
 
@@ -659,8 +673,15 @@ Text to summarize: "${rawExplanation}"`;
       return sanitized;
     }
 
-    // If still fails quality, drop the factor entirely — a truncated raw fragment
-    // is not a valid reason; return null lets the caller drop the factor.
+    // Fallback: truncate at sentence boundary to meet length/quality constraints
+    const truncated = truncateToSentenceBoundary(sanitized, 400);
+    const retryQuality = validateExplanationQuality(truncated);
+    if (retryQuality.ok) {
+      console.warn(`reSummarizeExplanation: applied fallback truncation to pass quality check`);
+      return truncated;
+    }
+
+    // If still fails quality after truncation, drop the factor entirely
     console.warn(`reSummarizeExplanation: sanitized result still failed quality ("${quality.reason}"); dropping factor`);
     return null;
   } catch {
@@ -806,7 +827,7 @@ GOOD explanation (single sentence, starts with commodity+price, own words, no UR
 "With oil at $73.07/bbl, OPEC+ has agreed to extend voluntary production cuts through Q1 2026, which is expected to remove roughly 1.2 million b/d from the market and support prices in the short term."
 
 GOOD explanation:
-"With oil at $104.86/bbl, the IEA forecasts global oil demand will fall by 2.7 mb/d in 2026 before rebounding by 2 mb/d in 2027, with the year-on-year decline set to ease to 2.7 mb/d in Q4 2026."
+"With oil at $104.86/bbl, new US sanctions on Russian crude exports are estimated to remove roughly 1 mb/d from global supply, tightening the market and lifting prices in the short term."
 
 GOOD explanation (water):
 "With water at $2.15/M³, drought-driven supply disruptions from scarcity affecting 4 billion people are pushing utility tariffs higher as scarcity premiums are increasingly reflected in consumer prices."
@@ -889,8 +910,8 @@ const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
 GOOD explanation (single sentence, starts with commodity+price, own words, no URLs):
 "With oil at $73.07/bbl, OPEC+ has agreed to extend voluntary production cuts through Q1 2026, which is expected to remove roughly 1.2 million b/d from the market and support prices in the short term."
 
-GOOD explanation:
-"With oil at $104.86/bbl, the IEA forecasts global oil demand will fall by 2.7 mb/d in 2026 before rebounding by 2 mb/d in 2027, with the year-on-year decline set to ease to 2.7 mb/d in Q4 2026."
+GOOD explanation (regional price driver):
+"With oil at $73.07/bbl, an unplanned outage at a major regional refinery has tightened gasoline and diesel supply, lifting wholesale fuel prices across the region."
 
 GOOD explanation (water):
 "With water at $2.15/M³, drought-driven supply disruptions from scarcity affecting 4 billion people are pushing utility tariffs higher as scarcity premiums are increasingly reflected in consumer prices."
@@ -1198,11 +1219,15 @@ function deriveFactorNameFromExplanation(explanation: string): string {
  *
  * Rejected clause shapes:
  * - Generic forecast openers: "the global ", "the world ", "is forecast",
- *   "are forecast", "is on track", "are on track"
+ *   "are forecast", "is on track", "are on track", and demand/supply/
+ *   consumption/production projections ("demand is projected to", ...)
  * - Meta-analysis / report-intro openers: "the report provides",
  *   "the study examines", "this analysis", "the analysis"
  * - Navigation / fragment markers anywhere in the clause: "key developments",
- *   "impacting", "as well as", "according to"
+ *   "impacting", "as well as", "according to", and projection verbs
+ *   ("projected to", "expected to", "outlook sees", ...)
+ * - Bare projection clauses with a commodity subject that does not start with
+ *   "the global " (e.g. "global oil demand is projected to rise...")
  * - Bare numbers/units with no subject or verb (e.g. "1.4 mb/d", "2.7 mb/d")
  */
 function clauseQualityCheck(clause: string): boolean {
@@ -1219,6 +1244,19 @@ function clauseQualityCheck(clause: string): boolean {
     "are forecast",
     "is on track",
     "are on track",
+    "demand is projected to",
+    "demand is expected to",
+    "demand is anticipated to",
+    "demand is poised to",
+    "demand is set to",
+    "supply is projected to",
+    "supply is expected to",
+    "supply is anticipated to",
+    "consumption is projected to",
+    "consumption is expected to",
+    "consumption is anticipated to",
+    "production is projected to",
+    "production is expected to",
   ];
   for (const opener of genericForecastOpeners) {
     if (lower.startsWith(opener)) return false;
@@ -1243,10 +1281,37 @@ function clauseQualityCheck(clause: string): boolean {
     "impacting",
     "as well as",
     "according to",
+    "projected to",
+    "expected to",
+    "anticipated to",
+    "poised to",
+    "set to",
+    "estimated to",
+    "forecasts that",
+    "estimates that",
+    "outlook sees",
+    "outlook projects",
+    "outlook forecasts",
   ];
   for (const marker of fragmentMarkers) {
     if (lower.includes(marker)) return false;
   }
+
+  // Reject bare projection clauses that do not start with a generic opener
+  // (e.g. "the global ") but still describe a forecast rather than a realised
+  // price driver — for example "global oil demand is projected to rise by 1.4
+  // mb/d in 2026" or "world refining capacity is expected to grow". These begin
+  // with a bare commodity subject, so the `startsWith` opener check misses them.
+  const bareProjectionClause =
+    /(?:\bglobal|\bworld|\bregional|\bdomestic|\bus\b|\bu\.s\.|\beuropean|\basian|\bchina|\bindia)\b[\w\s,'’-]{0,40}?\b(?:demand|supply|consumption|production|output|capacity|exports|imports|refining)\b[\w\s,'’-]{0,20}?\b(?:is|are|was|were)\b\s+(?:projected|expected|anticipated|poised|set|forecast|estimated|likely)\s+to\b/i;
+  if (bareProjectionClause.test(trimmed)) return false;
+
+  // Also catch any subject-less / non-standard projection clause that pairs a
+  // commodity metric with a projection verb, e.g. "crude output is poised to
+  // climb" or "refinery runs are set to recover".
+  const bareProjectionVerb =
+    /\b(?:demand|supply|consumption|production|output|capacity|exports|imports|runs|throughput)\b[\w\s,'’-]{0,20}?\b(?:is|are|was|were)\b\s+(?:projected|expected|anticipated|poised|set|forecast|estimated|likely)\s+to\b/i;
+  if (bareProjectionVerb.test(trimmed)) return false;
 
   // Reject clauses that contain publication names — these are scraped report
   // titles (e.g. "monthly Oil Market Report", "The OPEC Monthly Oil Market

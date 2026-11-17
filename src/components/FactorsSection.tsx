@@ -249,24 +249,71 @@ interface FactorsSectionProps {
   dynamicFactors?: Factor[];
   healthStatus?: "Initializing AI" | "Online Model Connected" | "Offline Model";
   aiCurated?: boolean;
+  factorsLoaded?: boolean;
 }
 
 const FACTOR_COUNT = 8;
+
+function FactorCardSkeleton() {
+  return (
+    <article className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 animate-pulse">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="h-5 w-16 rounded-full border border-line bg-base/50" />
+            <div className="h-5 w-20 rounded-full border border-line bg-base/50" />
+          </div>
+          <div className="mt-3 h-5 w-3/4 rounded bg-line" />
+        </div>
+        <div className="h-5 w-10 rounded bg-line" />
+      </div>
+
+      <div className="mt-3 flex-1 h-16 bg-line rounded" />
+      <div className="mt-2 h-6 w-1/3 bg-line rounded" />
+
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {[1, 2, 3].map((n) => (
+          <div key={n} className="h-5 w-16 rounded-full border border-line bg-base/40" />
+        ))}
+      </div>
+
+      <div className="mt-5 h-20 bg-line rounded-lg" />
+
+      <div className="mt-4">
+        <div className="mb-1.5 flex items-center justify-between">
+          <div className="h-3 w-24 bg-line rounded" />
+          <div className="h-1.5 w-20 bg-line rounded-full" />
+        </div>
+        <div className="h-1.5 bg-line rounded-full" />
+      </div>
+
+      <div className="mt-3">
+        <div className="h-3 w-16 bg-line rounded mb-1" />
+        <div className="h-3 w-32 bg-line rounded" />
+      </div>
+    </article>
+  );
+}
 
 export default function FactorsSection({
   horizon,
   dynamicFactors,
   healthStatus,
+  factorsLoaded = false,
 }: FactorsSectionProps) {
   const isOnline = healthStatus === "Online Model Connected";
   const hasLiveFactors = dynamicFactors?.some((f) => isHttpUrl(f.source)) ?? false;
+  const isLoading = !factorsLoaded;
 
   // When we have live (URL-analyzed) factors, show only those — never
   // supplement with static publication-name fallbacks, so every card displays
   // a real TinyFish source URL backed by dashboard statistics. If live
   // curation returns fewer than 8, the grid shows exactly the live factors.
+  // While loading, show empty state instead of static fallbacks.
   let activeFactors: Factor[];
-  if (hasLiveFactors) {
+  if (isLoading) {
+    activeFactors = [];
+  } else if (hasLiveFactors) {
     activeFactors = dynamicFactors!.slice(0, FACTOR_COUNT);
   } else {
     activeFactors = FACTORS;
@@ -303,15 +350,32 @@ export default function FactorsSection({
                 Status: {healthStatus}
               </p>
             )}
+            {isLoading && (
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Loading factors…
+              </p>
+            )}
           </div>
         </Reveal>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {sorted.map((f, i) => (
-            <Reveal key={f.id} delay={Math.min(i * 40, 280)}>
-              <FactorCard factor={f} horizon={horizon} index={i} />
-            </Reveal>
-          ))}
+          {activeFactors.length > 0 ? (
+            sorted.map((f, i) => (
+              <Reveal key={f.id} delay={Math.min(i * 40, 280)}>
+                <FactorCard factor={f} horizon={horizon} index={i} />
+              </Reveal>
+            ))
+          ) : isLoading ? (
+            [...Array(FACTOR_COUNT)].map((_, i) => (
+              <Reveal key={`skeleton-${i}`} delay={Math.min(i * 40, 280)}>
+                <FactorCardSkeleton />
+              </Reveal>
+            ))
+          ) : (
+            <p className="col-span-full text-center text-sm text-slate-500 dark:text-slate-400 py-8">
+              No factors available
+            </p>
+          )}
         </div>
       </div>
     </section>

@@ -57,8 +57,10 @@ export default function HomePage() {
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("Initializing AI");
   const [globalFactors, setGlobalFactors] = useState<Factor[]>([]);
   const [globalFactorsAiCurated, setGlobalFactorsAiCurated] = useState(false);
+  const [globalFactorsLoaded, setGlobalFactorsLoaded] = useState(false);
   const [regionalFactors, setRegionalFactors] = useState<Record<string, Factor[]>>({});
   const [regionalFactorsAiCurated, setRegionalFactorsAiCurated] = useState<Record<string, boolean>>({});
+  const [regionalFactorsLoaded, setRegionalFactorsLoaded] = useState<Record<string, boolean>>({});
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [analytics, setAnalytics] = useState<Record<string, AnalyticsSnapshot>>({});
 
@@ -161,9 +163,10 @@ export default function HomePage() {
         const res = await fetch("/api/dynamic-factors");
         if (res.ok) {
           const data = await res.json();
-          if (active && Array.isArray(data.factors) && data.factors.length > 0) {
+          if (active && Array.isArray(data.factors)) {
             setGlobalFactors(data.factors);
             setGlobalFactorsAiCurated(!!data.aiCurated);
+            setGlobalFactorsLoaded(true);
           }
         }
       } catch { /* ignore */ }
@@ -172,9 +175,10 @@ export default function HomePage() {
           const res = await fetch(`/api/regional-factors?region=${r.id}`);
           if (res.ok) {
             const data = await res.json();
-            if (active && Array.isArray(data.factors) && data.factors.length > 0) {
+            if (active && Array.isArray(data.factors)) {
               setRegionalFactors((prev) => ({ ...prev, [r.id]: data.factors }));
               setRegionalFactorsAiCurated((prev) => ({ ...prev, [r.id]: !!data.aiCurated }));
+              setRegionalFactorsLoaded((prev) => ({ ...prev, [r.id]: true }));
             }
           }
         } catch { /* ignore */ }
@@ -334,6 +338,7 @@ export default function HomePage() {
             dynamicFactors={globalFactors}
             healthStatus={healthStatus}
             aiCurated={globalFactorsAiCurated}
+            factorsLoaded={globalFactorsLoaded}
           />
           <RegionalEvaluation
             prices={prices}
@@ -344,6 +349,7 @@ export default function HomePage() {
             dynamicFactors={regionalFactors}
             healthStatus={healthStatus}
             aiCurated={regionalFactorsAiCurated[scope] ?? false}
+            factorsLoaded={regionalFactorsLoaded[scope] ?? false}
           />
           <AboutSection />
         </main>

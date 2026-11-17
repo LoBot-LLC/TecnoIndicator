@@ -428,6 +428,41 @@ function RegionalFactorCard({
   );
 }
 
+function RegionalFactorCardSkeleton() {
+  return (
+    <article className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-4 animate-pulse">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="h-4 w-14 rounded-full border border-line bg-base/50" />
+            <div className="h-4 w-16 rounded-full border border-line bg-base/50" />
+          </div>
+          <div className="mt-2 h-4 w-1/2 rounded bg-line" />
+        </div>
+        <div className="h-4 w-8 rounded bg-line" />
+      </div>
+
+      <div className="mt-2 h-12 bg-line rounded" />
+      <div className="mt-1 h-6 w-1/3 bg-line rounded" />
+
+      <div className="mt-2 flex flex-wrap gap-1">
+        {[1, 2].map((n) => (
+          <div key={n} className="h-4 w-12 rounded-full border border-line bg-base/40" />
+        ))}
+      </div>
+
+      <div className="mt-2 h-4 w-1/4 bg-line rounded" />
+
+      <div className="mt-2 h-8 bg-line rounded-lg" />
+
+      <div className="mt-2">
+        <div className="h-3 w-12 bg-line rounded mb-0.5" />
+        <div className="h-3 w-20 bg-line rounded" />
+      </div>
+    </article>
+  );
+}
+
 interface RegionalEvaluationProps {
   prices: Record<CommodityId, number>;
   horizon: number;
@@ -437,6 +472,7 @@ interface RegionalEvaluationProps {
   dynamicFactors: Record<string, Factor[]>;
   healthStatus: "Initializing AI" | "Online Model Connected" | "Offline Model";
   aiCurated?: boolean;
+  factorsLoaded?: boolean;
 }
 
 export default function RegionalEvaluation({
@@ -447,6 +483,7 @@ export default function RegionalEvaluation({
   onRegion,
   dynamicFactors,
   healthStatus,
+  factorsLoaded = false,
 }: RegionalEvaluationProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const { theme } = useTheme();
@@ -470,8 +507,11 @@ export default function RegionalEvaluation({
 
   // Use live (URL-analyzed) regional factors when the API reports aiCurated,
   // otherwise fall back to the static regional factor list.
-  const activeRegionalFactors =
-    dynamicFactors[selected.region.id]?.some((f) => isHttpUrl(f.source))
+  // While loading, show empty array so skeleton loaders display.
+  const isLoading = !factorsLoaded;
+  const activeRegionalFactors = isLoading
+    ? []
+    : dynamicFactors[selected.region.id]?.some((f) => isHttpUrl(f.source))
       ? dynamicFactors[selected.region.id]!
       : (REGIONAL_FACTORS[selected.region.id] ?? []);
 
@@ -998,22 +1038,32 @@ export default function RegionalEvaluation({
 
 {/* AI-curated regional factors */}
                <div id="regional-factors" className="mt-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
-                    {healthStatus === "Online Model Connected"
-                      ? "AI Factors"
-                      : "Regional factors"}
-                  </p>
-                  <span className="text-[11px] text-slate-600 dark:text-slate-400">
-                    8 factors per region
-                  </span>
-                </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {activeRegionalFactors.map((f, i) => (
-                      <RegionalFactorCard key={f.id} factor={f} index={i} />
-                    ))}
-                  </div>
-              </div>
+                 <div className="mb-3 flex items-center justify-between">
+                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
+                     {healthStatus === "Online Model Connected"
+                       ? "AI Factors"
+                       : "Regional factors"}
+                   </p>
+                   <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                     {isLoading ? "Loading…" : "8 factors per region"}
+                   </span>
+                 </div>
+                   <div className="grid gap-2 sm:grid-cols-2">
+                     {activeRegionalFactors.length > 0 ? (
+                       activeRegionalFactors.map((f, i) => (
+                         <RegionalFactorCard key={f.id} factor={f} index={i} />
+                       ))
+                     ) : isLoading ? (
+                       [...Array(8)].map((_, i) => (
+                         <RegionalFactorCardSkeleton key={`skeleton-${i}`} />
+                       ))
+                     ) : (
+                       <p className="col-span-full text-center text-sm text-slate-500 dark:text-slate-400 py-8">
+                         No regional factors available
+                       </p>
+                     )}
+                   </div>
+               </div>
 
               <button
                 type="button"

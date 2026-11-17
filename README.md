@@ -141,7 +141,7 @@ Any explanation that fails this check is rejected as "missing commodity+price st
 
 The `aiCurated` flag on each API response tells the UI whether factors are live AI-curated or deterministic URL-backed fallbacks, and each scrape carries a short `purpose` statement so TinyFish tailors extraction to the price-relevance goal.
 
-**Timeouts & Limits:** The global and regional factor routes are configured with `maxDuration = 60` seconds in their route handlers (matching `vercel.json`), and the internal abort signals are set to 55 seconds to allow the full pipeline (TinyFish search + scrape + Kilo inference) to complete before the platform timeout. The regional route previously used a 25s abort which was too short for the full pipeline; this has been increased to 55s to match the global route.
+**Timeouts & Limits:** The global and regional factor routes are configured with `maxDuration = 60` seconds in their route handlers (matching `vercel.json`), and the internal abort signals are set to 58 seconds to allow the full pipeline (TinyFish search + scrape + Kilo inference) to complete before the platform timeout. The regional route previously used a 25s abort which was too short for the full pipeline; this has been increased to 58s to match the global route.
 
 ---
 

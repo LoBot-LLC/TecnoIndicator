@@ -167,11 +167,23 @@ export function sanitizeExplanation(text: string): string {
   const firstSentenceEnd = cleaned.search(/[.!?](?:\s|$)/);
   if (firstSentenceEnd >= 30) {
     cleaned = cleaned.slice(0, firstSentenceEnd + 1).trim();
-  } else if (cleaned.length > 400) {
-    // No proper sentence boundary found (e.g., table of contents) — truncate at word boundary
-    const cut = cleaned.slice(0, 400);
-    const lastSpace = cut.lastIndexOf(" ");
-    cleaned = lastSpace > 50 ? cut.slice(0, lastSpace).trim() + "…" : cut.trim() + "…";
+  } else {
+    // No proper sentence boundary found (e.g., table of contents, clipped
+    // fragment from a mid-sentence extraction). Truncate at word boundary
+    // and append an ellipsis so the result is clearly a truncated fragment
+    // rather than a complete-but-unpunctuated sentence. This is critical for
+    // short fragments like "using ship-to-ship transfers along Oman's coast
+    // added to supply, which was reflected in prices during late October and
+    // early" — without this, the fragment passes downstream checks as a
+    // "complete" sentence.
+    if (cleaned.length > 400) {
+      const cut = cleaned.slice(0, 400);
+      const lastSpace = cut.lastIndexOf(" ");
+      cleaned = lastSpace > 50 ? cut.slice(0, lastSpace).trim() + "…" : cut.trim() + "…";
+    } else if (cleaned.length > 0) {
+      // Short text with no sentence boundary — mark as truncated fragment
+      cleaned = cleaned + "…";
+    }
   }
 
   // Truncate to 400 chars at a sentence boundary (never mid-sentence)
@@ -184,7 +196,7 @@ export function sanitizeExplanation(text: string): string {
     );
     const cutAt = lastSentenceEnd > 50 ? lastSentenceEnd + 2 : cut.lastIndexOf(" ");
     cleaned = cleaned.slice(0, cutAt).trim();
-    if (!cleaned.endsWith(".") && !cleaned.endsWith("!") && !cleaned.endsWith("?")) {
+    if (!cleaned.endsWith(".") && !cleaned.endsWith("!") && !cleaned.endsWith("?") && !cleaned.endsWith("…")) {
       cleaned += "…";
     }
   }
@@ -245,6 +257,13 @@ function extractSummaryFromArticle(text: string): string {
     /^disclaimer\s+/i,
     /^archive\s+/i,
     /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\s+/i,
+    // NEW: Strip publication-name prefixes that appear at the start of
+    // scraped article text (e.g. "The OPEC Monthly Oil Market Report
+    // (MOMR) covers major issues...", "Short-Term Energy Outlook Global
+    // oil prices.", "IEA World Energy Outlook 2026 summary...")
+    /^(the\s+)?(?:opec|iea|eia|bp|shell|exxon|total|chevron)\s+(?:monthly|quarterly|annual|daily|weekly)?\s*(?:oil|energy|market|commodity|water|electricity|power)?\s*(?:report|outlook|analysis|review|summary)?\s*/i,
+    /^(short-term\s+energy\s+outlook|world\s+energy\s+outlook|global\s+energy\s+outlook)\s+/i,
+    /^(?:oil|energy)\s+market\s+(?:report|outlook|highlights)\s+/i,
   ];
   for (const pattern of headerPatterns) {
     cleaned = cleaned.replace(pattern, "");
@@ -420,11 +439,12 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
   }
 
   // Reject explanations whose BODY (the part after the commodity+price opening)
-  // contains generic forecast / meta-analysis text. The opening check above only
-  // verifies the prefix; a clause like "the global oil demand in 2026 is forecast
-  // to grow by 1.4 mb/d" passes the opening check but is not a concrete price
-  // driver. Checked AFTER the opening so the failure reason is accurate
-  // ("generic body text") rather than a misleading opener reason.
+  // contains generic forecast / meta-analysis text, publication names, or
+  // clipped fragments. The opening check above only verifies the prefix; a
+  // clause like "the global oil demand in 2026 is forecast to grow by 1.4 mb/d"
+  // passes the opening check but is not a concrete price driver. Checked AFTER
+  // the opening so the failure reason is accurate ("generic body text") rather
+  // than a misleading opener reason.
   //
   // Legitimate explanations that MUST still pass:
   // - "With oil at $73.07/bbl, OPEC+ has agreed to extend voluntary production
@@ -445,6 +465,24 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
   for (const pattern of genericBodyPatterns) {
     if (pattern.test(body)) {
       return { ok: false, reason: "generic body text" };
+    }
+  }
+
+  // Reject explanations whose BODY starts with a publication name (e.g. "the
+  // opec monthly oil market report", "the iea world energy outlook", "the eia
+  // short-term energy outlook"). These are scraped report titles that leaked
+  // into the explanation body — the body should describe a price driver, not
+  // name the source publication. Checked AFTER the generic body patterns so
+  // the failure reason is accurate ("publication name in body").
+  const publicationNameInBody = [
+    /the\s+(?:opec|iea|eia|bp|shell|exxon|total|chevron)\b/i,
+    /(?:monthly|quarterly|annual|weekly|daily)\s+(?:oil|energy|market|commodity|water|electricity|power)\s+(?:report|outlook|analysis|review|summary)\b/i,
+    /(?:oil|energy|water|electricity|power)\s+(?:market|outlook|report|analysis|review|summary)\s+(?:report|outlook|analysis|review|summary)\b/i,
+    /(?:world|short-term|global)\s+(?:oil|energy)\s+(?:outlook|report|analysis)\b/i,
+  ];
+  for (const pattern of publicationNameInBody) {
+    if (pattern.test(body)) {
+      return { ok: false, reason: "publication name in body" };
     }
   }
 
@@ -1126,12 +1164,33 @@ function clauseQualityCheck(clause: string): boolean {
     if (lower.includes(marker)) return false;
   }
 
+  // Reject clauses that contain publication names — these are scraped report
+  // titles (e.g. "monthly Oil Market Report", "The OPEC Monthly Oil Market
+  // Report (MOMR) covers major issues...") rather than concrete price drivers.
+  const publicationInClause = [
+    /\bthe\s+(?:opec|iea|eia)\b/i,
+    /(?:monthly|quarterly|annual|weekly|daily)\s+(?:oil|energy|market|commodity|water|electricity|power)\s+(?:report|outlook|analysis|review|summary)\b/i,
+    /(?:world|short-term|global)\s+(?:oil|energy)\s+(?:outlook|report|analysis)\b/i,
+    /\b(?:covers|examines|provides|analyz(?:es|is))\s+(?:major\s+)?(?:issues?|developments?|trends?|an?\s+overview)\b/i,
+  ];
+  for (const pattern of publicationInClause) {
+    if (pattern.test(trimmed)) return false;
+  }
+
   // Reject clauses that are just numbers/units (e.g. "1.4 mb/d", "2.7 mb/d").
   // A standalone number with an optional unit is a clipped fragment, not a
   // price driver.
   if (/^[\d,.]+\s*(?:mb\/d|b\/d|mboe\/d|thousand|million|billion|mb|bbl|barrel)?\s*\.?\s*$/i.test(trimmed)) {
     return false;
   }
+
+  // Reject clauses that do not end with terminal punctuation — these are
+  // mid-sentence clips from scraped pages (e.g. "...reflected in prices during
+  // late October and early"). A complete price-driver sentence ends with a
+  // period, exclamation mark, or question mark. Callers that build grounded
+  // explanations append "." themselves, so an unterminated clause here signals
+  // a genuine mid-sentence fragment rather than a formatting omission.
+  if (!/[.!?]$/.test(trimmed)) return false;
 
   return true;
 }

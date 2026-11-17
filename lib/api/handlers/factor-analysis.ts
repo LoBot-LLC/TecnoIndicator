@@ -1995,7 +1995,7 @@ export async function runFactorAnalysis(
     const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
     const searches = await Promise.all(
       queries.map((q) =>
-        tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 10, region: region ?? undefined }, signal),
+        tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 8, region: region ?? undefined, recencyMinutes: 10080 }, signal),
       ),
     );
 
@@ -2010,14 +2010,14 @@ export async function runFactorAnalysis(
     // URL is still a valid source the model can summarize (and link to).
     candidates = allResults
       .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
-      .slice(0, 10);
+      .slice(0, 8);
 
     console.warn(`Factor analysis: ${candidates.length} reputable+recent candidates for scope "${scope}" after TinyFish search`);
 
     if (candidates.length === 0) {
       candidates = allResults
         .filter((r) => isRecentPublishedAt(r.publishedAt))
-        .slice(0, 10);
+        .slice(0, 8);
       console.warn(`Factor analysis: ${candidates.length} recent candidates for scope "${scope}" (reputable filter yielded none)`);
     }
 
@@ -2096,8 +2096,8 @@ export async function runFactorAnalysis(
             candidates: excerpts.map((c) => ({
               title: c.title,
               source: c.url,
-              snippet: c.snippet?.slice(0, 2500),
-              text: (c as { text?: string }).text?.slice(0, 8000),
+              snippet: c.snippet?.slice(0, 1500),
+              text: (c as { text?: string }).text?.slice(0, 5000),
             })),
             region,
             month: RECENT_MONTH(),

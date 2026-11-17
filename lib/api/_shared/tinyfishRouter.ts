@@ -58,10 +58,18 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   return controller.signal;
 }
 
-function buildSearchUrl(query: string, limit: number, purpose?: string): string {
+function buildSearchUrl(
+  query: string,
+  limit: number,
+  purpose?: string,
+  recencyMinutes?: number
+): string {
   const params = new URLSearchParams({ query, limit: String(limit) });
   if (purpose && purpose.trim().length > 0) {
     params.set("purpose", purpose.trim().slice(0, 2000));
+  }
+  if (recencyMinutes && recencyMinutes > 0) {
+    params.set("recency_minutes", String(recencyMinutes));
   }
   return `${SEARCH_URL}?${params.toString()}`;
 }
@@ -196,7 +204,7 @@ export class TinyFishRouter {
 
   async tinyfishSearch(
     query: string,
-    options: { limit?: number; region?: Region; purpose?: string } = {},
+    options: { limit?: number; region?: Region; purpose?: string; recencyMinutes?: number } = {},
     abortSignal?: AbortSignal
   ): Promise<TinyFishSearchResponse> {
     if (!this.initialized) {
@@ -206,7 +214,8 @@ export class TinyFishRouter {
     const purpose =
       options.purpose ??
       "Find recent articles about oil, electricity, or water price movements and their underlying causes.";
-    const cacheKey = `tinyfish:search:${query}:${options.region ?? "global"}`;
+    const recencyMinutes = options.recencyMinutes ?? 10080; // Default: last 7 days
+    const cacheKey = `tinyfish:search:${query}:${options.region ?? "global"}:${recencyMinutes}`;
     const cached = await getCache<TinyFishSearchResponse>(cacheKey, SEARCH_CACHE_MS);
     if (cached) return cached;
 
@@ -230,12 +239,12 @@ export class TinyFishRouter {
         const region = options.region ?? "global";
         const regionPrefix = region !== "global" ? `[${region}] ` : "";
 
-         const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.limit ?? 10, purpose), {
-           headers: {
-             "X-API-Key": testKey,
-           },
-            signal: abortSignal ?? AbortSignal.timeout(15000),
-         });
+const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.limit ?? 10, purpose, recencyMinutes), {
+            headers: {
+              "X-API-Key": testKey,
+            },
+            signal: abortSignal ?? AbortSignal.timeout(10000),
+          });
 
         const status = response.status;
 
@@ -355,7 +364,7 @@ export class TinyFishRouter {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
-          signal: abortSignal ?? AbortSignal.timeout(15000),
+          signal: abortSignal ?? AbortSignal.timeout(10000),
         });
 
         const status = response.status;

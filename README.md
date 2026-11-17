@@ -189,6 +189,46 @@ Maximum candidates per scope reduced from 15 to 10, cutting TinyFish scrape call
 
 ---
 
+## 🚀 TinyFish Performance Optimizations
+
+**Problem:** Factor curation was slow and often timed out because TinyFish search and scrape calls were using overly generous timeouts (15s each), scraping too many candidate URLs (10), and sending large prompt payloads (8000 chars per source). This caused the 58s internal abort to trigger before live factors could be returned, resulting in stale/fallback data shown to users.
+
+**Solutions implemented:**
+
+1. **Reduced TinyFish timeouts** (`lib/api/_shared/tinyfishRouter.ts`):
+   - Search: 15s → 10s (matches TinyFish recommended 10s timeout; typical latency 1-3s)
+   - Scrape: 15s → 10s (typical 1-20s; 10s covers p90+ cases)
+   - Retries: 3 attempts with exponential backoff
+
+2. **Added `recency_minutes` parameter** to search requests (default 7 days = 10080 minutes):
+   - Filters results to recent content at the API level
+   - Reduces irrelevant/old results that waste scrape budget
+   - Improves relevance of first-page results
+
+3. **Reduced candidate fan-out** from 10 → 8 URLs per scope:
+   - Fewer parallel scrapes = less resource contention
+   - Faster aggregate scrape completion
+   - Still provides enough diversity for curation
+
+4. **Reduced prompt payload sizes** (`factor-analysis.ts`):
+   - Snippet: 2500 → 1500 chars
+   - Full text: 8000 → 5000 chars
+   - Cuts Kilo inference input tokens ~40%, reducing latency and cost
+
+5. **Increased platform timeout** (`vercel.json`):
+   - `dynamic-factors` / `regional-factors`: 60s → 120s `maxDuration`
+   - Internal abort adjusted: 58s → 55s (5s buffer for response serialization)
+   - Cron job remains at 300s for full pre-warming
+
+**Expected impact:**
+- Search phase: 3 queries × 10s (parallel) = ~10s (was ~15s)
+- Scrape phase: 8 URLs × 10s (parallel) = ~10s (was ~15s)
+- Kilo inference: ~20s (unchanged, but smaller prompt may be faster)
+- Validation/repair: ~5s
+- **Total: ~45s with 10s buffer** (was ~55s with 3s buffer)
+
+---
+
 ## ✂️ Word-Boundary Truncation Fix
 
 **Bug fixed:** Factor explanations were being truncated at exactly 400 characters using a hard `slice(0, 400)`, which split words mid-word and produced broken fragments like `"...incomes and infl"` and `"...cost-competi"` instead of complete words. This made explanations look like extraction errors rather than intentional summaries.
@@ -335,6 +375,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │           ├── kiloRouter.ts            # Kilo Gateway model routing
 │           ├── redis.ts                 # Upstash Redis client (optional)
 │           ├── regions.ts               # Region definitions & metadata
+│           ├── textUtils.ts             # Word/sentence-boundary truncation utilities
 │           ├── tinyfishRouter.ts        # TinyFish search/scrape routing
 │           ├── types.ts                 # Shared TypeScript interfaces
 │           └── validation.ts            # Request validation helpers

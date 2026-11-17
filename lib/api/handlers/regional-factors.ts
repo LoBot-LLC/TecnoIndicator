@@ -43,7 +43,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     }
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 58000);
+    const timeoutId = setTimeout(() => abortController.abort(), 55000);
     try {
       const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
       const stored = await writeFactorWindow(region, result.factors, result.aiCurated);

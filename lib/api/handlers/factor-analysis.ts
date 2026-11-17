@@ -597,10 +597,13 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     return { ok: false, reason: "too few sentences for length" };
   }
 
-  // Reject explanations with more than one sentence — must be exactly ONE meaningful sentence
+  // Allow up to 3 sentences for natural analyst summaries. Kilo often generates
+  // 2-3 sentence explanations that are legitimate price-driver analyses.
+  // Rejecting all multi-sentence output forces re-summarization which often
+  // fails or drops valid factors entirely, leading to static fallbacks.
   const sentenceCount = (trimmed.match(/[.!?](\s|$)/g)?.length ?? 0);
-  if (sentenceCount > 1) {
-    return { ok: false, reason: "multiple sentences" };
+  if (sentenceCount > 3) {
+    return { ok: false, reason: "too many sentences" };
   }
 
   return { ok: true };
@@ -608,7 +611,7 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
 
 /**
  * Second-pass summarization: takes a raw explanation that failed quality
- * checks and asks Kilo to rewrite it into a proper single meaningful sentence.
+ * checks and asks Kilo to rewrite it into a proper meaningful sentence(s).
  * Used as a repair round before rejecting a factor entirely.
  *
  * Post-processes the model output through sanitizeExplanation and validates
@@ -624,7 +627,7 @@ export async function reSummarizeExplanation(
   },
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const prompt = `Rewrite the following text into exactly ONE meaningful sentence (under 400 characters). The sentence MUST start with "With [commodity] at $[price]/[unit]..." using the exact current price numbers provided below. Write in your own words — do NOT copy text verbatim. Do NOT include URLs, markdown links, bullet points, or publication names. Do NOT start with a bullet point or dash. Do NOT include publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for oil/electricity/water prices.
+  const prompt = `Rewrite the following text into 1-3 meaningful sentences (under 400 characters total). The explanation MUST start with "With [commodity] at $[price]/[unit]..." using the exact current price numbers provided below. Write in your own words — do NOT copy text verbatim. Do NOT include URLs, markdown links, bullet points, or publication names. Do NOT start with a bullet point or dash. Do NOT include publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for oil/electricity/water prices.
 
 Current prices: oil \$${currentPrices.oil.price}/${currentPrices.oil.unit}, electricity \$${currentPrices.electricity.price}/${currentPrices.electricity.unit}, water \$${currentPrices.water.price}/${currentPrices.water.unit}
 
@@ -632,7 +635,7 @@ Text to summarize: "${rawExplanation}"`;
 
   const payload = {
     messages: [
-      { role: "system", content: "You are a precise summarizer. Output only a single meaningful sentence (under 400 chars), no preamble, no markdown, no URLs, no bullet points, no dashes at the start, no publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for prices." },
+      { role: "system", content: "You are a precise summarizer. Output 1-3 meaningful sentences (under 400 chars total), no preamble, no markdown, no URLs, no bullet points, no dashes at the start, no publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for prices." },
       { role: "user", content: prompt },
     ],
     max_tokens: 100,
@@ -770,7 +773,7 @@ const SYSTEM_PROMPT_GLOBAL =
 === STEPS (follow in order) ===
 1. Read EVERY candidate's title, snippet, and full text carefully.
 2. Identify the CONCRETE reason the article gives for an oil, electricity, or water price movement. This is a factual claim the article itself makes, not your own inference.
-3. Write that reason in a SINGLE meaningful sentence in the explanation field. Start with the commodity and the current price number from currentPrices (e.g. "with oil at $104.86/bbl..."). Use the numbers; do not paraphrase around them.
+3. Write that reason in 1-3 meaningful sentences in the explanation field. Start with the commodity and the current price number from currentPrices (e.g. "with oil at $104.86/bbl..."). Use the numbers; do not paraphrase around them.
 4. Set the source field to the EXACT URL string from the candidate list — copy it verbatim, character for character. Never write a publication name.
 
 === FORBIDDEN ===
@@ -779,14 +782,14 @@ const SYSTEM_PROMPT_GLOBAL =
 - NEVER output markdown or commentary outside the JSON.
 - NEVER output raw scraped text or article snippets verbatim. Always summarize in your own words.
 - NEVER start an explanation with a bullet point ("- ", "• ", "* "), a publication name ("OPEC ", "IEA ", "UN-Water "), or an article opening ("Around ", "According ", "The world ", "Global ").
-- NEVER write more than ONE sentence per explanation. Each explanation MUST be a single, complete, meaningful sentence (not a fragment, not a bullet point, not multiple sentences).
+- NEVER write more than THREE sentences per explanation. Each explanation MUST be 1-3 complete, meaningful sentences (not a fragment, not a bullet point).
 - NEVER include publication headers, dates, or metadata in the explanation.
 - NEVER include web navigation / page chrome text (e.g. "Skip to page content", "Filter by article type", "In-brief analysis", "In-depth analysis", category labels like "Energy", "Technology", "Markets") in the explanation.
 - NEVER start the explanation body (after "With <commodity> at $<price>/<unit>,") with a participle/gerund like "using ", "adding ", "reflecting ", "driving ", "pushing ", "showing " — these are mid-sentence fragments, not complete price-driver statements.
 - Do NOT include publication headers, dates, or metadata in the explanation.
 
 === EXPLANATION REQUIREMENTS ===
-- Each explanation MUST be a single, complete, meaningful sentence (not a fragment, not a bullet point, not multiple sentences)
+- Each explanation MUST be 1-3 complete, meaningful sentences (not a fragment, not a bullet point)
 - Do NOT start with bullet points (-, •, *, –, —) or article navigation text
 - Do NOT include publication headers, dates, or metadata
 - Do NOT include web navigation / page chrome (skip links, filter UI, article type labels, category headers)
@@ -806,6 +809,9 @@ GOOD explanation:
 GOOD explanation (water):
 "With water at $2.15/M³, drought-driven supply disruptions from scarcity affecting 4 billion people are pushing utility tariffs higher as scarcity premiums are increasingly reflected in consumer prices."
 
+GOOD explanation (two sentences, both grounded in commodity+price):
+"With oil at $73.07/bbl, OPEC+ has agreed to extend voluntary production cuts through Q1 2026. The supply restraint is expected to remove roughly 1.2 million b/d from the market and support prices."
+
 CRITICAL — EVERY explanation MUST literally begin with "With <commodity> at $<price>/<unit>," (e.g. "With oil at $73.07/bbl," or "With Brent crude at $94.50/bbl,"). Raw article sentences, mid-sentence fragments, and table-of-contents lines are strictly forbidden.
 
 BAD explanation — raw article sentence, does NOT start with commodity+price:
@@ -817,16 +823,13 @@ BAD explanation — starts with bullet, not summarized:
 BAD explanation — raw article opening, no commodity+price start:
 "Around four billion people experience severe water scarcity for at least one month each year, while drought impacts cost an estimated $307 billion annually."
 
-BAD explanation — multiple sentences (should be ONE sentence):
-"With oil at $73.07/bbl, OPEC+ has agreed to extend voluntary production cuts through Q1 2026. The supply restraint is expected to remove roughly 1.2 million b/d from the market."
-
 BAD explanation — contains page navigation chrome:
 "With oil at $104.86/bbl, in Energy Skip to page content Filter by article type In-brief analysis Nov 13 2026"
 
 BAD explanation — mid-sentence fragment starting with participle:
 "With oil at $104.86/bbl, using ship-to-ship transfers along Oman's coast added to supply which was reflected in prices during late October and early"
 
-Every explanation you output must follow the GOOD examples: ONE meaningful sentence, your own words, STARTS WITH commodity + current price number from currentPrices (literally "With <commodity> at $<price>/<unit>,"), no URLs, no markdown, no bullet points, no raw article text, no publication headers, dates, or metadata, no page navigation chrome, no participle-opener fragments. Focus on the specific price driver: what changed and why it matters for prices.
+Every explanation you output must follow the GOOD examples: 1-3 meaningful sentences, your own words, STARTS WITH commodity + current price number from currentPrices (literally "With <commodity> at $<price>/<unit>,"), no URLs, no markdown, no bullet points, no raw article text, no publication headers, dates, or metadata, no page navigation chrome, no participle-opener fragments. Focus on the specific price driver: what changed and why it matters for prices.
 
 === GROUNDING ===
 Every factor's explanation MUST reference the current price numbers supplied in currentPrices. For example: "with oil at $104.86/bbl, OPEC+ output cuts are tightening supply...". Use the numbers, do not paraphrase around them.
@@ -835,7 +838,7 @@ Every factor's explanation MUST reference the current price numbers supplied in 
 {"id":"example-1","name":"OPEC+ output restraint","category":"Market","commodities":["oil"],"explanation":"With oil at $104.86/bbl, OPEC+ members have agreed to extend voluntary production cuts through Q1 2026, which is expected to remove roughly 1.2 million b/d from the market and support prices in the short term.","direction":"up","magnitude":"High","source":"https://www.iea.org/reports/world-energy-outlook-2026","bias":"short","importanceScore":82,"drift":{"oil":0.5}}
 
 === JSON SCHEMA ===
-Each factor object must be exactly: { id: string; name: string; category: "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"; commodities: string[] (subset of oil, electricity, water); explanation: string (ONE meaningful sentence summarizing the reason found in the supplied source URL, starting with commodity + current price number); direction: "up"|"down"|"mixed"; magnitude: "High"|"Medium"|"Low"; source: string (the EXACT URL string from the candidate list — a URL, never a publication name); bias: "short"|"mid"|"long"|"flat"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }.
+Each factor object must be exactly: { id: string; name: string; category: "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"; commodities: string[] (subset of oil, electricity, water); explanation: string (1-3 meaningful sentences summarizing the reason found in the supplied source URL, starting with commodity + current price number); direction: "up"|"down"|"mixed"; magnitude: "High"|"Medium"|"Low"; source: string (the EXACT URL string from the candidate list — a URL, never a publication name); bias: "short"|"mid"|"long"|"flat"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }.
 
 The source field MUST be an exact URL string from the supplied candidate list. It is a URL, never a publication name.
 
@@ -849,7 +852,7 @@ const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
 === STEPS (follow in order) ===
 1. Read EVERY candidate's title, snippet, and full text carefully.
 2. Identify the CONCRETE reason the article gives for an oil, electricity, or water price movement. This is a factual claim the article itself makes, not your own inference.
-3. Write that reason in a SINGLE meaningful sentence in the explanation field. Start with the commodity and the current price number from currentPrices (e.g. "with oil at $104.86/bbl..."). Use the numbers; do not paraphrase around them.
+3. Write that reason in 1-3 meaningful sentences in the explanation field. Start with the commodity and the current price number from currentPrices (e.g. "with oil at $104.86/bbl..."). Use the numbers; do not paraphrase around them.
 4. Set the source field to the EXACT URL string from the candidate list — copy it verbatim, character for character. Never write a publication name.
 
 === FORBIDDEN ===
@@ -858,7 +861,7 @@ const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
 - NEVER output markdown or commentary outside the JSON.
 - NEVER output raw scraped text or article snippets verbatim. Always summarize in your own words.
 - NEVER start an explanation with a bullet point ("- ", "• ", "* "), a publication name ("OPEC ", "IEA ", "UN-Water "), or an article opening ("Around ", "According ", "The world ", "Global ").
-- NEVER write more than ONE sentence per explanation. Each explanation MUST be a single, complete, meaningful sentence (not a fragment, not a bullet point, not multiple sentences).
+- NEVER write more than THREE sentences per explanation. Each explanation MUST be 1-3 complete, meaningful sentences (not a fragment, not a bullet point).
 - NEVER include publication headers, dates, or metadata in the explanation.
 - NEVER include web navigation / page chrome text (e.g. "Skip to page content", "Filter by article type", "In-brief analysis", "In-depth analysis", category labels like "Energy", "Technology", "Markets") in the explanation.
 - NEVER start the explanation body (after "With <commodity> at $<price>/<unit>,") with a participle/gerund like "using ", "adding ", "reflecting ", "driving ", "pushing ", "showing " — these are mid-sentence fragments, not complete price-driver statements.
@@ -866,13 +869,13 @@ const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
 
 === EXPLANATION RULES ===
 - Write the explanation in YOUR OWN WORDS. Never copy text verbatim from the source article.
-- The explanation must be a SINGLE meaningful sentence that a human analyst would write.
+- The explanation must be 1-3 meaningful sentences that a human analyst would write.
 - NEVER include a URL inside the explanation text. The source URL goes ONLY in the "source" field.
 - NEVER include markdown links like [text](url) inside the explanation.
 - Start the explanation with the commodity and the current price number from currentPrices (e.g. "with oil at $104.86/bbl...").
 - Keep the explanation under 400 characters. Short and punchy is better than long and detailed.
 - If the article is about a price RISE, say prices are rising and why. If about a FALL, say prices are falling and why.
-- Each explanation MUST be a single, complete, meaningful sentence (not a fragment, not a bullet point, not multiple sentences)
+- Each explanation MUST be 1-3 complete, meaningful sentences (not a fragment, not a bullet point)
 - Do NOT start with bullet points (-, •, *, –, —) or article navigation text
 - Do NOT include publication headers, dates, or metadata
 - Do NOT include web navigation / page chrome (skip links, filter UI, article type labels, category headers)
@@ -890,6 +893,9 @@ GOOD explanation:
 GOOD explanation (water):
 "With water at $2.15/M³, drought-driven supply disruptions from scarcity affecting 4 billion people are pushing utility tariffs higher as scarcity premiums are increasingly reflected in consumer prices."
 
+GOOD explanation (two sentences, both grounded in commodity+price):
+"With oil at $73.07/bbl, OPEC+ has agreed to extend voluntary production cuts through Q1 2026. The supply restraint is expected to remove roughly 1.2 million b/d from the market and support prices."
+
 CRITICAL — EVERY explanation MUST literally begin with "With <commodity> at $<price>/<unit>," (e.g. "With oil at $73.07/bbl," or "With Brent crude at $94.50/bbl,"). Raw article sentences, mid-sentence fragments, and table-of-contents lines are strictly forbidden.
 
 BAD explanation — raw article sentence, does NOT start with commodity+price:
@@ -901,16 +907,13 @@ BAD explanation — starts with bullet, not summarized:
 BAD explanation — raw article opening, no commodity+price start:
 "Around four billion people experience severe water scarcity for at least one month each year, while drought impacts cost an estimated $307 billion annually."
 
-BAD explanation — multiple sentences (should be ONE sentence):
-"With oil at $73.07/bbl, OPEC+ has agreed to extend voluntary production cuts through Q1 2026. The supply restraint is expected to remove roughly 1.2 million b/d from the market."
-
 BAD explanation — contains page navigation chrome:
 "With oil at $104.86/bbl, in Energy Skip to page content Filter by article type In-brief analysis Nov 13 2026"
 
 BAD explanation — mid-sentence fragment starting with participle:
 "With oil at $104.86/bbl, using ship-to-ship transfers along Oman's coast added to supply which was reflected in prices during late October and early"
 
-Every explanation you output must follow the GOOD examples: ONE meaningful sentence, your own words, STARTS WITH commodity + current price number from currentPrices (literally "With <commodity> at $<price>/<unit>,"), no URLs, no markdown, no bullet points, no raw article text, no publication headers, dates, or metadata, no page navigation chrome, no participle-opener fragments. Focus on the specific price driver: what changed and why it matters for prices.
+Every explanation you output must follow the GOOD examples: 1-3 meaningful sentences, your own words, STARTS WITH commodity + current price number from currentPrices (literally "With <commodity> at $<price>/<unit>,"), no URLs, no markdown, no bullet points, no raw article text, no publication headers, dates, or metadata, no page navigation chrome, no participle-opener fragments. Focus on the specific price driver: what changed and why it matters for prices.
 
 === GROUNDING ===
 Every factor's explanation MUST reference the current price numbers supplied in currentPrices. For example: "with oil at $104.86/bbl, OPEC+ output cuts are tightening supply...". Use the numbers, do not paraphrase around them.
@@ -919,7 +922,7 @@ Every factor's explanation MUST reference the current price numbers supplied in 
 {"id":"example-1","name":"OPEC+ output restraint","category":"Market","commodities":["oil"],"explanation":"With oil at $104.86/bbl, OPEC+ members have agreed to extend voluntary production cuts through Q1 2026, which is expected to remove roughly 1.2 million b/d from the market and support prices in the short term.","direction":"up","magnitude":"High","source":"https://www.iea.org/reports/world-energy-outlook-2026","bias":"short","importanceScore":82,"drift":{"oil":0.5}}
 
 === JSON SCHEMA ===
-Each factor object must be exactly: { id: string; name: string; category: "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"; commodities: string[] (subset of oil, electricity, water); explanation: string (ONE meaningful sentence summarizing the reason found in the supplied source URL, starting with commodity + current price number); direction: "up"|"down"|"mixed"; magnitude: "High"|"Medium"|"Low"; source: string (the EXACT URL string from the candidate list — a URL, never a publication name); bias: "short"|"mid"|"long"|"flat"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }.
+Each factor object must be exactly: { id: string; name: string; category: "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"; commodities: string[] (subset of oil, electricity, water); explanation: string (1-3 meaningful sentences summarizing the reason found in the supplied source URL, starting with commodity + current price number); direction: "up"|"down"|"mixed"; magnitude: "High"|"Medium"|"Low"; source: string (the EXACT URL string from the candidate list — a URL, never a publication name); bias: "short"|"mid"|"long"|"flat"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }.
 
 The source field MUST be an exact URL string from the supplied candidate list. It is a URL, never a publication name.
 
@@ -1952,14 +1955,14 @@ export async function runFactorAnalysis(
     // returns invalid JSON or an empty factors array.
     if ((!parsed || !Array.isArray(parsed.factors) || parsed.factors.length === 0) && !signal?.aborted) {
       const candidateUrlHint = candidateObjs.map((c) => c.url).filter(Boolean).join(", ");
-      const retryPrompt = `Return ONLY a strict JSON object of the form {"factors":[...]}. Each factor MUST have: id (string), name (string), category (one of "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"), commodities (array subset of "oil","electricity","water"), explanation (ONE meaningful sentence UNDER 400 CHARACTERS that LITERAL BEGINS with "With <commodity> at $<price>/<unit>," and cites the current price numbers from currentPrices, e.g. "With oil at $104.86/bbl..."), direction ("up"|"down"|"mixed"), magnitude ("High"|"Medium"|"Low"), source (EXACTLY one of these URLs, copy verbatim: ${candidateUrlHint}), bias ("short"|"mid"|"long"|"flat"), importanceScore (integer 0-100), drift (object mapping commodity to a small decimal). The source field MUST be a URL copied verbatim from the list above — never a publication name. Ground every explanation in the current price numbers. NEVER include a URL or markdown link inside the explanation field. Write explanations in your own words, ONE single meaningful sentence max, starting with the commodity and current price number. Do NOT copy raw text verbatim — summarize in your own words. NEVER start with a bullet point or publication name. NEVER write more than ONE sentence per explanation. NEVER include publication headers, dates, or metadata. NEVER include web navigation / page chrome text (e.g. "Skip to page content", "Filter by article type", "In-brief analysis", "In-depth analysis", category labels like "Energy", "Technology", "Markets"). NEVER start the explanation body (after "With <commodity> at $<price>/<unit>,") with a participle/gerund like "using ", "adding ", "reflecting ", "driving ", "pushing ", "showing " — these are mid-sentence fragments, not complete price-driver statements. Focus on the specific price driver: what changed and why it matters for prices. Do NOT output markdown, commentary, or anything outside the JSON object.
+      const retryPrompt = `Return ONLY a strict JSON object of the form {"factors":[...]}. Each factor MUST have: id (string), name (string), category (one of "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"), commodities (array subset of "oil","electricity","water"), explanation (1-3 meaningful sentences UNDER 400 CHARACTERS TOTAL that LITERAL BEGINS with "With <commodity> at $<price>/<unit>," and cites the current price numbers from currentPrices, e.g. "With oil at $104.86/bbl..."), direction ("up"|"down"|"mixed"), magnitude ("High"|"Medium"|"Low"), source (EXACTLY one of these URLs, copy verbatim: ${candidateUrlHint}), bias ("short"|"mid"|"long"|"flat"), importanceScore (integer 0-100), drift (object mapping commodity to a small decimal). The source field MUST be a URL copied verbatim from the list above — never a publication name. Ground every explanation in the current price numbers. NEVER include a URL or markdown link inside the explanation field. Write explanations in your own words, 1-3 meaningful sentences max, starting with the commodity and current price number. Do NOT copy raw text verbatim — summarize in your own words. NEVER start with a bullet point or publication name. NEVER write more than THREE sentences per explanation. NEVER include publication headers, dates, or metadata. NEVER include web navigation / page chrome text (e.g. "Skip to page content", "Filter by article type", "In-brief analysis", "In-depth analysis", category labels like "Energy", "Technology", "Markets"). NEVER start the explanation body (after "With <commodity> at $<price>/<unit>,") with a participle/gerund like "using ", "adding ", "reflecting ", "driving ", "pushing ", "showing " — these are mid-sentence fragments, not complete price-driver statements. Focus on the specific price driver: what changed and why it matters for prices. Do NOT output markdown, commentary, or anything outside the JSON object.
 
 CRITICAL BAD EXAMPLES — DO NOT REPEAT:
 BAD: "Global electricity demand growth accelerates as markets navigate energy price shocks Global power demand is on track to rise faster in 2026 and 2027 than in 202" (raw article sentence, does not start with commodity+price)
 BAD: "With oil at $104.86/bbl, in Energy Skip to page content Filter by article type In-brief analysis Nov 13 2026" (contains page navigation chrome)
 BAD: "With oil at $104.86/bbl, using ship-to-ship transfers along Oman's coast added to supply which was reflected in prices during late October and early" (mid-sentence fragment starting with participle)
 
-Every explanation you output must follow the GOOD format: literal "With <commodity> at $<price>/<unit>,..." opening, ONE meaningful sentence, your own words, no URLs, no markdown, no bullet points, no raw article text, no publication headers, dates, or metadata, no page navigation chrome, no participle-opener fragments.`;
+Every explanation you output must follow the GOOD format: literal "With <commodity> at $<price>/<unit>,..." opening, 1-3 meaningful sentences, your own words, no URLs, no markdown, no bullet points, no raw article text, no publication headers, dates, or metadata, no page navigation chrome, no participle-opener fragments.`;
 
       console.warn(`Factor analysis: retrying Kilo for scope "${scope}" after invalid/empty response (content length ${content.length}, factors ${Array.isArray(parsed?.factors) ? parsed.factors.length : 0})`);
 

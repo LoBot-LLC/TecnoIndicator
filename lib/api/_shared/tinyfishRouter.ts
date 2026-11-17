@@ -96,7 +96,7 @@ export class TinyFishRouter {
     const combinedSignal = abortSignal
       ? combineAbortSignals(abortSignal, controller.signal)
       : controller.signal;
-    const overallTimeout = setTimeout(() => controller.abort(), 3000);
+    const overallTimeout = setTimeout(() => controller.abort(), 5000);
     try {
       const probeResults = await Promise.all(
         this.keyStates.map(async (keyState) => {
@@ -234,7 +234,7 @@ export class TinyFishRouter {
            headers: {
              "X-API-Key": testKey,
            },
-           signal: abortSignal ?? AbortSignal.timeout(10000),
+            signal: abortSignal ?? AbortSignal.timeout(15000),
          });
 
         const status = response.status;
@@ -355,7 +355,7 @@ export class TinyFishRouter {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
-          signal: abortSignal ?? AbortSignal.timeout(10000),
+          signal: abortSignal ?? AbortSignal.timeout(15000),
         });
 
         const status = response.status;

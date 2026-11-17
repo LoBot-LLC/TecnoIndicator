@@ -119,7 +119,7 @@ The curation flow runs end-to-end whenever factors are requested (on-demand or v
 
 1. **TinyFish Search** — A broad search query (with recency constraints) hits `api.search.tinyfish.ai` to gather candidate source URLs.
 2. **Reputable + Recent Filter** — Results are filtered to reputable hosts and recent content. If that filter removes everything, curation retries with all recent results.
-3. **TinyFish Search (with intent)** — Each search query carries a `purpose` statement so TinyFish ranks results against the price-relevance goal. If search returns zero candidates after reputable + recent filters, curation falls back to scraping a list of `KNOWN_REPUTABLE_URLS` (IEA World Energy Outlook, OPEC, EIA, UN-Water, WRI, IRENA) directly via TinyFish fetch.
+3. **Known-URL Fallback** — If search returns zero candidates after the reputable + recent filters (and after the retry with all recent results), curation falls back to scraping a list of `KNOWN_REPUTABLE_URLS` (IEA World Energy Outlook, OPEC, EIA, UN-Water, WRI, IRENA) directly via TinyFish fetch, then builds deterministic factors from whatever was scraped.
 4. **TinyFish Scrape** — Each candidate URL is scraped via `api.fetch.tinyfish.ai`, with a short `purpose` statement so TinyFish tailors extraction to the price-relevance goal. Full article text is preserved for use in deterministic fallbacks when AI curation is unavailable.
 5. **Kilo Gateway JSON Curation** — The scraped content is sent to Kilo Gateway (`api.kilo.ai/api/gateway`, OpenAI-compatible) with a `json_object` response request. The shared `safeParseJson` helper tolerates markdown code fences and surrounding prose. The system prompts include few-shot GOOD/BAD explanation examples to steer the model away from raw scraped text.
 6. **Server-side Explanation Sanitization** — The `sanitizeExplanation` function strips embedded URLs/markdown links, strips markdown headers (`###`, `####`), strips a leading bullet/list marker (`- `, `• `, `* `, `– `, `— `) so a pasted article bullet never reaches the UI, collapses whitespace, and enforces **exactly ONE meaningful sentence** by cutting at the first sentence boundary (if the cut is at least 30 chars from the start, avoiding abbreviations like "U.S."). If no sentence boundary is found (e.g., table-of-contents text), it truncates at a word boundary to **400 chars** and appends an ellipsis. Explanations are sanitized server-side as defense-in-depth against model output that ignores prompt instructions.
@@ -175,9 +175,15 @@ When live curation is unavailable — TinyFish search/scrape fails, Kilo Gateway
 
 ### Data & Models (`src/lib/`)
 - **Forecast Engine** (`model.ts`) — Client-side forecast computations, `FACTORS` / `REGIONAL_FACTORS` static fallbacks, commodity types, and scenario math
-- **Deterministic Analytics** — Fuel levy, grid loss, water scarcity calculations
-- **Currency & Unit Conversion** — Multi-currency support with real-time formatting
-- **Markdown Report Generator** — Export forecasts as `.md` reports
+- **Currency & Unit Conversion** (`currencies.ts`, `units.ts`) — Multi-currency support with real-time formatting
+- **Markdown Report Generator** (`markdown.ts`) — Export forecasts as `.md` reports
+
+### Deterministic Analytics (Backend)
+- **Fuel levy, grid loss, water scarcity calculations** (`lib/api/_shared/deterministicAnalytics.ts`)
+- **Price grounding and cache utilities** (`lib/api/_shared/deterministicAnalytics.ts`)
+- **Cache management** (`lib/api/_shared/cache.ts`) — In-memory + optional Upstash Redis with TTLs
+- **Health checks** (`lib/api/handlers/health.ts`)
+- **Environment & validation** (`lib/api/_shared/http.ts`, `lib/api/_shared/validation.ts`)
 
 ### Development & Build Tooling
 - **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run typecheck` / `npm run build`)
@@ -289,16 +295,21 @@ When live curation is unavailable — TinyFish search/scrape fails, Kilo Gateway
 ├── sandbox-quickstart/                  # Standalone dev sandbox (separate package.json)
 │   ├── .gitignore
 │   ├── index.ts
-│   └── package.json
+│   ├── package.json
+│   └── pnpm-lock.yaml
 │
 ├── .env.example                         # Environment variable template
 ├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.md                # Bug report template
+│   │   └── feature_request.md           # Feature request template
 │   └── workflows/                       # CI/CD workflows
 │       ├── nextjs.yml
 │       └── nodejs.yml
 ├── .gitignore
 ├── LICENSE                              # MIT License
 ├── next.config.ts                       # Next.js configuration
+├── next-env.d.ts                        # Next.js TypeScript declarations
 ├── package.json                         # Root dependencies & scripts
 ├── package-lock.json                    # npm lockfile
 ├── pnpm-lock.yaml                       # pnpm lockfile

@@ -77,12 +77,60 @@ export function toFactorsPayload(
  * - Strips markdown emphasis that may have wrapped URLs
  * - Strips markdown headers (###, ####, etc.)
  * - Collapses spaces/newlines
+ * - Strips leading page chrome / metadata (report titles, "Release Date:"
+ *   fields, "Full Report | Text Only" navigation, "Cite report ... Licence:
+ *   CC BY 4.0" banners) before sentence enforcement
  * - Enforces ONE sentence: cuts at the first sentence boundary (., !, ?)
  *   if the cut point is at least 30 chars from the start (avoids cutting at
  *   abbreviations like "U.S.").
  * - If no sentence boundary found, truncates to 400 chars at word boundary.
  * - Truncates to 400 chars at a sentence/word boundary (never mid-sentence)
  */
+
+/**
+ * Leading page-chrome / metadata patterns stripped from the start of an
+ * explanation before single-sentence enforcement. These come from scraped
+ * report pages, e.g. "‹ Analysis & Projections Short-Term Energy Outlook
+ * Release Date: November 10, 2026 | Forecast Completed: ... | Full Report |
+ * Text Only | All Tables | All Figures Forecast overview Global oil prices."
+ * or "Cite report IEA (2026), Electricity 2026, IEA, Paris Licence: CC BY 4.0
+ * Share this report Report options Download".
+ */
+const LEADING_CHROME_PATTERNS: RegExp[] = [
+  // Leading symbols / quotes / guillemets ("‹", "«", """, "|", "…")
+  /^[^A-Za-z0-9$("']+/,
+  // "Cite report IEA (2026), Electricity 2026, IEA, Paris Licence: CC BY 4.0"
+  /^cite\s+report\b[\s\S]*?(?:licence|license)\s*:\s*cc\s+by\s+\d+(?:\.\d+)?\s*/i,
+  // Date / release metadata fields, up to the next pipe separator
+  /^(?:release\s+date|forecast\s+completed|next\s+release\s+date)\s*:\s*[^|]*\|?\s*/i,
+  // Standalone page-chrome labels
+  /^(?:share\s+this\s+report|report\s+options|cite\s+report|download)\b[\s|:]*/i,
+  /^(?:full\s+report|text\s+only|all\s+tables|all\s+figures)\b[\s|:]*/i,
+  // Section headings / report titles
+  /^(?:analysis\s*&\s*projections|short-term\s+energy\s+outlook)\b[\s|:]*/i,
+  /^(?:forecast\s+overview|oil\s+market\s+highlights|crude\s+oil\s+price\s+movements|commodity\s+markets|world\s+economy|product\s+markets?\s+and\s+refinery\s+operations|tanker\s+market)\b[\s:.|]*/i,
+  // "Global oil prices." style headings. The trailing period is required so a
+  // genuine sentence opener like "Global oil prices rose..." is not mangled.
+  /^global\s+oil\s+prices\s*\.\s*/i,
+];
+
+/** Repeatedly strips leading page-chrome chunks until none match. */
+function stripLeadingPageChrome(text: string): string {
+  let result = text.trim();
+  for (let i = 0; i < 12; i++) {
+    let changed = false;
+    for (const pattern of LEADING_CHROME_PATTERNS) {
+      const next = result.replace(pattern, "").trim();
+      if (next !== result) {
+        result = next;
+        changed = true;
+      }
+    }
+    if (!changed || result.length === 0) break;
+  }
+  return result;
+}
+
 export function sanitizeExplanation(text: string): string {
   if (typeof text !== "string" || text.trim().length === 0) return "";
   let cleaned = text
@@ -105,6 +153,13 @@ export function sanitizeExplanation(text: string): string {
     .replace(/\n+/g, " ")
     // Strip leading/trailing whitespace
     .trim();
+
+  // Strip leading page chrome / metadata chunks (report titles, "Release
+  // Date:" fields, "Full Report | Text Only | All Tables" navigation,
+  // "Forecast overview Global oil prices." headings, "Cite report ... Licence:
+  // CC BY 4.0" banners) before sentence enforcement, so the retained sentence
+  // is real article content rather than report chrome.
+  cleaned = stripLeadingPageChrome(cleaned);
 
   // Enforce ONE sentence: cut at the first sentence boundary (., !, ?)
   // followed by whitespace or end-of-string, but only if at least 30 chars from
@@ -269,10 +324,13 @@ function pickCleanSnippet(snippet: string): string {
  * Rejection criteria:
  * - Starts with a bullet point ("- ", "• ", "* ", "– ", "— ") — clear sign of raw scraped text
  * - Is static fallback placeholder text — these are placeholders, not real summaries
+ * - Starts with a generic meta-analysis / report-intro opener (e.g. "the report ",
+ *   "this study ", "the analysis ", "in this ") — these describe the publication
+ *   itself rather than a concrete price driver
  * - Starts with a known raw-article opener (publication name, article opening)
  * - Is multiple sentences — must be exactly ONE meaningful sentence
- * - Too short (< 50 chars) or too long (> 2000 chars for a proper summary)
- * - Too few sentences for length (> 100 chars with no sentence-ending punctuation)
+ * - Too short (< 50 chars) or too long (> 400 chars for a proper summary)
+ * - Too few sentences for length (> 50 chars with no sentence-ending punctuation)
  */
 export function validateExplanationQuality(explanation: string): { ok: boolean; reason?: string } {
   if (!explanation || typeof explanation !== "string") {
@@ -287,6 +345,25 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
   // Reject static fallback factor text — these are placeholders, not real summaries
   if (/^static\s+/i.test(trimmed) && /fallback factor maintained/i.test(trimmed)) {
     return { ok: false, reason: "static fallback text" };
+  }
+
+  const lower = trimmed.toLowerCase();
+
+  // Reject generic meta-analysis / report-intro openers ("The report provides
+  // a detailed analysis...", "This study examines...", "In this outlook...").
+  // These describe the publication itself rather than a concrete price driver,
+  // so they trigger a repair round (reSummarizeExplanation) instead of being
+  // shown to the user. Checked before the narrow raw-article starter list so
+  // the failure reason is accurate.
+  const genericStarters = [
+    "the report ", "the study ", "the article ", "the analysis ", "the paper ",
+    "the document ", "the data ", "the source ", "this report ", "this study ",
+    "this article ", "this analysis ", "these reports ", "the following ", "in this ",
+  ];
+  for (const starter of genericStarters) {
+    if (lower.startsWith(starter)) {
+      return { ok: false, reason: "generic analysis text" };
+    }
   }
 
   // Reject known raw-article starters that indicate the model copied verbatim.
@@ -317,7 +394,6 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     "around ", "according ", "four ", "million ", "billion ", "the world ",
     "demand ", "supply ",
   ];
-  const lower = trimmed.toLowerCase();
   for (const starter of rawStarters) {
     if (lower.startsWith(starter)) {
       // Allow if it starts with commodity+price pattern (e.g. "Oil at $XX...")
@@ -437,9 +513,10 @@ Text to summarize: "${rawExplanation}"`;
       return sanitized;
     }
 
-    // If still fails quality, apply last-resort truncation
+    // If still fails quality, apply last-resort truncation (never exceed 400
+    // chars so the UI never receives an overflowing explanation).
     console.warn(`reSummarizeExplanation: sanitized result still failed quality ("${quality.reason}"); applying last-resort truncation`);
-    return truncateToSentenceBoundary(sanitized, 2000);
+    return truncateToSentenceBoundary(sanitized, 400);
   } catch {
     return null;
   }
@@ -475,14 +552,12 @@ function truncateToSentenceBoundary(text: string, maxLen: number = 400): string 
  * No factor with a bad explanation is ever returned unrepaired.
  *
  * For each factor:
- * - If explanation passes quality check → kept as-is
- * - If explanation fails → attempts reSummarizeExplanation repair round
- * - If re-summarization succeeds and passes quality → uses re-summarized text
- * - If re-summarization fails → last-resort: sanitize + truncate to 2000 chars, never drop
- * - If even sanitized text is empty → uses a safe generic placeholder
- *
- * Never drops a factor — better to have a clean short explanation than no factor at all.
- */
+  * - If re-summarization succeeds and passes quality → uses re-summarized text
+  * - If re-summarization fails → last-resort: sanitize + truncate to 400 chars, never drop
+  * - If even sanitized text is empty → uses a safe generic placeholder
+  *
+  * Never drops a factor — better to have a clean short explanation than no factor at all.
+  */
 export function filterStaticFallbacks(factors: Factor[]): Factor[] {
   return factors.filter((f) => {
     const trimmed = (f?.explanation ?? "").trim();
@@ -526,10 +601,19 @@ export async function validateAndRepairWindow(
     } else {
       console.warn(`validateAndRepairWindow: re-summarization returned null for factor "${f.name}"; using last-resort sanitization`);
     }
-    // Last resort: sanitize and truncate heavily, never drop the factor
+    // Last resort: sanitize and truncate to 400 chars, then re-check quality.
+    // If the sanitized text still looks like noise (generic meta-analysis,
+    // page chrome, etc.), use a safe generic placeholder instead of ever
+    // letting noisy text reach the UI.
     const sanitized = sanitizeExplanation(f.explanation);
     if (sanitized) {
-      repaired.push({ ...f, explanation: sanitized });
+      const sanitizedQuality = validateExplanationQuality(sanitized);
+      if (sanitizedQuality.ok) {
+        repaired.push({ ...f, explanation: sanitized });
+      } else {
+        console.warn(`validateAndRepairWindow: sanitized fallback still failed quality ("${sanitizedQuality.reason}") for factor "${f.name}"; using generic placeholder`);
+        repaired.push({ ...f, explanation: "Price movement driven by market factors reported by the source." });
+      }
     } else {
       repaired.push({ ...f, explanation: "Price movement driven by market factors reported by the source." });
     }
@@ -918,19 +1002,29 @@ export function buildFallbackFactors(scope: RegionId): Factor[] {
       // Explanation: extract a meaningful summary from the best available source.
       // Prefer the search snippet when it is a clean, complete sentence summary —
       // it is short and self-contained. Fall back to the full scraped text when
-      // the snippet is missing or looks like a mid-article fragment.
+      // the snippet is missing or its extracted summary fails the quality
+      // heuristics (generic meta-analysis text, page chrome, fragments).
       let explanation = "";
       const cleanSnippet = pickCleanSnippet(snippet);
       if (cleanSnippet) {
-        explanation = extractSummaryFromArticle(cleanSnippet);
+        explanation = sanitizeExplanation(extractSummaryFromArticle(cleanSnippet));
       }
-      if (!explanation && text) {
-        explanation = extractSummaryFromArticle(text);
+      if (!validateExplanationQuality(explanation).ok && text) {
+        const fromText = sanitizeExplanation(extractSummaryFromArticle(text));
+        if (validateExplanationQuality(fromText).ok) {
+          explanation = fromText;
+        }
       }
-      if (explanation) {
-        explanation = sanitizeExplanation(explanation);
+      // Never push a noisy factor: if the cleaned explanation still fails the
+      // quality heuristics (generic meta-analysis text / no meaningful driver),
+      // skip the candidate entirely instead of surfacing page chrome to the UI.
+      const quality = validateExplanationQuality(explanation);
+      if (!quality.ok) {
+        console.warn(
+          `buildFactorsFromCandidates: skipping candidate "${candidate.url}" — extracted explanation failed quality ("${quality.reason}")`,
+        );
+        return;
       }
-      if (!explanation) return;
 
       const name = (title || explanation.slice(0, 160) || `Market update: ${candidate.url}`).slice(0, 160);
 

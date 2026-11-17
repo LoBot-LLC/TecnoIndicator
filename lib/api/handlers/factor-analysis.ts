@@ -962,7 +962,54 @@ export function buildFallbackFactors(scope: RegionId): Factor[] {
 }
 
 /**
-   * Deterministic, URL-backed factor construction used when Kilo fails to return
+ * Patterns that indicate a factor name is really a publication/report title
+ * (e.g. "World Oil Outlook", "Monthly Oil Market Report", "IEA") rather than
+ * a concrete price driver. These names are replaced with one derived from the
+ * explanation.
+ */
+const PUBLICATION_NAME_PATTERNS: RegExp[] = [
+  /\b(report|outlook|monthly|annual|new)\b/i,
+  /prices\s*-/i,
+  /\b(iea|opec|eia|un[- ]water|wri|irena)\b/i,
+];
+
+/**
+ * Derives a concise, human-readable factor name (max ~80 chars) from an
+ * explanation that starts with "with [commodity] at $[price]/[unit], ...".
+ * Strips the price-preamble prefix, takes the leading clause (up to the first
+ * comma/semicolon), title-cases each token while preserving acronyms
+ * (OPEC+, IEA) and units (mb/d, MWh), and truncates. Returns "" when the
+ * explanation doesn't match the expected format so callers can fall back.
+ */
+function deriveFactorNameFromExplanation(explanation: string): string {
+  if (!explanation || typeof explanation !== "string") return "";
+
+  const trimmed = explanation.trim();
+  // Strip the "with [commodity] at $[price]/[unit], " preamble prefix.
+  const body = trimmed.replace(/^with\s+.+?at\s+\$[\d,.]+\/[^,\s]+,\s*/i, "");
+  if (body === trimmed || body.length === 0) return "";
+
+  // Take the first clause up to a comma/semicolon, dropping a leading
+  // conjunction if one leaked in.
+  const clause = body.split(/[,;]/)[0].trim().replace(/^(and|or|but|so|yet|for|nor)\s+/i, "");
+  if (!clause) return "";
+
+  const name = clause
+    .split(/\s+/)
+    .map((token) => {
+      // Preserve all-caps acronyms (OPEC+, IEA, EIA) and mixed units (mb/d).
+      if (/^[A-Z][A-Z0-9+/]+$/.test(token)) return token;
+      return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+    })
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return name.slice(0, 80) || "";
+}
+
+/**
+ * Deterministic, URL-backed factor construction used when Kilo fails to return
    * usable factors but TinyFish successfully produced real candidate URLs. Each
    * factor is built directly from a fetched article — the name from its title, the
    * explanation from a meaningful extracted summary, and the source from the actual
@@ -1026,7 +1073,7 @@ export function buildFallbackFactors(scope: RegionId): Factor[] {
         return;
       }
 
-      const name = (title || explanation.slice(0, 160) || `Market update: ${candidate.url}`).slice(0, 160);
+      const name = (deriveFactorNameFromExplanation(explanation) || explanation.slice(0, 160) || `Market update: ${candidate.url}`).slice(0, 160);
 
       const haystack = `${title} ${snippet} ${text}`.toLowerCase();
 
@@ -1094,6 +1141,14 @@ export function normalizeFactor(
   const name = typeof f.name === "string" ? f.name.trim() : "";
   const explanation = typeof f.explanation === "string" ? f.explanation.trim() : "";
   const source = typeof f.source === "string" ? f.source.trim() : "";
+
+  // Replace publication-like names (report/outlook titles, agency names) with a
+  // concise name derived from the explanation, so the UI never shows a bare
+  // publication name such as "World Oil Outlook" or "Monthly Oil Market Report".
+  const finalName =
+    PUBLICATION_NAME_PATTERNS.some((p) => p.test(name))
+      ? deriveFactorNameFromExplanation(explanation) || name
+      : name;
   const id =
     typeof f.id === "string" && f.id.trim()
       ? f.id.trim()
@@ -1130,7 +1185,7 @@ export function normalizeFactor(
   // one affected commodity. The source is resolved separately below so a
   // non-URL source string (e.g. a publication name the model returned) does not
   // by itself invalidate the factor — we fall back to a fetched candidate URL.
-  if (!name || !explanation || importanceScore < 20 || commodities.length === 0) return null;
+  if (!finalName || !explanation || importanceScore < 20 || commodities.length === 0) return null;
 
   const now = new Date().toISOString();
   const driftRaw = (f.drift ?? {}) as Record<string, unknown>;
@@ -1151,7 +1206,7 @@ export function normalizeFactor(
 
   return {
     id: id.slice(0, 80),
-    name: name.slice(0, 160),
+    name: finalName.slice(0, 160),
     category: category.slice(0, 80),
     commodities: Array.from(new Set(commodities)) as Factor["commodities"],
     explanation: sanitizeExplanation(explanation),

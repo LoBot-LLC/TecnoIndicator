@@ -1,5 +1,6 @@
 import {
   buildFallbackFactors,
+  filterStaticFallbacks,
   isFreshWindow,
   readFactorWindow,
   runFactorAnalysis,
@@ -77,7 +78,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     // Degrade to whatever is already stored (or the static fallbacks) rather
     // than failing the request outright.
     const stored = await readFactorWindow(scope).catch(() => null);
-    const factors = stored?.factors.length ? stored.factors : buildFallbackFactors(scope);
+    const factors = filterStaticFallbacks(stored?.factors.length ? stored.factors : buildFallbackFactors(scope));
     const currentPrices = getScopePriceDefaults(scope);
     const repaired = await validateAndRepairWindow(factors, currentPrices, undefined);
     return Response.json(

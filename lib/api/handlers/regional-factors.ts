@@ -1,5 +1,6 @@
 import {
   buildFallbackFactors,
+  filterStaticFallbacks,
   isFreshWindow,
   readFactorWindow,
   runFactorAnalysis,
@@ -63,7 +64,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
   } catch (error) {
     console.error("Regional factors error:", sanitizeError(String(error)));
     const stored = await readFactorWindow(region).catch(() => null);
-    const factors = stored?.factors.length ? stored.factors : buildFallbackFactors(region);
+    const factors = filterStaticFallbacks(stored?.factors.length ? stored.factors : buildFallbackFactors(region));
     const currentPrices = getScopePriceDefaults(region);
     const repaired = await validateAndRepairWindow(factors, currentPrices, undefined);
     return Response.json(

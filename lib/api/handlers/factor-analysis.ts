@@ -19,6 +19,7 @@ import {
   type RegionId,
 } from "../_shared/types";
 import { getScopePriceDefaults } from "../_shared/deterministicAnalytics";
+import { truncateAtWordBoundary, truncateAtSentenceBoundary } from "../_shared/textUtils";
 
 /**
  * The shape stored under the canonical `dynamic-factors:{scope}` key. Every
@@ -185,76 +186,35 @@ export function sanitizeExplanation(text: string): string {
   // the start (avoids cutting at abbreviations like "U.S."). Also avoid common
   // month abbreviations (Jan., Feb., Mar., Apr., Jun., Jul., Aug., Sep., Oct.,
   // Nov., Dec.) which frequently appear in scraped date strings.
-  const sentenceBoundaryRegex = /[.!?](?:\s|$)/g;
-  let sentenceEnds: number[] = [];
-  let match;
-  while ((match = sentenceBoundaryRegex.exec(cleaned)) !== null) {
-    const pos = match.index;
-    // Skip if this looks like an abbreviation: preceded by a single capital
-    // letter (e.g., "U.S.") or a known month abbreviation (e.g., "Oct.")
-    const before = cleaned.slice(Math.max(0, pos - 5), pos);
-    const isAbbreviation =
-      /[A-Z]\.$/.test(before) || // U.S., U.K., etc.
-      /\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.$/i.test(before); // Month abbreviations
-    if (!isAbbreviation && pos >= 30) {
-      sentenceEnds.push(pos);
-      if (sentenceEnds.length >= 3) break;
-    }
-  }
-  if (sentenceEnds.length > 0) {
-    // Take up to 3 sentences
-    const thirdSentenceEnd = sentenceEnds[Math.min(2, sentenceEnds.length - 1)];
-    cleaned = cleaned.slice(0, thirdSentenceEnd + 1).trim();
-  } else {
-    // No proper sentence boundary found (e.g., table of contents, clipped
-    // fragment from a mid-sentence extraction). Truncate at word boundary
-    // and append an ellipsis so the result is clearly a truncated fragment
-    // rather than a complete-but-unpunctuated sentence. This is critical for
-    // short fragments like "using ship-to-ship transfers along Oman's coast
-    // added to supply, which was reflected in prices during late October and
-    // early" — without this, the fragment passes downstream checks as a
-    // "complete" sentence.
-    if (cleaned.length > 400) {
-      const cut = cleaned.slice(0, 400);
-      const lastSpace = cut.lastIndexOf(" ");
-      cleaned = lastSpace > 50 ? cut.slice(0, lastSpace).trim() + "…" : cut.trim() + "…";
-    } else if (cleaned.length > 0) {
-      // Short text with no sentence boundary — mark as truncated fragment
-      cleaned = cleaned + "…";
-    }
-  }
 
-  // Truncate to 400 chars at a sentence boundary (never mid-sentence)
-  if (cleaned.length > 400) {
-    const cut = cleaned.slice(0, 400);
-    const lastSentenceEnd = Math.max(
-      cut.lastIndexOf(". "),
-      cut.lastIndexOf("! "),
-      cut.lastIndexOf("? "),
-    );
-    const cutAt = lastSentenceEnd > 50 ? lastSentenceEnd + 2 : cut.lastIndexOf(" ");
-    cleaned = cleaned.slice(0, cutAt).trim();
-    if (!cleaned.endsWith(".") && !cleaned.endsWith("!") && !cleaned.endsWith("?") && !cleaned.endsWith("…")) {
-      cleaned += "…";
-    }
-  }
+  const FACTOR_MAX_EXPLANATION_CHARS = 400;
+  const FACTOR_ELLIPSIS = "…";
 
-  // Final cleanup: remove a truncated trailing fragment after the last period.
+  // Extract up to 3 complete sentences from the cleaned text using
+  // sentence-boundary-aware truncation (word/sentence boundary, never mid-word).
+  const cleanedForSentenceCut = truncateAtSentenceBoundary(cleaned, FACTOR_MAX_EXPLANATION_CHARS, {
+    minPrefix: 30,
+    ellipsis: FACTOR_ELLIPSIS,
+  });
+
+  // If the text already fits within the limit, keep it verbatim (no ellipsis
+  // added when there is nothing to truncate).
+  let result = cleanedForSentenceCut;
+
+  // Trim a truncated trailing fragment after the last terminal punctuation.
   // E.g. "... petroleum products. E" → "... petroleum products.", or a short
-  // clipped tail like "cheap" that has no terminal punctuation. Only trims back
-  // when there is earlier terminal punctuation to fall back to.
-  cleaned = cleaned.replace(/([.!?])\s+[A-Za-z]{1,2}\s*$/u, "$1").trim();
+  // clipped tail like "cheap" that has no terminal punctuation.
   const lastTerminal = Math.max(
-    cleaned.lastIndexOf("."),
-    cleaned.lastIndexOf("!"),
-    cleaned.lastIndexOf("?"),
+    result.lastIndexOf("."),
+    result.lastIndexOf("!"),
+    result.lastIndexOf("?"),
   );
-  const tail = lastTerminal >= 0 ? cleaned.slice(lastTerminal + 1).trim() : cleaned;
+  const tail = lastTerminal >= 0 ? result.slice(lastTerminal + 1).trim() : result;
   if (lastTerminal >= 0 && tail.length > 0 && tail.length < 15 && !/[.!?…]$/.test(tail)) {
-    cleaned = cleaned.slice(0, lastTerminal + 1).trim();
+    result = result.slice(0, lastTerminal + 1).trim();
   }
 
-  return cleaned;
+  return result;
 }
 
 /**
@@ -796,24 +756,12 @@ Text to summarize: "${rawExplanation}"`;
  * Truncates text to `maxLen` characters at the nearest sentence boundary.
  * If no sentence boundary is found within the text, cuts at the last word
  * boundary and appends an ellipsis.
+ *
+ * Delegates to the shared `truncateAtSentenceBoundary` utility which guarantees
+ * no mid-word cuts (unlike the previous `slice(0, maxLen)` implementation).
  */
 function truncateToSentenceBoundary(text: string, maxLen: number = 400): string {
-  if (text.length <= maxLen) return text;
-  const cut = text.slice(0, maxLen);
-  const lastSentenceEnd = Math.max(
-    cut.lastIndexOf(". "),
-    cut.lastIndexOf("! "),
-    cut.lastIndexOf("? "),
-    cut.lastIndexOf("."),
-    cut.lastIndexOf("!"),
-    cut.lastIndexOf("?"),
-  );
-  const cutAt = lastSentenceEnd > 50 ? lastSentenceEnd + 1 : cut.lastIndexOf(" ");
-  let result = text.slice(0, cutAt).trim();
-  if (!result.endsWith(".") && !result.endsWith("!") && !result.endsWith("?")) {
-    result += "…";
-  }
-  return result;
+  return truncateAtSentenceBoundary(text, maxLen, { minPrefix: 1, ellipsis: "…" });
 }
 
 /**
@@ -1334,7 +1282,8 @@ function deriveFactorNameFromExplanation(explanation: string): string {
     .replace(/\s{2,}/g, " ")
     .trim();
 
-  return name.slice(0, 80) || "";
+  // Truncate at word boundary (never mid-word) to ~80 chars
+  return truncateAtWordBoundary(name, 80, { minPrefix: 1, ellipsis: "" }) || "";
 }
 
 /**
@@ -1693,7 +1642,10 @@ function clauseQualityCheck(clause: string): boolean {
       }
       seenExplanations.add(dedupKey);
 
-      const name = (deriveFactorNameFromExplanation(explanation) || explanation.slice(0, 160) || `Market update: ${candidate.url}`).slice(0, 160);
+      const fallbackName = deriveFactorNameFromExplanation(explanation)
+      || truncateAtWordBoundary(explanation, 160, { minPrefix: 1, ellipsis: "" })
+      || `Market update: ${candidate.url}`;
+  const name = truncateAtWordBoundary(fallbackName, 160, { minPrefix: 1, ellipsis: "" });
 
       const haystack = `${title} ${snippet} ${text}`.toLowerCase();
 
@@ -1825,9 +1777,9 @@ export function normalizeFactor(
   }
 
   return {
-    id: id.slice(0, 80),
-    name: finalName.slice(0, 160),
-    category: category.slice(0, 80),
+    id: truncateAtWordBoundary(id, 80, { minPrefix: 1, ellipsis: "" }),
+    name: truncateAtWordBoundary(finalName, 160, { minPrefix: 1, ellipsis: "" }),
+    category: truncateAtWordBoundary(category, 80, { minPrefix: 1, ellipsis: "" }),
     commodities: Array.from(new Set(commodities)) as Factor["commodities"],
     explanation: sanitizeExplanation(explanation),
     direction,

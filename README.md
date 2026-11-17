@@ -189,6 +189,29 @@ Maximum candidates per scope reduced from 15 to 10, cutting TinyFish scrape call
 
 ---
 
+## ✂️ Word-Boundary Truncation Fix
+
+**Bug fixed:** Factor explanations were being truncated at exactly 400 characters using a hard `slice(0, 400)`, which split words mid-word and produced broken fragments like `"...incomes and infl"` and `"...cost-competi"` instead of complete words. This made explanations look like extraction errors rather than intentional summaries.
+
+**Solution:** All truncation paths now use shared `truncateAtWordBoundary` / `truncateAtSentenceBoundary` utilities (`lib/api/_shared/textUtils.ts`) that:
+
+- Prefer cutting at the last **sentence boundary** (`.`, `!`, `?` followed by space or end-of-text) within the limit.
+- Fall back to the last **word boundary** (space) when no sentence boundary exists.
+- **Never cut mid-word** — if the 400th character falls inside a word, the cut retreats to the previous space.
+- Append an ellipsis (`…`) only when actual truncation occurs — full text that fits is returned verbatim.
+- Behave identically on the server (sanitization, grounding, re-summarization) and the client (UI "Show more" toggle).
+
+**Files updated:**
+
+- `lib/api/_shared/textUtils.ts` — **NEW** shared utilities with comprehensive JSDoc and examples.
+- `lib/api/handlers/factor-analysis.ts` — `sanitizeExplanation`, `truncateToSentenceBoundary`, `deriveFactorNameFromExplanation`, `applyGrounding`, and the `normalizeFactor` return object (id/name/category now word-boundary safe at 80/160/80 chars).
+- `src/components/FactorsSection.tsx` — client-side truncation now word-boundary safe.
+- `src/components/RegionalEvaluation.tsx` — client-side truncation now word-boundary safe.
+
+**Note:** The bug also affected factor **names** (not just explanations). `normalizeFactor` previously did `name.slice(0, 160)` on the raw model name, which could split a long explanation-style name mid-word. Both the name fallback path (`buildFactorsFromCandidates`) and the `normalizeFactor` return object now use `truncateAtWordBoundary` with an empty ellipsis (names are silently truncated, never marked with `…`).
+
+---
+
 ## 📊 Key Factors & Drivers UI
 
 Each factor card in the UI shows:
@@ -235,6 +258,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 - **Kilo AI Gateway** — OpenAI-compatible inference API at `api.kilo.ai/api/gateway` (price extraction, factor curation, solutions, forecasting)
 - **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search) and `api.fetch.tinyfish.ai` (URL scraping); each scrape carries a `purpose` statement to tailor extraction to price-relevance.
 - **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis for cross-instance sharing
+- **Text utilities** (`lib/api/_shared/textUtils.ts`) — Shared `truncateAtWordBoundary` and `truncateAtSentenceBoundary` for word-safe truncation of factor explanations.
 
 ### Data & Models (`src/lib/`)
 - **Forecast Engine** (`model.ts`) — Client-side forecast computations, `FACTORS` / `REGIONAL_FACTORS` static fallbacks, commodity types, and scenario math

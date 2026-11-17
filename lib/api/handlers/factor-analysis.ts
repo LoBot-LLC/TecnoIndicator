@@ -637,13 +637,13 @@ export function buildFactorsFromCandidates(
     const snippet = (candidate.snippet ?? "").trim();
     const text = (candidate.text ?? "").trim();
 
-    // Explanation must be a real sentence from the article: prefer the snippet
-    // (first ~2000 chars), otherwise the scraped body (up to 2000 chars).
+    // Explanation must be a real sentence from the article: prefer the full scraped text
+    // (up to 2000 chars), otherwise fall back to the search snippet.
     let explanation = "";
-    if (snippet) {
+    if (text) {
+      explanation = text.slice(0, 2000);
+    } else if (snippet) {
       explanation = snippet.slice(0, 2000);
-    } else if (text) {
-      explanation = text;
     }
     explanation = explanation.slice(0, 2000).trim();
     if (!explanation) return;
@@ -1136,9 +1136,9 @@ export async function runFactorAnalysis(
     }
 
     if (!parsed?.factors || !Array.isArray(parsed.factors) || parsed.factors.length === 0) {
-      console.warn(`Factor analysis: model did not return a valid non-empty factors array for scope "${scope}" even after retry (content length ${content.length}); building deterministic factors from ${candidates.length} TinyFish candidates`);
+      console.warn(`Factor analysis: model did not return a valid non-empty factors array for scope "${scope}" even after retry (content length ${content.length}); building deterministic factors from ${excerpts.length} scraped excerpts`);
 
-      const deterministic = buildFactorsFromCandidates(candidates, scope, currentPrices, now);
+      const deterministic = buildFactorsFromCandidates(excerpts, scope, currentPrices, now);
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}"`);
         return {
@@ -1182,9 +1182,9 @@ export async function runFactorAnalysis(
     }
 
     if (normalized.length === 0) {
-      console.warn(`Factor analysis: all model-returned factors were rejected for scope "${scope}" (parsed ${parsed.factors.length}, normalized ${normalized.length}); building deterministic factors from ${candidates.length} TinyFish candidates`);
+      console.warn(`Factor analysis: all model-returned factors were rejected for scope "${scope}" (parsed ${parsed.factors.length}, normalized ${normalized.length}); building deterministic factors from ${excerpts.length} scraped excerpts`);
 
-      const deterministic = buildFactorsFromCandidates(candidates, scope, currentPrices, now);
+      const deterministic = buildFactorsFromCandidates(excerpts, scope, currentPrices, now);
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}"`);
         return {
@@ -1216,7 +1216,20 @@ export async function runFactorAnalysis(
     // write a window so the health endpoint can report a real `lastRun`.
     console.error(`Factor analysis failed for scope "${scope}":`, error);
     if (candidates.length > 0) {
-      const deterministic = buildFactorsFromCandidates(candidates, scope, currentPrices, now);
+      // Scrape candidates to get full text for better deterministic factors
+      const excerpts = await Promise.all(
+        candidates.map(async (r) => {
+          try {
+            const scraped = await tinyfishRouter.tinyfishScrape(r.url, signal, {
+              purpose: `Identify concrete reasons this article gives for ${scopeLabel(scope)} oil, electricity, or water price movements in ${RECENT_MONTH()}.`,
+            });
+            return scraped ? { ...r, text: scraped.text, title: scraped.title || r.title } : r;
+          } catch {
+            return r;
+          }
+        }),
+      );
+      const deterministic = buildFactorsFromCandidates(excerpts, scope, currentPrices, now);
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}" after error (aiCurated=false)`);
         return {

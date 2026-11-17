@@ -67,16 +67,20 @@ export function toFactorsPayload(
 /**
  * Strips embedded URLs and markdown links from a model-generated explanation,
  * strips bullet/list markers from every line, and truncates to a readable
- * summary length (~2000 chars). Defense-in-depth: even
- * if the model ignores the "no URLs / no bullets / summarize" instruction,
- * the server never renders a bare URL, a bullet, or a raw article fragment
- * inside the reason prose.
+ * summary length (~2000 chars). Enforces exactly ONE meaningful sentence.
+ * Defense-in-depth: even if the model ignores the "no URLs / no bullets /
+ * summarize" instruction, the server never renders a bare URL, a bullet, or a
+ * raw article fragment inside the reason prose.
  *
  * - Removes markdown links `[text](url)` → keeps only `text`
  * - Removes bare `https?://...` URLs entirely
  * - Strips bullet/list markers from the start of every line
  * - Strips markdown emphasis that may have wrapped URLs
+ * - Strips markdown headers (###, ####, etc.)
  * - Collapses spaces/newlines
+ * - Enforces ONE sentence: cuts at the first sentence boundary (., !, ?)
+ *   if the cut point is at least 30 chars from the start (avoids cutting at
+ *   abbreviations like "U.S.").
  * - Truncates to 2000 chars at a sentence boundary (never mid-sentence)
  */
 export function sanitizeExplanation(text: string): string {
@@ -89,6 +93,8 @@ export function sanitizeExplanation(text: string): string {
     // Strip markdown emphasis that may have wrapped URLs
     .replace(/\*+/g, "")
     .replace(/_+/g, "")
+    // Strip markdown headers (###, ####, etc.)
+    .replace(/#+/g, " ")
     // Strip bullet/list markers from the start of every line ("- ", "• ", "* ", "– ", "— ")
     .split("\n")
     .map((line) => line.replace(/^\s*[-•*–—]+\s+/, ""))
@@ -99,6 +105,15 @@ export function sanitizeExplanation(text: string): string {
     .replace(/\n+/g, " ")
     // Strip leading/trailing whitespace
     .trim();
+
+  // Enforce ONE sentence: cut at the first sentence boundary (., !, ?)
+  // followed by whitespace or end-of-string, but only if at least 30 chars from
+  // the start (avoids cutting at abbreviations like "U.S.").
+  const firstSentenceEnd = cleaned.search(/[.!?](?:\s|$)/);
+  if (firstSentenceEnd >= 30) {
+    cleaned = cleaned.slice(0, firstSentenceEnd + 1).trim();
+  }
+
   // Truncate to 2000 chars at a sentence boundary (never mid-sentence)
   if (cleaned.length > 2000) {
     const cut = cleaned.slice(0, 2000);
@@ -118,8 +133,8 @@ export function sanitizeExplanation(text: string): string {
 
 /**
  * Extracts a meaningful summary from article text by taking the first complete
- * paragraph/sentence cluster. Strips bullet points, fixes common article openers,
- * and ensures the result starts with the commodity and current price numbers.
+ * sentence. Strips bullet points, markdown headers, common article openers,
+ * and page chrome, and ensures the result is exactly ONE meaningful sentence.
  */
 function extractSummaryFromArticle(text: string): string {
   if (!text || text.trim().length === 0) return "";
@@ -129,7 +144,9 @@ function extractSummaryFromArticle(text: string): string {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/https?:\/\/[^\s)]+/g, "")
     .replace(/\*+/g, "")
-    .replace(/_+/g, "");
+    .replace(/_+/g, "")
+    // Strip markdown headers (###, ####, etc.)
+    .replace(/#+/g, "");
 
   // Strip bullet markers from each line (handle multiple bullet types and spacing)
   cleaned = cleaned
@@ -193,15 +210,41 @@ function extractSummaryFromArticle(text: string): string {
 }
 
 /**
- * Validates that a model-generated explanation looks like a proper 1-3 sentence
- * summary rather than raw scraped article text. Returns { ok: true } when the
- * explanation passes, or { ok: false, reason } when it should be rejected or
- * re-summarized.
+ * When a candidate has both a search snippet and full scraped text, prefer the
+ * snippet when it is a clean, self-contained sentence summary. This avoids
+ * feeding raw full-page text (which often contains markdown headers, page
+ * chrome, and navigation noise) into the deterministic fallback path.
+ *
+ * A "clean" snippet is one that:
+ * - Is at least 50 chars
+ * - Does NOT start with a publication name, modal verb, or preposition
+ * - Does NOT contain markdown headers (####, ###) or page chrome markers
+ * - Contains at least one sentence-ending punctuation
+ */
+function pickCleanSnippet(snippet: string): string {
+  if (!snippet || snippet.trim().length < 50) return "";
+  const trimmed = snippet.trim();
+  // Reject snippets that start with known raw-article openers
+  if (/^(opec|iea|un|who|eia|opec\+|european|asian|african|american|australian|south|north|middle|southeast|latin)\s+/i.test(trimmed)) return "";
+  if (/^(can|could|would|will|may|might|should|this|these|those|at|from|by|for|to|as|with|in|on|it|its|their|there|here|they|them|we|our|now|then|so|but|and|or|nor|not|no|yes|however|meanwhile|despite|although|while|whereas|therefore|thus|hence|accordingly|consequently|what|when|how|why|where|which|who|whose|around|according|four|million|billion|the world|demand|supply)\s+/i.test(trimmed)) return "";
+  // Reject snippets containing page chrome
+  if (/####|###|licence:|license:|share this report|report options|cite report|release dates?$/i.test(trimmed)) return "";
+  // Reject snippets without sentence-ending punctuation
+  if (!/[.!?](\s|$)/.test(trimmed)) return "";
+  return trimmed;
+}
+
+/**
+ * Validates that a model-generated explanation looks like a proper SINGLE
+ * meaningful sentence summary rather than raw scraped article text. Returns
+ * { ok: true } when the explanation passes, or { ok: false, reason } when it
+ * should be rejected or re-summarized.
  *
  * Rejection criteria:
  * - Starts with a bullet point ("- ", "• ", "* ", "– ", "— ") — clear sign of raw scraped text
  * - Is static fallback placeholder text — these are placeholders, not real summaries
  * - Starts with a known raw-article opener (publication name, article opening)
+ * - Is multiple sentences — must be exactly ONE meaningful sentence
  * - Too short (< 50 chars) or too long (> 2000 chars for a proper summary)
  * - Too few sentences for length (> 100 chars with no sentence-ending punctuation)
  */
@@ -267,12 +310,45 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     return { ok: false, reason: "too long" };
   }
 
+  // Reject explanations that contain page chrome / noise patterns typical of
+  // scraped web pages that a genuine analyst summary would never include.
+  // These are checked AFTER length so a long bullet-pasted article is still
+  // classified as "starts with bullet point" rather than "page chrome".
+  const pageChromePatterns = [
+    /####\s+cite\s+report/i,
+    /####\s+share\s+this\s+report/i,
+    /####\s+report\s+options/i,
+    /licence:\s*cc\s+by/i,
+    /license:\s*cc\s+by/i,
+    /data\s+for\s+\d{4}[-–]\d{4}\s+are\s+forecast/i,
+    /values\s+for\s+the\s+\d{4}[-–]\d{4}\s+period\s+are\s+forecasts/i,
+    /the\s+plots\s+start\s+from/i,
+    /x-axis\s+labels\s+are\s+shown\s+only/i,
+    /release\s+dates?\s*$/i,
+    /interactive\s+\w+\s*$/i,
+    /download/i,
+    /share\s+this\s+report/i,
+    /report\s+options/i,
+    /cite\s+report/i,
+  ];
+  for (const pattern of pageChromePatterns) {
+    if (pattern.test(trimmed)) {
+      return { ok: false, reason: "page chrome / noise" };
+    }
+  }
+
   // Require at least one sentence-ending punctuation for explanations longer
   // than ~100 chars. Raw scraped fragments often run on without punctuation.
   // Uses [.!?] followed by whitespace OR end-of-string so a single complete
   // sentence ending in a period is accepted.
   if (trimmed.length > 100 && (trimmed.match(/[.!?](\s|$)/g)?.length ?? 0) < 1) {
     return { ok: false, reason: "too few sentences for length" };
+  }
+
+  // Reject explanations with more than one sentence — must be exactly ONE meaningful sentence
+  const sentenceCount = (trimmed.match(/[.!?](\s|$)/g)?.length ?? 0);
+  if (sentenceCount > 1) {
+    return { ok: false, reason: "multiple sentences" };
   }
 
   return { ok: true };
@@ -482,7 +558,7 @@ Every explanation you output must follow the GOOD examples: ONE meaningful sente
 Every factor's explanation MUST reference the current price numbers supplied in currentPrices. For example: "with oil at $104.86/bbl, OPEC+ output cuts are tightening supply...". Use the numbers, do not paraphrase around them.
 
 === WORKED EXAMPLE ===
-{"id":"example-1","name":"OPEC+ output restraint","category":"Market","commodities":["oil"],"explanation":"OPEC+ members have agreed to extend voluntary production cuts through Q1 2026, tightening global supply. With oil at $104.86/bbl, the cutback is expected to remove roughly 1.2 million b/d from the market and support prices in the short term.","direction":"up","magnitude":"High","source":"https://www.iea.org/reports/world-energy-outlook-2026","bias":"short","importanceScore":82,"drift":{"oil":0.5}}
+{"id":"example-1","name":"OPEC+ output restraint","category":"Market","commodities":["oil"],"explanation":"With oil at $104.86/bbl, OPEC+ members have agreed to extend voluntary production cuts through Q1 2026, which is expected to remove roughly 1.2 million b/d from the market and support prices in the short term.","direction":"up","magnitude":"High","source":"https://www.iea.org/reports/world-energy-outlook-2026","bias":"short","importanceScore":82,"drift":{"oil":0.5}}
 
 === JSON SCHEMA ===
 Each factor object must be exactly: { id: string; name: string; category: "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"; commodities: string[] (subset of oil, electricity, water); explanation: string (ONE meaningful sentence summarizing the reason found in the supplied source URL, starting with commodity + current price number); direction: "up"|"down"|"mixed"; magnitude: "High"|"Medium"|"Low"; source: string (the EXACT URL string from the candidate list — a URL, never a publication name); bias: "short"|"mid"|"long"|"flat"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }.
@@ -554,7 +630,7 @@ Every explanation you output must follow the GOOD examples: ONE meaningful sente
 Every factor's explanation MUST reference the current price numbers supplied in currentPrices. For example: "with oil at $104.86/bbl, OPEC+ output cuts are tightening supply...". Use the numbers, do not paraphrase around them.
 
 === WORKED EXAMPLE ===
-{"id":"example-1","name":"OPEC+ output restraint","category":"Market","commodities":["oil"],"explanation":"OPEC+ members have agreed to extend voluntary production cuts through Q1 2026, tightening global supply. With oil at $104.86/bbl, the cutback is expected to remove roughly 1.2 million b/d from the market and support prices in the short term.","direction":"up","magnitude":"High","source":"https://www.iea.org/reports/world-energy-outlook-2026","bias":"short","importanceScore":82,"drift":{"oil":0.5}}
+{"id":"example-1","name":"OPEC+ output restraint","category":"Market","commodities":["oil"],"explanation":"With oil at $104.86/bbl, OPEC+ members have agreed to extend voluntary production cuts through Q1 2026, which is expected to remove roughly 1.2 million b/d from the market and support prices in the short term.","direction":"up","magnitude":"High","source":"https://www.iea.org/reports/world-energy-outlook-2026","bias":"short","importanceScore":82,"drift":{"oil":0.5}}
 
 === JSON SCHEMA ===
 Each factor object must be exactly: { id: string; name: string; category: "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"; commodities: string[] (subset of oil, electricity, water); explanation: string (ONE meaningful sentence summarizing the reason found in the supplied source URL, starting with commodity + current price number); direction: "up"|"down"|"mixed"; magnitude: "High"|"Medium"|"Low"; source: string (the EXACT URL string from the candidate list — a URL, never a publication name); bias: "short"|"mid"|"long"|"flat"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }.
@@ -804,12 +880,20 @@ export function buildFallbackFactors(scope: RegionId): Factor[] {
       const snippet = (candidate.snippet ?? "").trim();
       const text = (candidate.text ?? "").trim();
 
-      // Explanation: extract a meaningful summary from the article text.
-      // Prefer the first complete paragraph/sentence cluster, not a raw slice.
+      // Explanation: extract a meaningful summary from the best available source.
+      // Prefer the search snippet when it is a clean, complete sentence summary —
+      // it is short and self-contained. Fall back to the full scraped text when
+      // the snippet is missing or looks like a mid-article fragment.
       let explanation = "";
-      const sourceText = text || snippet;
-      if (sourceText) {
-        explanation = extractSummaryFromArticle(sourceText);
+      const cleanSnippet = pickCleanSnippet(snippet);
+      if (cleanSnippet) {
+        explanation = extractSummaryFromArticle(cleanSnippet);
+      }
+      if (!explanation && text) {
+        explanation = extractSummaryFromArticle(text);
+      }
+      if (explanation) {
+        explanation = sanitizeExplanation(explanation);
       }
       if (!explanation) return;
 

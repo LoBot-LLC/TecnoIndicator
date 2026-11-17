@@ -332,6 +332,10 @@ function pickCleanSnippet(snippet: string): string {
  * - Too short (< 50 chars) or too long (> 400 chars for a proper summary)
  * - Too few sentences for length (> 50 chars with no sentence-ending punctuation)
  * - Contains page chrome / noise patterns typical of scraped web pages
+ * - Contains generic body text after the commodity+price opening (e.g. "forecast
+ *   to grow", "the report provides", "provides a detailed analysis") — even if
+ *   the opening passes; this catches generic forecasts and meta-analysis that
+ *   slipped through the start check.
  */
 export function validateExplanationQuality(explanation: string): { ok: boolean; reason?: string } {
   if (!explanation || typeof explanation !== "string") {
@@ -413,6 +417,35 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     /^(?:with\s+)?(?:oil|crude|brent|wti|electricity|power|water)\b(?:\s+(?:crude|prices?))?\s+(?:at|is|are|was|were|rose|fell|climbed|dropped|surged|plunged|traded|settled|averaged|jumped|rallied|slid|gained|declined|increased|decreased)\b/i;
   if (!commodityPriceStart.test(trimmed)) {
     return { ok: false, reason: "missing commodity+price start" };
+  }
+
+  // Reject explanations whose BODY (the part after the commodity+price opening)
+  // contains generic forecast / meta-analysis text. The opening check above only
+  // verifies the prefix; a clause like "the global oil demand in 2026 is forecast
+  // to grow by 1.4 mb/d" passes the opening check but is not a concrete price
+  // driver. Checked AFTER the opening so the failure reason is accurate
+  // ("generic body text") rather than a misleading opener reason.
+  //
+  // Legitimate explanations that MUST still pass:
+  // - "With oil at $73.07/bbl, OPEC+ has agreed to extend voluntary production
+  //   cuts through Q1 2026, ..." (contains "OPEC+ has agreed")
+  // - "With oil at $104.86/bbl, the IEA forecasts global oil demand will fall by
+  //   2.7 mb/d in 2026 ..." (contains "IEA forecasts", not "forecast to grow")
+  // - "With water at $2.15/M³, drought-driven supply disruptions ..." (no
+  //   generic markers)
+  const body = trimmed.replace(/^with\s+.+?\s+at\s+\$[^,]+,\s*/i, "").trim().toLowerCase();
+  const genericBodyPatterns = [
+    /forecast\s+to\s+(?:grow|fall|rise|decline|increase|decrease)/i,
+    /on\s+track\s+to/i,
+    /the\s+report\s+provides/i,
+    /the\s+study\s+examines/i,
+    /provides\s+a\s+detailed\s+analysis/i,
+    /provides\s+an\s+overview/i,
+  ];
+  for (const pattern of genericBodyPatterns) {
+    if (pattern.test(body)) {
+      return { ok: false, reason: "generic body text" };
+    }
   }
 
   // Reject explanations that are too short or too long for a proper summary
@@ -1026,6 +1059,84 @@ function deriveFactorNameFromExplanation(explanation: string): string {
 }
 
 /**
+ * Validates that an extracted `clause` (the part of an explanation AFTER the
+ * "With <commodity> at $<price>/<unit>, " grounding prefix) contains meaningful
+ * price-driver information rather than generic forecasts, meta-analysis,
+ * navigation text, or a clipped fragment.
+ *
+ * This is a SECOND layer of defense beyond `validateExplanationQuality`, which
+ * only inspects the START of the explanation (the commodity+price opening,
+ * bullet points, page chrome). A clause can pass that opening check and still
+ * be generic — e.g. "the global oil demand in 2026 is forecast to grow by 1.4
+ * mb/d" — so the body must be inspected separately before grounding.
+ *
+ * Returns `true` when the clause looks like a concrete price driver, `false`
+ * when it is generic/fragmented and the candidate should be re-extracted or
+ * skipped.
+ *
+ * Rejected clause shapes:
+ * - Generic forecast openers: "the global ", "the world ", "is forecast",
+ *   "are forecast", "is on track", "are on track"
+ * - Meta-analysis / report-intro openers: "the report provides",
+ *   "the study examines", "this analysis", "the analysis"
+ * - Navigation / fragment markers anywhere in the clause: "key developments",
+ *   "impacting", "as well as", "according to"
+ * - Bare numbers/units with no subject or verb (e.g. "1.4 mb/d", "2.7 mb/d")
+ */
+function clauseQualityCheck(clause: string): boolean {
+  if (!clause || clause.trim().length === 0) return false;
+  const trimmed = clause.trim();
+  const lower = trimmed.toLowerCase();
+
+  // Reject generic forecast openers — these describe a projection rather than a
+  // concrete price driver that changed.
+  const genericForecastOpeners = [
+    "the global ",
+    "the world ",
+    "is forecast",
+    "are forecast",
+    "is on track",
+    "are on track",
+  ];
+  for (const opener of genericForecastOpeners) {
+    if (lower.startsWith(opener)) return false;
+  }
+
+  // Reject meta-analysis / report-intro openers — these describe the
+  // publication itself rather than a concrete price driver.
+  const metaAnalysisOpeners = [
+    "the report provides",
+    "the study examines",
+    "this analysis",
+    "the analysis",
+  ];
+  for (const opener of metaAnalysisOpeners) {
+    if (lower.startsWith(opener)) return false;
+  }
+
+  // Reject navigation / fragment markers anywhere in the clause. These come
+  // from scraped report pages (table-of-contents lines, mid-sentence clips).
+  const fragmentMarkers = [
+    "key developments",
+    "impacting",
+    "as well as",
+    "according to",
+  ];
+  for (const marker of fragmentMarkers) {
+    if (lower.includes(marker)) return false;
+  }
+
+  // Reject clauses that are just numbers/units (e.g. "1.4 mb/d", "2.7 mb/d").
+  // A standalone number with an optional unit is a clipped fragment, not a
+  // price driver.
+  if (/^[\d,.]+\s*(?:mb\/d|b\/d|mboe\/d|thousand|million|billion|mb|bbl|barrel)?\s*\.?\s*$/i.test(trimmed)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Deterministic, URL-backed factor construction used when Kilo fails to return
    * usable factors but TinyFish successfully produced real candidate URLs. Each
    * factor is built directly from a fetched article — the name from its title, the
@@ -1036,6 +1147,17 @@ function deriveFactorNameFromExplanation(explanation: string): string {
    * `source` is a genuine, clickable link and every explanation is a real summary
    * extracted from article text. The category/direction/bias fields are inferred
    * from keywords because no model is summarizing at this point.
+   *
+   * Content validation (defense against generic text after the price prefix):
+   * - The extracted explanation must pass `validateExplanationQuality`.
+   * - The clause that follows the "With <commodity> at $<price>/<unit>, " prefix
+   *   must pass `clauseQualityCheck`; generic forecasts ("the global ... is
+   *   forecast..."), meta-analysis ("the report provides..."), navigation noise
+   *   ("key developments", "as well as") and bare numbers ("1.4 mb/d") are
+   *   rejected. When a clause fails, the candidate is re-extracted from the full
+   *   scraped text; if that also fails the candidate is skipped (never surfaced).
+   * - Identical grounded explanations from different candidates are de-duplicated
+   *   so each factor in the window carries distinct trailing content.
    */
   export function buildFactorsFromCandidates(
     candidates: Array<{ url: string; title?: string; snippet?: string; text?: string }>,
@@ -1056,6 +1178,7 @@ function deriveFactorNameFromExplanation(explanation: string): string {
       .slice(0, FACTOR_COUNT);
 
     const factors: Factor[] = [];
+    const seenExplanations = new Set<string>();
 
     usable.forEach((candidate, index) => {
       const position = index + 1;
@@ -1063,19 +1186,39 @@ function deriveFactorNameFromExplanation(explanation: string): string {
       const snippet = (candidate.snippet ?? "").trim();
       const text = (candidate.text ?? "").trim();
 
+      // Strip the "With <commodity> at $<price>/<unit>, " grounding prefix from
+      // an explanation, returning the raw clause (the part after the comma).
+      const stripGroundingPrefix = (text: string): string => {
+        if (!text) return "";
+        return text.replace(/^with\s+.+?\s+at\s+\$[^,]+,\s*/i, "").trim();
+      };
+
       // Explanation: extract a meaningful summary from the best available source.
       // Prefer the search snippet when it is a clean, complete sentence summary —
       // it is short and self-contained. Fall back to the full scraped text when
       // the snippet is missing or its extracted summary fails the quality
       // heuristics (generic meta-analysis text, page chrome, fragments).
+      //
+      // The snippet-derived clause is also validated with clauseQualityCheck; if
+      // the clause is generic/fragmented, we fall back to the full scraped text
+      // and re-extract before proceeding to grounding.
       let explanation = "";
       const cleanSnippet = pickCleanSnippet(snippet);
       if (cleanSnippet) {
         explanation = sanitizeExplanation(extractSummaryFromArticle(cleanSnippet));
       }
-      if (!validateExplanationQuality(explanation).ok && text) {
+
+      // Validate the extracted explanation AND its clause. If the snippet-derived
+      // explanation is missing, fails quality, or its clause is generic/fragmented,
+      // fall back to the full scraped text and re-extract.
+      const snippetClause = stripGroundingPrefix(explanation);
+      if (
+        (!explanation || !validateExplanationQuality(explanation).ok || !clauseQualityCheck(snippetClause)) &&
+        text
+      ) {
         const fromText = sanitizeExplanation(extractSummaryFromArticle(text));
-        if (validateExplanationQuality(fromText).ok) {
+        const fromTextClause = stripGroundingPrefix(fromText);
+        if (fromText && validateExplanationQuality(fromText).ok && clauseQualityCheck(fromTextClause)) {
           explanation = fromText;
         }
       }
@@ -1092,21 +1235,35 @@ function deriveFactorNameFromExplanation(explanation: string): string {
       // phrase, prefix it with the grounded commodity + current price.
       const priceInfo = currentPrices[primaryCommodity];
       const commodityPriceRegex = /^(?:with\s+)?(?:oil|crude|brent|wti|electricity|power|water)\b/i;
-      if (explanation && !commodityPriceRegex.test(explanation)) {
-        // Strip any leading "With ... at $..., " from the clause so it doesn't
-        // duplicate the prefix we're about to add.
-        let clause = explanation.replace(/^with\s+.+?\s+at\s+\$[^,]+,\s*/i, "");
-        clause = clause.trim();
-        // Lowercase the first character unless it's an all-caps acronym.
-        const firstToken = clause.split(/\s+/)[0] ?? "";
-        if (/^[A-Z][A-Z0-9+/]+$/.test(firstToken)) {
-          // Preserve all-caps acronyms (IEA, OPEC, WTI, OPEC+)
-        } else {
-          clause = clause.charAt(0).toLowerCase() + clause.slice(1);
+
+      // Apply the grounded "With <commodity> at $<price>/<unit>, <clause>" prefix
+      // to a raw explanation. Returns the grounded explanation, or null when the
+      // clause fails clauseQualityCheck (generic forecast / meta-analysis /
+      // clipped fragment) — callers should then try re-extraction or skip.
+      const applyGrounding = (rawExplanation: string): string | null => {
+        if (!rawExplanation) return null;
+        let clause = stripGroundingPrefix(rawExplanation);
+        // If the explanation does NOT already start with commodity+price,
+        // lowercase the first character unless it's an all-caps acronym.
+        if (!commodityPriceRegex.test(rawExplanation)) {
+          const firstToken = clause.split(/\s+/)[0] ?? "";
+          if (/^[A-Z][A-Z0-9+/]+$/.test(firstToken)) {
+            // Preserve all-caps acronyms (IEA, OPEC, WTI, OPEC+)
+          } else {
+            clause = clause.charAt(0).toLowerCase() + clause.slice(1);
+          }
+          // Ensure the clause ends with ".".
+          if (!clause.endsWith(".") && !clause.endsWith("!") && !clause.endsWith("?")) {
+            clause += ".";
+          }
         }
-        // Ensure the clause ends with ".".
-        if (!clause.endsWith(".") && !clause.endsWith("!") && !clause.endsWith("?")) {
-          clause += ".";
+        // Validate the clause contains meaningful price-driver content before
+        // grounding. If it is a generic forecast, meta-analysis, or clipped
+        // fragment, return null so the caller can try re-extraction or skip.
+        if (!clauseQualityCheck(clause)) return null;
+        // If already grounded, just sanitize and return.
+        if (commodityPriceRegex.test(rawExplanation)) {
+          return sanitizeExplanation(rawExplanation);
         }
         // Build the grounded explanation: "With <commodity> at $<price>/<unit>, <clause>"
         const prefix = `With ${primaryCommodity} at $${priceInfo.price}/${priceInfo.unit}, `;
@@ -1116,7 +1273,33 @@ function deriveFactorNameFromExplanation(explanation: string): string {
         }
         const grounded = `${prefix}${clause}`;
         // Ensure the total length is <= 400 chars.
-        explanation = grounded.length <= 400 ? grounded : truncateToSentenceBoundary(grounded, 400);
+        return grounded.length <= 400 ? grounded : truncateToSentenceBoundary(grounded, 400);
+      };
+
+      if (explanation) {
+        const grounded = applyGrounding(explanation);
+        if (grounded) {
+          explanation = grounded;
+        } else {
+          // The clause is generic/fragmented. Attempt re-extraction from the
+          // full scraped text; if that also fails clause quality, skip the
+          // candidate entirely instead of surfacing generic text to the UI.
+          let repaired = false;
+          if (text) {
+            const fromText = sanitizeExplanation(extractSummaryFromArticle(text));
+            const fromTextGrounded = applyGrounding(fromText);
+            if (fromTextGrounded) {
+              explanation = fromTextGrounded;
+              repaired = true;
+            }
+          }
+          if (!repaired) {
+            console.warn(
+              `buildFactorsFromCandidates: skipping candidate "${candidate.url}" — extracted clause failed clause quality check and re-extraction from full text also failed`,
+            );
+            return;
+          }
+        }
       }
 
       // Never push a noisy factor: if the cleaned explanation still fails the
@@ -1131,6 +1314,19 @@ function deriveFactorNameFromExplanation(explanation: string): string {
         );
         return;
       }
+
+      // Ensure factors from different candidates don't collapse into identical
+      // grounded explanations (e.g. two candidates yielding the same generic
+      // clause). Skip duplicates so each factor in the window carries distinct
+      // trailing content.
+      const dedupKey = explanation.toLowerCase().replace(/\s+/g, " ").trim();
+      if (seenExplanations.has(dedupKey)) {
+        console.warn(
+          `buildFactorsFromCandidates: skipping candidate "${candidate.url}" — duplicate explanation already added`,
+        );
+        return;
+      }
+      seenExplanations.add(dedupKey);
 
       const name = (deriveFactorNameFromExplanation(explanation) || explanation.slice(0, 160) || `Market update: ${candidate.url}`).slice(0, 160);
 

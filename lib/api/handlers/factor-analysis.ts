@@ -66,11 +66,10 @@ export function toFactorsPayload(
 
 /**
  * Strips embedded URLs and markdown links from a model-generated explanation,
- * strips bullet/list markers from every line, and truncates to a readable
- * summary length (~2000 chars). Enforces exactly ONE meaningful sentence.
- * Defense-in-depth: even if the model ignores the "no URLs / no bullets /
- * summarize" instruction, the server never renders a bare URL, a bullet, or a
- * raw article fragment inside the reason prose.
+ * strips bullet/list markers from every line, and truncates to a concise
+ * summary length (~400 chars). Defense-in-depth: even if the model ignores the
+ * "no URLs / no bullets / summarize" instruction, the server never renders a
+ * bare URL, a bullet, or a raw article fragment inside the reason prose.
  *
  * - Removes markdown links `[text](url)` → keeps only `text`
  * - Removes bare `https?://...` URLs entirely
@@ -81,7 +80,8 @@ export function toFactorsPayload(
  * - Enforces ONE sentence: cuts at the first sentence boundary (., !, ?)
  *   if the cut point is at least 30 chars from the start (avoids cutting at
  *   abbreviations like "U.S.").
- * - Truncates to 2000 chars at a sentence boundary (never mid-sentence)
+ * - If no sentence boundary found, truncates to 400 chars at word boundary.
+ * - Truncates to 400 chars at a sentence/word boundary (never mid-sentence)
  */
 export function sanitizeExplanation(text: string): string {
   if (typeof text !== "string" || text.trim().length === 0) return "";
@@ -112,11 +112,16 @@ export function sanitizeExplanation(text: string): string {
   const firstSentenceEnd = cleaned.search(/[.!?](?:\s|$)/);
   if (firstSentenceEnd >= 30) {
     cleaned = cleaned.slice(0, firstSentenceEnd + 1).trim();
+  } else if (cleaned.length > 400) {
+    // No proper sentence boundary found (e.g., table of contents) — truncate at word boundary
+    const cut = cleaned.slice(0, 400);
+    const lastSpace = cut.lastIndexOf(" ");
+    cleaned = lastSpace > 50 ? cut.slice(0, lastSpace).trim() + "…" : cut.trim() + "…";
   }
 
-  // Truncate to 2000 chars at a sentence boundary (never mid-sentence)
-  if (cleaned.length > 2000) {
-    const cut = cleaned.slice(0, 2000);
+  // Truncate to 400 chars at a sentence boundary (never mid-sentence)
+  if (cleaned.length > 400) {
+    const cut = cleaned.slice(0, 400);
     const lastSentenceEnd = Math.max(
       cut.lastIndexOf(". "),
       cut.lastIndexOf("! "),
@@ -166,6 +171,27 @@ function extractSummaryFromArticle(text: string): string {
     /^(research|analysis|insights?|news|updates?|publications?)\s+/i,
     /^(opec|iea|eia|un|who|wri|irena|opec\+)\s+/i,
     /^(global|regional|international|national|local)\s+/i,
+    // Table of contents / navigation patterns
+    /^chapters?\s+/i,
+    /^feature\s+article\s+/i,
+    /^oil\s+market\s+highlights\s+/i,
+    /^crude\s+oil\s+price\s+movements\s+/i,
+    /^commodity\s+markets\s+/i,
+    /^world\s+economy\s+/i,
+    /^world\s+oil\s+(demand|supply)\s+/i,
+    /^product\s+markets?\s+and\s+refinery\s+operations\s+/i,
+    /^tanker\s+market\s+/i,
+    /^crude\s+and\s+refined\s+products?\s+trade\s+/i,
+    /^commercial\s+stock\s+movements\s+/i,
+    /^balance\s+of\s+supply\s+and\s+demand\s+/i,
+    /^information\s+/i,
+    /^abbreviations?\s+/i,
+    /^acronyms?\s+/i,
+    /^about\s+momr\s+/i,
+    /^contributors?\s+/i,
+    /^disclaimer\s+/i,
+    /^archive\s+/i,
+    /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\s+/i,
   ];
   for (const pattern of headerPatterns) {
     cleaned = cleaned.replace(pattern, "");
@@ -228,7 +254,7 @@ function pickCleanSnippet(snippet: string): string {
   if (/^(opec|iea|un|who|eia|opec\+|european|asian|african|american|australian|south|north|middle|southeast|latin)\s+/i.test(trimmed)) return "";
   if (/^(can|could|would|will|may|might|should|this|these|those|at|from|by|for|to|as|with|in|on|it|its|their|there|here|they|them|we|our|now|then|so|but|and|or|nor|not|no|yes|however|meanwhile|despite|although|while|whereas|therefore|thus|hence|accordingly|consequently|what|when|how|why|where|which|who|whose|around|according|four|million|billion|the world|demand|supply)\s+/i.test(trimmed)) return "";
   // Reject snippets containing page chrome
-  if (/####|###|licence:|license:|share this report|report options|cite report|release dates?$/i.test(trimmed)) return "";
+  if (/####|###|licence:|license:|share this report|report options|cite report|release dates?$|table\s+of\s+contents|chapters?\s+|feature\s+article|archive\s+|abbreviations?|acronyms?|contributors?|disclaimer/i.test(trimmed)) return "";
   // Reject snippets without sentence-ending punctuation
   if (!/[.!?](\s|$)/.test(trimmed)) return "";
   return trimmed;
@@ -306,7 +332,7 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
   if (trimmed.length < 50) {
     return { ok: false, reason: "too short" };
   }
-  if (trimmed.length > 2000) {
+  if (trimmed.length > 400) {
     return { ok: false, reason: "too long" };
   }
 
@@ -330,6 +356,15 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     /share\s+this\s+report/i,
     /report\s+options/i,
     /cite\s+report/i,
+    /table\s+of\s+contents/i,
+    /chapters?\s+/i,
+    /feature\s+article\s+/i,
+    /archive\s+/i,
+    /abbreviations?\s+/i,
+    /acronyms?\s+/i,
+    /contributors?\s+/i,
+    /disclaimer\s+/i,
+    /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\s+/i,
   ];
   for (const pattern of pageChromePatterns) {
     if (pattern.test(trimmed)) {
@@ -338,10 +373,10 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
   }
 
   // Require at least one sentence-ending punctuation for explanations longer
-  // than ~100 chars. Raw scraped fragments often run on without punctuation.
+  // than ~50 chars. Raw scraped fragments often run on without punctuation.
   // Uses [.!?] followed by whitespace OR end-of-string so a single complete
   // sentence ending in a period is accepted.
-  if (trimmed.length > 100 && (trimmed.match(/[.!?](\s|$)/g)?.length ?? 0) < 1) {
+  if (trimmed.length > 50 && (trimmed.match(/[.!?](\s|$)/g)?.length ?? 0) < 1) {
     return { ok: false, reason: "too few sentences for length" };
   }
 
@@ -372,7 +407,7 @@ export async function reSummarizeExplanation(
   },
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const prompt = `Rewrite the following text into exactly ONE meaningful sentence (under 2000 characters). The sentence MUST start with "With [commodity] at $[price]/[unit]..." using the exact current price numbers provided below. Write in your own words — do NOT copy text verbatim. Do NOT include URLs, markdown links, bullet points, or publication names. Do NOT start with a bullet point or dash. Do NOT include publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for oil/electricity/water prices.
+  const prompt = `Rewrite the following text into exactly ONE meaningful sentence (under 400 characters). The sentence MUST start with "With [commodity] at $[price]/[unit]..." using the exact current price numbers provided below. Write in your own words — do NOT copy text verbatim. Do NOT include URLs, markdown links, bullet points, or publication names. Do NOT start with a bullet point or dash. Do NOT include publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for oil/electricity/water prices.
 
 Current prices: oil \$${currentPrices.oil.price}/${currentPrices.oil.unit}, electricity \$${currentPrices.electricity.price}/${currentPrices.electricity.unit}, water \$${currentPrices.water.price}/${currentPrices.water.unit}
 
@@ -380,10 +415,10 @@ Text to summarize: "${rawExplanation}"`;
 
   const payload = {
     messages: [
-      { role: "system", content: "You are a precise summarizer. Output only a single meaningful sentence, no preamble, no markdown, no URLs, no bullet points, no dashes at the start, no publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for prices." },
+      { role: "system", content: "You are a precise summarizer. Output only a single meaningful sentence (under 400 chars), no preamble, no markdown, no URLs, no bullet points, no dashes at the start, no publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for prices." },
       { role: "user", content: prompt },
     ],
-    max_tokens: 200,
+    max_tokens: 100,
     temperature: 0.1,
   };
 
@@ -415,7 +450,7 @@ Text to summarize: "${rawExplanation}"`;
  * If no sentence boundary is found within the text, cuts at the last word
  * boundary and appends an ellipsis.
  */
-function truncateToSentenceBoundary(text: string, maxLen: number = 2000): string {
+function truncateToSentenceBoundary(text: string, maxLen: number = 400): string {
   if (text.length <= maxLen) return text;
   const cut = text.slice(0, maxLen);
   const lastSentenceEnd = Math.max(
@@ -526,7 +561,7 @@ const SYSTEM_PROMPT_GLOBAL =
 - Do NOT start with bullet points (-, •, *, –, —) or article navigation text
 - Do NOT include publication headers, dates, or metadata
 - Focus on the specific price driver: what changed, why it matters for oil/electricity/water prices
-- Maximum 2000 characters, but prefer concise single sentences
+- Maximum 400 characters — keep it concise
 - Start with the commodity and current price number from currentPrices (e.g. "with oil at $104.86/bbl...")
 
 === FEW-SHOT EXAMPLES (GOOD vs BAD) ===
@@ -594,7 +629,7 @@ const SYSTEM_PROMPT_REGIONAL = (regionName: string) =>
 - NEVER include a URL inside the explanation text. The source URL goes ONLY in the "source" field.
 - NEVER include markdown links like [text](url) inside the explanation.
 - Start the explanation with the commodity and the current price number from currentPrices (e.g. "with oil at $104.86/bbl...").
-- Keep the explanation under 2000 characters. Short and punchy is better than long and detailed.
+- Keep the explanation under 400 characters. Short and punchy is better than long and detailed.
 - If the article is about a price RISE, say prices are rising and why. If about a FALL, say prices are falling and why.
 - Each explanation MUST be a single, complete, meaningful sentence (not a fragment, not a bullet point, not multiple sentences)
 - Do NOT start with bullet points (-, •, *, –, —) or article navigation text
@@ -1362,7 +1397,7 @@ export async function runFactorAnalysis(
     // returns invalid JSON or an empty factors array.
     if ((!parsed || !Array.isArray(parsed.factors) || parsed.factors.length === 0) && !signal?.aborted) {
       const candidateUrlHint = candidateObjs.map((c) => c.url).filter(Boolean).join(", ");
-      const retryPrompt = `Return ONLY a strict JSON object of the form {"factors":[...]}. Each factor MUST have: id (string), name (string), category (one of "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"), commodities (array subset of "oil","electricity","water"), explanation (ONE meaningful sentence that starts with the commodity and cites the current price numbers from currentPrices, e.g. "with oil at $104.86/bbl..."), direction ("up"|"down"|"mixed"), magnitude ("High"|"Medium"|"Low"), source (EXACTLY one of these URLs, copy verbatim: ${candidateUrlHint}), bias ("short"|"mid"|"long"|"flat"), importanceScore (integer 0-100), drift (object mapping commodity to a small decimal). The source field MUST be a URL copied verbatim from the list above — never a publication name. Ground every explanation in the current price numbers. NEVER include a URL or markdown link inside the explanation field. Write explanations in your own words, ONE single meaningful sentence max, starting with the commodity and current price number. Do NOT copy raw text verbatim — summarize in your own words. NEVER start with a bullet point or publication name. NEVER write more than ONE sentence per explanation. NEVER include publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for prices. Do not output markdown, commentary, or anything outside the JSON object.`;
+      const retryPrompt = `Return ONLY a strict JSON object of the form {"factors":[...]}. Each factor MUST have: id (string), name (string), category (one of "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"), commodities (array subset of "oil","electricity","water"), explanation (ONE meaningful sentence UNDER 400 CHARACTERS that starts with the commodity and cites the current price numbers from currentPrices, e.g. "with oil at $104.86/bbl..."), direction ("up"|"down"|"mixed"), magnitude ("High"|"Medium"|"Low"), source (EXACTLY one of these URLs, copy verbatim: ${candidateUrlHint}), bias ("short"|"mid"|"long"|"flat"), importanceScore (integer 0-100), drift (object mapping commodity to a small decimal). The source field MUST be a URL copied verbatim from the list above — never a publication name. Ground every explanation in the current price numbers. NEVER include a URL or markdown link inside the explanation field. Write explanations in your own words, ONE single meaningful sentence max, starting with the commodity and current price number. Do NOT copy raw text verbatim — summarize in your own words. NEVER start with a bullet point or publication name. NEVER write more than ONE sentence per explanation. NEVER include publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for prices. Do not output markdown, commentary, or anything outside the JSON object.`;
 
       console.warn(`Factor analysis: retrying Kilo for scope "${scope}" after invalid/empty response (content length ${content.length}, factors ${Array.isArray(parsed?.factors) ? parsed.factors.length : 0})`);
 

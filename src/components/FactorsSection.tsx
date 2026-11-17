@@ -13,7 +13,6 @@ import {
 import Reveal from "./Reveal";
 import {
   COMMODITIES,
-  FACTORS,
   factorRelevance,
   relevanceTrend,
   type Direction,
@@ -302,22 +301,17 @@ export default function FactorsSection({
   factorsLoaded = false,
 }: FactorsSectionProps) {
   const isOnline = healthStatus === "Online Model Connected";
-  const hasLiveFactors = dynamicFactors?.some((f) => isHttpUrl(f.source)) ?? false;
   const isLoading = !factorsLoaded;
 
-  // When we have live (URL-analyzed) factors, show only those — never
-  // supplement with static publication-name fallbacks, so every card displays
-  // a real TinyFish source URL backed by dashboard statistics. If live
-  // curation returns fewer than 8, the grid shows exactly the live factors.
-  // While loading, show empty state instead of static fallbacks.
-  let activeFactors: Factor[];
-  if (isLoading) {
-    activeFactors = [];
-  } else if (hasLiveFactors) {
-    activeFactors = dynamicFactors!.slice(0, FACTOR_COUNT);
-  } else {
-    activeFactors = FACTORS;
-  }
+  // The AI-Curated section must ONLY ever render factors genuinely backed by a
+  // fetched source URL. Never fall back to hard-coded static factor arrays
+  // (which carry publication names instead of URLs), so every card displays a
+  // real source URL. If no URL-backed factors exist after loading, the grid
+  // shows an explicit empty state. While loading, show skeletons.
+  const activeFactors: Factor[] = isLoading
+    ? []
+    : (dynamicFactors ?? []).filter((f) => isHttpUrl(f.source)).slice(0, FACTOR_COUNT);
+  const hasLiveFactors = activeFactors.length > 0;
 
   const isAiCurated = hasLiveFactors && isOnline;
 
@@ -338,12 +332,14 @@ export default function FactorsSection({
               Key factors & drivers
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              {isOnline ? "AI-Curated Factors" : "Key factors & drivers"}
+              {isAiCurated ? "AI-Curated Factors" : "Key factors & drivers"}
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               {isAiCurated
                 ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."
-                : "Twelve researched drivers shape the forecast paths. Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
+                : !isLoading && activeFactors.length === 0
+                ? "Factors appear only when they can be traced to a fetched source URL. None are available right now."
+                : "Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
             </p>
             {isOnline && (
               <p className="mt-2 text-xs text-teal-400 dark:text-teal-300/80">
@@ -373,7 +369,8 @@ export default function FactorsSection({
             ))
           ) : (
             <p className="col-span-full text-center text-sm text-slate-500 dark:text-slate-400 py-8">
-              No factors available
+              No live price factors are available right now. Reasons are only shown when they can be
+              traced to a fetched source URL.
             </p>
           )}
         </div>

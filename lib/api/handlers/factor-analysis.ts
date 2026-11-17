@@ -162,6 +162,17 @@ export function sanitizeExplanation(text: string): string {
     // Strip leading/trailing whitespace
     .trim();
 
+  // Split scraped list-style text on middle-dot separators (`·`) and keep the
+  // first meaningful segment. Scraped pages often join list items with `·`,
+  // e.g. "Q2 2026 · Recent prices · Gas co", which is not prose. Keep the
+  // first segment when it is at least 40 chars; otherwise keep the first
+  // segment as-is so downstream trimming/validation can still evaluate it.
+  if (cleaned.includes("·")) {
+    const segments = cleaned.split("·").map((s) => s.trim()).filter((s) => s.length > 0);
+    const meaningful = segments.find((s) => s.length >= 40);
+    cleaned = (meaningful ?? segments[0] ?? "").trim();
+  }
+
   // Strip leading page chrome / metadata chunks (report titles, "Release
   // Date:" fields, "Full Report | Text Only | All Tables" navigation,
   // "Forecast overview Global oil prices." headings, "Cite report ... Licence:
@@ -227,6 +238,22 @@ export function sanitizeExplanation(text: string): string {
       cleaned += "…";
     }
   }
+
+  // Final cleanup: remove a truncated trailing fragment after the last period.
+  // E.g. "... petroleum products. E" → "... petroleum products.", or a short
+  // clipped tail like "cheap" that has no terminal punctuation. Only trims back
+  // when there is earlier terminal punctuation to fall back to.
+  cleaned = cleaned.replace(/([.!?])\s+[A-Za-z]{1,2}\s*$/u, "$1").trim();
+  const lastTerminal = Math.max(
+    cleaned.lastIndexOf("."),
+    cleaned.lastIndexOf("!"),
+    cleaned.lastIndexOf("?"),
+  );
+  const tail = lastTerminal >= 0 ? cleaned.slice(lastTerminal + 1).trim() : cleaned;
+  if (lastTerminal >= 0 && tail.length > 0 && tail.length < 15 && !/[.!?…]$/.test(tail)) {
+    cleaned = cleaned.slice(0, lastTerminal + 1).trim();
+  }
+
   return cleaned;
 }
 
@@ -324,6 +351,44 @@ function extractSummaryFromArticle(text: string): string {
     if (lowerResult.startsWith(opener)) {
       result = result.slice(opener.length).trim();
       break;
+    }
+  }
+
+  // If the result contains a middle-dot separator (`·`), it is scraped list
+  // text rather than prose. Keep the first segment that is at least 40 chars;
+  // if none qualify, drop the list glue entirely by taking the first segment
+  // only when it is long enough, otherwise return "" so the candidate is
+  // skipped by the caller.
+  if (result.includes("·")) {
+    const segments = result.split("·").map((s) => s.trim()).filter((s) => s.length > 0);
+    const meaningful = segments.find((s) => s.length >= 40);
+    result = meaningful ?? "";
+  }
+
+  // Reject generic fragment patterns that do not describe a price driver.
+  // These come from scraped report text ("tight supply forecast for Australia's
+  // east coast gas market in Q2 2026 · Recent prices are within expected ranges
+  // · Gas co..."). If the result matches one of these, search for a later
+  // complete sentence that does not match; if none is found, return "" so the
+  // caller skips this candidate.
+  const genericFragmentPatterns = [
+    /tight\s+supply\s+forecast/i,
+    /recent\s+prices\s+are\s+within\s+expected\s+ranges/i,
+    /margins\s+weakened\s+almost\s+everywhere/i,
+  ];
+  for (const pattern of genericFragmentPatterns) {
+    if (pattern.test(result)) {
+      // Try to find a later complete sentence that does not match the pattern.
+      const sentences = result.match(/[A-Z][^.!?]*[.!?](?:\s|$)/g) ?? [];
+      let replacement = "";
+      for (const sentence of sentences) {
+        if (!pattern.test(sentence) && sentence.length >= 40) {
+          replacement = sentence.trim();
+          break;
+        }
+      }
+      result = replacement;
+      if (!result) return "";
     }
   }
 
@@ -511,6 +576,21 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     /outlook\s+(?:sees|projects|forecasts)\s+(?:demand|supply|consumption|production)/i,
     /demand\s+(?:is|are)\s+(?:projected|expected|anticipated|poised|set)\s+to/i,
     /consumption\s+(?:is|are)\s+(?:projected|expected|anticipated|poised|set)\s+to/i,
+    // NEW: generic news / scraped-fragment markers that do not explain *why*
+    // prices moved — they just describe the article's own framing ("tight
+    // supply forecast", "margins weakened almost everywhere", "recent prices
+    // are within expected ranges", "gas market in Q2 2026").
+    /tight\s+supply\s+forecast/i,
+    /recent\s+prices\s+are\s+within\s+expected\s+ranges/i,
+    /margins\s+weakened\s+almost\s+everywhere/i,
+    /gas\s+market\s+in\s+q2\s+2026/i,
+    /gas\s+market\s+in\s+\d{4}\s+(?:q[1-4])\b/i,
+    // Truncated trailing fragment: ends with a partial word that looks like
+    // clipped scraped text (single letter, or word fragment with no terminal
+    // punctuation after it). Examples: "... petroleum products. E", "... cheap",
+    // "... gas co".
+    /\.\s*[a-z]{1,3}\s*$/i,
+    /\b(e|u|s|gas|co|oil|elec|wat)\.\s*$/i,
   ];
   for (const pattern of genericBodyPatterns) {
     if (pattern.test(body)) {
@@ -605,25 +685,40 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     }
   }
 
-  // Require at least one sentence-ending punctuation for explanations longer
-  // than ~50 chars. Raw scraped fragments often run on without punctuation.
-  // Uses [.!?] followed by whitespace OR end-of-string so a single complete
-  // sentence ending in a period is accepted.
-  if (trimmed.length > 50 && (trimmed.match(/[.!?](\s|$)/g)?.length ?? 0) < 1) {
-    return { ok: false, reason: "too few sentences for length" };
-  }
+// Reject explanations that end with a truncated trailing fragment — a
+    // sentence that cuts off mid-word or ends with a single letter / clipped
+    // word after the final period. Examples: "...petroleum products. E",
+    // "...gas co", "...cheap". A genuine analyst summary always ends with a
+    // complete word followed by terminal punctuation.
+    if (/\.\s*[a-z]{1,3}\s*$/i.test(trimmed) || /\b(e|u|s|gas|co|oil|elec|wat)\.\s*$/i.test(trimmed)) {
+      return { ok: false, reason: "truncated trailing fragment" };
+    }
+    // Reject explanations whose last sentence ends with a partial word
+    // fragment (no space after the period, and the next token is a short
+    // word). This catches mid-sentence truncation like "...products.E".
+    if (/\.[a-z]{1,4}\s*$/i.test(trimmed) && !/\.[a-z]{1,4}\.\s*$/.test(trimmed)) {
+      return { ok: false, reason: "truncated trailing fragment" };
+    }
 
-  // Allow up to 3 sentences for natural analyst summaries. Kilo often generates
-  // 2-3 sentence explanations that are legitimate price-driver analyses.
-  // Rejecting all multi-sentence output forces re-summarization which often
-  // fails or drops valid factors entirely, leading to static fallbacks.
-  const sentenceCount = (trimmed.match(/[.!?](\s|$)/g)?.length ?? 0);
-  if (sentenceCount > 3) {
-    return { ok: false, reason: "too many sentences" };
-  }
+    // Require at least one sentence-ending punctuation for explanations longer
+    // than ~50 chars. Raw scraped fragments often run on without punctuation.
+    // Uses [.!?] followed by whitespace OR end-of-string so a single complete
+    // sentence ending in a period is accepted.
+    if (trimmed.length > 50 && (trimmed.match(/[.!?](\s|$)/g)?.length ?? 0) < 1) {
+      return { ok: false, reason: "too few sentences for length" };
+    }
 
-  return { ok: true };
-}
+    // Allow up to 3 sentences for natural analyst summaries. Kilo often generates
+    // 2-3 sentence explanations that are legitimate price-driver analyses.
+    // Rejecting all multi-sentence output forces re-summarization which often
+    // fails or drops valid factors entirely, leading to static fallbacks.
+    const sentenceCount = (trimmed.match(/[.!?](\s|$)/g)?.length ?? 0);
+    if (sentenceCount > 3) {
+      return { ok: false, reason: "too many sentences" };
+    }
+
+    return { ok: true };
+  }
 
 /**
  * Second-pass summarization: takes a raw explanation that failed quality
@@ -643,7 +738,15 @@ export async function reSummarizeExplanation(
   },
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const prompt = `Rewrite the following text into 1-3 meaningful sentences (under 400 characters total). The explanation MUST start with "With [commodity] at $[price]/[unit]..." using the exact current price numbers provided below. Write in your own words — do NOT copy text verbatim. Do NOT include URLs, markdown links, bullet points, or publication names. Do NOT start with a bullet point or dash. Do NOT include publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for oil/electricity/water prices.
+  const prompt = `Rewrite the following text into 1-3 meaningful sentences (under 400 characters total) that explain WHY the commodity price is moving. The explanation MUST start with "With [commodity] at $[price]/[unit]..." using the exact current price numbers provided below. Write in your own words — do NOT copy text verbatim.
+
+Explain the actual price driver: a supply change (production cuts, outages, disruptions), a demand change, an unplanned outage, a policy or sanctions action, or an inventory/stock change. State what changed and why it moves the price.
+
+FORBIDDEN:
+- Merely describing an event, report, or agency action without explaining the price effect (e.g. "the report was published", "the agency released data").
+- Ending with a truncated word or fragment (e.g. "... products. E", "... gas co", "... cheaper").
+- Using the middle-dot "·" separator or any list-style scraped text (e.g. "Q2 2026 · Recent prices · Gas co").
+- URLs, markdown links, bullet points, dashes at the start, publication names, headers, dates, or metadata.
 
 Current prices: oil \$${currentPrices.oil.price}/${currentPrices.oil.unit}, electricity \$${currentPrices.electricity.price}/${currentPrices.electricity.unit}, water \$${currentPrices.water.price}/${currentPrices.water.unit}
 
@@ -651,7 +754,7 @@ Text to summarize: "${rawExplanation}"`;
 
   const payload = {
     messages: [
-      { role: "system", content: "You are a precise summarizer. Output 1-3 meaningful sentences (under 400 chars total), no preamble, no markdown, no URLs, no bullet points, no dashes at the start, no publication headers, dates, or metadata. Focus on the specific price driver: what changed and why it matters for prices." },
+      { role: "system", content: "You are a precise commodity analyst and summarizer. Output 1-3 meaningful sentences (under 400 chars total) that explain WHY the price is moving — a supply change, demand change, unplanned outage, policy/sanctions action, or inventory change. Start with \"With [commodity] at $[price]/[unit],\". Never merely describe an event, report, or agency action without its price effect. Never end with a truncated word or fragment (\"E\", \"co\", \"cheaper\"). Never use the middle-dot \"·\" separator or list-style scraped text. No preamble, no markdown, no URLs, no bullet points, no dashes at the start, no publication headers, dates, or metadata." },
       { role: "user", content: prompt },
     ],
     max_tokens: 200,
@@ -852,6 +955,15 @@ BAD explanation — contains page navigation chrome:
 BAD explanation — mid-sentence fragment starting with participle:
 "With oil at $104.86/bbl, using ship-to-ship transfers along Oman's coast added to supply which was reflected in prices during late October and early"
 
+BAD explanation — raw article fragment with truncated ending (NOT a price driver):
+"With oil at $108.2/USD per barrel, the G7 Oil Price Cap Coalition established an oil price cap mechanism on Russian seaborne crude oil and petroleum products. E"
+
+BAD explanation — generic news text that does NOT explain price changes:
+"With oil at $112.5/USD per barrel, margins weakened almost everywhere in October as record freight costs hit Asian refiners. US refiners benefited from cheaper"
+
+BAD explanation — just a forecast/list fragment, NOT a price driver:
+"With electricity at $252/USD per MWh, tight supply forecast for Australia's east coast gas market in Q2 2026 · Recent prices are within expected ranges · Gas co"
+
 Every explanation you output must follow the GOOD examples: 1-3 meaningful sentences, your own words, STARTS WITH commodity + current price number from currentPrices (literally "With <commodity> at $<price>/<unit>,"), no URLs, no markdown, no bullet points, no raw article text, no publication headers, dates, or metadata, no page navigation chrome, no participle-opener fragments. Focus on the specific price driver: what changed and why it matters for prices.
 
 === GROUNDING ===
@@ -935,6 +1047,15 @@ BAD explanation — contains page navigation chrome:
 
 BAD explanation — mid-sentence fragment starting with participle:
 "With oil at $104.86/bbl, using ship-to-ship transfers along Oman's coast added to supply which was reflected in prices during late October and early"
+
+BAD explanation — raw article fragment with truncated ending (NOT a price driver):
+"With oil at $108.2/USD per barrel, the G7 Oil Price Cap Coalition established an oil price cap mechanism on Russian seaborne crude oil and petroleum products. E"
+
+BAD explanation — generic news text that does NOT explain price changes:
+"With oil at $112.5/USD per barrel, margins weakened almost everywhere in October as record freight costs hit Asian refiners. US refiners benefited from cheaper"
+
+BAD explanation — just a forecast/list fragment, NOT a price driver:
+"With electricity at $252/USD per MWh, tight supply forecast for Australia's east coast gas market in Q2 2026 · Recent prices are within expected ranges · Gas co"
 
 Every explanation you output must follow the GOOD examples: 1-3 meaningful sentences, your own words, STARTS WITH commodity + current price number from currentPrices (literally "With <commodity> at $<price>/<unit>,"), no URLs, no markdown, no bullet points, no raw article text, no publication headers, dates, or metadata, no page navigation chrome, no participle-opener fragments. Focus on the specific price driver: what changed and why it matters for prices.
 
@@ -1292,6 +1413,14 @@ function clauseQualityCheck(clause: string): boolean {
     "outlook sees",
     "outlook projects",
     "outlook forecasts",
+    // NEW: specific scraped-fragment patterns from user reports
+    "tight supply forecast",
+    "recent prices are within expected ranges",
+    "margins weakened almost everywhere",
+    "gas market in q2 2026",
+    "gas market in",
+    "petroleum products. e",
+    "refiners benefited from cheaper",
   ];
   for (const marker of fragmentMarkers) {
     if (lower.includes(marker)) return false;

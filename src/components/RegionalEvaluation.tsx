@@ -43,7 +43,6 @@ import {
   type RegionEvaluation,
   type RegionId,
   type Factor,
-  REGIONAL_FACTORS,
 } from "../lib/model";
 import { buildRegionalMarkdown } from "../lib/markdown";
 
@@ -505,15 +504,14 @@ export default function RegionalEvaluation({
 
   const selected = evals.find((e) => e.region.id === region) ?? evals[0];
 
-  // Use live (URL-analyzed) regional factors when the API reports aiCurated,
-  // otherwise fall back to the static regional factor list.
-  // While loading, show empty array so skeleton loaders display.
+  // The AI / regional factors section must ONLY ever render factors genuinely
+  // backed by a fetched source URL. Never fall back to the hard-coded
+  // REGIONAL_FACTORS list (which carries publication names, not URLs). While
+  // loading, show an empty array so the skeleton loaders display.
   const isLoading = !factorsLoaded;
-  const activeRegionalFactors = isLoading
+  const activeRegionalFactors: Factor[] = isLoading
     ? []
-    : dynamicFactors[selected.region.id]?.some((f) => isHttpUrl(f.source))
-      ? dynamicFactors[selected.region.id]!
-      : (REGIONAL_FACTORS[selected.region.id] ?? []);
+    : (dynamicFactors[selected.region.id] ?? []).filter((f) => isHttpUrl(f.source));
 
   // Close the export menu on outside click or Escape, returning focus to the
   // trigger so keyboard users never lose their place (WAI-ARIA menu button).
@@ -1040,12 +1038,12 @@ export default function RegionalEvaluation({
                <div id="regional-factors" className="mt-5">
                  <div className="mb-3 flex items-center justify-between">
                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
-                     {healthStatus === "Online Model Connected"
+                     {activeRegionalFactors.length > 0 && healthStatus === "Online Model Connected"
                        ? "AI Factors"
                        : "Regional factors"}
                    </p>
                    <span className="text-[11px] text-slate-600 dark:text-slate-400">
-                     {isLoading ? "Loading…" : "8 factors per region"}
+                     {isLoading ? "Loading…" : `${activeRegionalFactors.length} factors`}
                    </span>
                  </div>
                    <div className="grid gap-2 sm:grid-cols-2">
@@ -1059,7 +1057,8 @@ export default function RegionalEvaluation({
                        ))
                      ) : (
                        <p className="col-span-full text-center text-sm text-slate-500 dark:text-slate-400 py-8">
-                         No regional factors available
+                         No live regional factors are available right now for {selected.region.name}.
+                         Reasons appear only when traceable to a fetched source URL.
                        </p>
                      )}
                    </div>

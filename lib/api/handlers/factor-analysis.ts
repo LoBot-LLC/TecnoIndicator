@@ -846,50 +846,65 @@ export async function validateAndRepairWindow(
   signal?: AbortSignal,
 ): Promise<Factor[]> {
   const repaired: Factor[] = [];
-  for (const f of filterStaticFallbacks(factors)) {
+  const filtered = filterStaticFallbacks(factors);
+
+  // Phase 1: Collect all factors needing repair, run re-summarization in parallel
+  const needingRepair = filtered.filter((f) => {
+    const quality = validateExplanationQuality(f.explanation);
+    return !quality.ok && quality.reason !== "static fallback text";
+  });
+
+  if (needingRepair.length > 0) {
+    console.warn(`validateAndRepairWindow: ${needingRepair.length} factors need re-summarization, running in parallel`);
+    const repairPromises = needingRepair.map((f) =>
+      reSummarizeExplanation(f.explanation, currentPrices, signal).then((reSummary) => ({ factor: f, reSummary, reQuality: reSummary ? validateExplanationQuality(reSummary) : { ok: false, reason: "re-summarization returned null" } }))
+    );
+    const repairResults = await Promise.allSettled(repairPromises);
+
+    // Phase 2: Process results, fall back to sanitization where needed
+    const sanitizeCandidates: Factor[] = [];
+    for (let i = 0; i < needingRepair.length; i++) {
+      const result = repairResults[i];
+      const f = needingRepair[i];
+      if (result.status === "fulfilled") {
+        const { reSummary, reQuality } = result.value;
+        if (reSummary && reQuality.ok) {
+          repaired.push({ ...f, explanation: reSummary });
+          continue;
+        }
+        console.warn(`validateAndRepairWindow: re-summarization failed or rejected quality ("${reQuality.reason}") for factor "${f.name}"); queuing for sanitization`);
+      } else {
+        console.warn(`validateAndRepairWindow: re-summarization threw for factor "${f.name}": ${result.reason}; queuing for sanitization`);
+      }
+      sanitizeCandidates.push(f);
+    }
+
+    // Phase 3: Sanitization for remaining failures (still sequential, but typically few)
+    for (const f of sanitizeCandidates) {
+      const sanitized = sanitizeExplanation(f.explanation);
+      if (sanitized) {
+        const sanitizedQuality = validateExplanationQuality(sanitized);
+        if (sanitizedQuality.ok) {
+          repaired.push({ ...f, explanation: sanitized });
+        } else {
+          console.warn(`validateAndRepairWindow: sanitized fallback still failed quality ("${sanitizedQuality.reason}") for factor "${f.name}"; skipping factor`);
+        }
+      } else {
+        console.warn(`validateAndRepairWindow: sanitized fallback is empty for factor "${f.name}"; skipping factor`);
+      }
+    }
+  }
+
+  // Factors that passed quality initially
+  for (const f of filtered) {
     const quality = validateExplanationQuality(f.explanation);
     if (quality.ok) {
       repaired.push(f);
-      continue;
-    }
-
-    // Auto-remove static fallback factors entirely — don't try to repair them
-    if (quality.reason === "static fallback text") {
+    } else if (quality.reason === "static fallback text") {
       console.warn(`validateAndRepairWindow: removing static fallback factor "${f.name}"`);
-      continue;
-    }
-
-    console.warn(`validateAndRepairWindow: explanation failed quality ("${quality.reason}") for factor "${f.name}"; attempting re-summarization`);
-    const reSummary = await reSummarizeExplanation(f.explanation, currentPrices, signal);
-    if (reSummary) {
-      const reQuality = validateExplanationQuality(reSummary);
-      if (reQuality.ok) {
-        repaired.push({ ...f, explanation: reSummary });
-        continue;
-      }
-      console.warn(`validateAndRepairWindow: re-summarization still failed quality ("${reQuality.reason}") for factor "${f.name}"); attempting sanitization`);
-    } else {
-      console.warn(`validateAndRepairWindow: re-summarization returned null for factor "${f.name}"); attempting sanitization`);
-    }
-    // Last resort: sanitize and check quality. If the sanitized text STILL fails
-    // validateExplanationQuality (which now requires a commodity+price opening),
-    // skip the factor entirely — do NOT fall back to a generic placeholder.
-    const sanitized = sanitizeExplanation(f.explanation);
-    if (sanitized) {
-      const sanitizedQuality = validateExplanationQuality(sanitized);
-      if (sanitizedQuality.ok) {
-        repaired.push({ ...f, explanation: sanitized });
-      } else {
-        console.warn(`validateAndRepairWindow: sanitized fallback still failed quality ("${sanitizedQuality.reason}") for factor "${f.name}"; skipping factor`);
-        // Skip this factor entirely instead of using a generic placeholder
-        continue;
-      }
-    } else {
-      console.warn(`validateAndRepairWindow: sanitized fallback is empty for factor "${f.name}"; skipping factor`);
-      // Skip this factor entirely instead of using a generic placeholder
-      continue;
     }
   }
+
   return repaired;
 }
 
@@ -2043,14 +2058,14 @@ export async function runFactorAnalysis(
     // URL is still a valid source the model can summarize (and link to).
     candidates = allResults
       .filter((r) => isReputableSource(r.url) && isRecentPublishedAt(r.publishedAt))
-      .slice(0, 15);
+      .slice(0, 10);
 
     console.warn(`Factor analysis: ${candidates.length} reputable+recent candidates for scope "${scope}" after TinyFish search`);
 
     if (candidates.length === 0) {
       candidates = allResults
         .filter((r) => isRecentPublishedAt(r.publishedAt))
-        .slice(0, 15);
+        .slice(0, 10);
       console.warn(`Factor analysis: ${candidates.length} recent candidates for scope "${scope}" (reputable filter yielded none)`);
     }
 
@@ -2197,34 +2212,62 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
       return { factors: repaired, aiCurated: carriedAiCurated, updatedAt: now };
     }
 
-    const normalized: Factor[] = [];
-    for (const raw of parsed.factors) {
+    const parsedFactors = parsed.factors;
+
+    // Phase 1: Normalize all parsed factors (synchronous, fast)
+    const normalizedCandidates: Array<{ f: Factor; quality: ReturnType<typeof validateExplanationQuality> }> = [];
+    for (const raw of parsedFactors) {
       const f = normalizeFactor(raw, scope, candidateObjs);
       if (!f) continue;
       if (f.scope !== scope) continue;
 
       const quality = validateExplanationQuality(f.explanation);
-      if (!quality.ok) {
-        console.warn(`Factor analysis: explanation failed quality check ("${quality.reason}") for factor "${f.name}" scope "${scope}"; attempting re-summarization`);
-        const reSummary = await reSummarizeExplanation(f.explanation, currentPrices, signal);
-        if (reSummary) {
-          const reQuality = validateExplanationQuality(reSummary);
-          if (reQuality.ok) {
-            f.explanation = reSummary;
+      normalizedCandidates.push({ f, quality });
+      if (normalizedCandidates.length >= FACTOR_COUNT) break;
+    }
+
+    // Phase 2: Separate passing and failing factors
+    const passing: Factor[] = [];
+    const needingRepair = normalizedCandidates.filter(({ f, quality }) => {
+      if (quality.ok) {
+        passing.push(f);
+        return false;
+      }
+      console.warn(`Factor analysis: explanation failed quality check ("${quality.reason}") for factor "${f.name}" scope "${scope}"; queuing for re-summarization`);
+      return true;
+    }).map(({ f }) => f);
+
+    // Phase 3: Parallel re-summarization for failing factors
+    let repairedFromResummarize: Factor[] = [];
+    if (needingRepair.length > 0) {
+      console.warn(`Factor analysis: ${needingRepair.length} factors need re-summarization for scope "${scope}", running in parallel`);
+      const repairPromises = needingRepair.map((f) =>
+        reSummarizeExplanation(f.explanation, currentPrices, signal).then((reSummary) => ({
+          factor: f,
+          reSummary,
+          reQuality: reSummary ? validateExplanationQuality(reSummary) : { ok: false, reason: "re-summarization returned null" },
+        }))
+      );
+      const repairResults = await Promise.allSettled(repairPromises);
+
+      for (let i = 0; i < needingRepair.length; i++) {
+        const result = repairResults[i];
+        const f = needingRepair[i];
+        if (result.status === "fulfilled") {
+          const { reSummary, reQuality } = result.value;
+          if (reSummary && reQuality.ok) {
+            repairedFromResummarize.push({ ...f, explanation: reSummary });
             console.warn(`Factor analysis: re-summarization succeeded for factor "${f.name}" scope "${scope}"`);
-          } else {
-            console.warn(`Factor analysis: re-summarization still failed quality ("${reQuality.reason}") for factor "${f.name}" scope "${scope}"; rejecting`);
             continue;
           }
+          console.warn(`Factor analysis: re-summarization failed or rejected quality ("${reQuality.reason}") for factor "${f.name}" scope "${scope}"; rejecting`);
         } else {
-          console.warn(`Factor analysis: re-summarization returned null for factor "${f.name}" scope "${scope}"; rejecting`);
-          continue;
+          console.warn(`Factor analysis: re-summarization threw for factor "${f.name}" scope "${scope}": ${result.reason}; rejecting`);
         }
       }
-
-      normalized.push(f);
-      if (normalized.length >= FACTOR_COUNT) break;
     }
+
+    const normalized = [...passing, ...repairedFromResummarize];
 
     if (normalized.length === 0) {
       console.warn(`Factor analysis: all model-returned factors were rejected for scope "${scope}" (parsed ${parsed.factors.length}, normalized ${normalized.length}); building deterministic factors from ${excerpts.length} scraped excerpts`);

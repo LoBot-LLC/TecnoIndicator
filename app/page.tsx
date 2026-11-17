@@ -26,7 +26,7 @@ const ANALYTICS_POLL_MS = 60_000;
 const FACTORS_POLL_MS = 120_000;
 const SOLUTIONS_POLL_MS = 120_000;
 const HEALTH_POLL_MS = 5 * 60_000;
-const REGION_STAGGER_MS = 8_000;
+const REGION_STAGGER_MS = 200;
 
 type HealthStatus = "Initializing AI" | "Online Model Connected" | "Offline Model";
 
@@ -155,34 +155,44 @@ export default function HomePage() {
     };
   }, []);
 
-  // Poll dynamic factors (global + regional)
+  // Poll dynamic factors (global + regional) — parallel fetch for all scopes
   useEffect(() => {
     let active = true;
     const pollFactors = async () => {
-      try {
-        const res = await fetch("/api/dynamic-factors");
-        if (res.ok) {
+      // Fire all requests simultaneously: global + all regions
+      const globalPromise = fetch("/api/dynamic-factors");
+      const regionalPromises = EVAL_REGIONS.map((r) =>
+        fetch(`/api/regional-factors?region=${r.id}`).then(async (res) => {
+          if (!res.ok) return { region: r.id, factors: null, aiCurated: false, error: "fetch failed" };
           const data = await res.json();
-          if (active && Array.isArray(data.factors)) {
-            setGlobalFactors(data.factors);
-            setGlobalFactorsAiCurated(!!data.aiCurated);
-            setGlobalFactorsLoaded(true);
-          }
+          return { region: r.id, factors: Array.isArray(data.factors) ? data.factors : null, aiCurated: !!data.aiCurated };
+        }).catch(() => ({ region: r.id, factors: null, aiCurated: false, error: "network error" }))
+      );
+
+      // Await all in parallel
+      const [globalRes, ...regionalResults] = await Promise.all([globalPromise, ...regionalPromises]);
+
+      if (!active) return;
+
+      // Process global response
+      if (globalRes.ok) {
+        const data = await globalRes.json();
+        if (Array.isArray(data.factors)) {
+          setGlobalFactors(data.factors);
+          setGlobalFactorsAiCurated(!!data.aiCurated);
+          setGlobalFactorsLoaded(true);
         }
-      } catch { /* ignore */ }
-      for (const r of EVAL_REGIONS) {
-        try {
-          const res = await fetch(`/api/regional-factors?region=${r.id}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (active && Array.isArray(data.factors)) {
-              setRegionalFactors((prev) => ({ ...prev, [r.id]: data.factors }));
-              setRegionalFactorsAiCurated((prev) => ({ ...prev, [r.id]: !!data.aiCurated }));
-              setRegionalFactorsLoaded((prev) => ({ ...prev, [r.id]: true }));
-            }
-          }
-        } catch { /* ignore */ }
-        await new Promise((resolve) => setTimeout(resolve, REGION_STAGGER_MS));
+      } else {
+        setGlobalFactorsLoaded(true); // mark loaded even on error to show empty state
+      }
+
+      // Process regional responses
+      for (const result of regionalResults) {
+        if (result.factors !== null) {
+          setRegionalFactors((prev) => ({ ...prev, [result.region]: result.factors }));
+          setRegionalFactorsAiCurated((prev) => ({ ...prev, [result.region]: result.aiCurated }));
+        }
+        setRegionalFactorsLoaded((prev) => ({ ...prev, [result.region]: true }));
       }
     };
     pollFactors();

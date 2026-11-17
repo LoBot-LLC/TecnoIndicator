@@ -5,13 +5,11 @@ import {
   readFactorWindow,
   runFactorAnalysis,
   toFactorsPayload,
-  validateAndRepairWindow,
   writeFactorWindow,
 } from "./factor-analysis";
 import { FACTORS_CACHE_MS } from "../_shared/http";
 import { isRegion, type Region } from "../_shared/regions";
 import { sanitizeError } from "../_shared/validation";
-import { getScopePriceDefaults } from "../_shared/deterministicAnalytics";
 import type { RegionId } from "../_shared/types";
 
 export const maxDuration = 58;
@@ -48,12 +46,9 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     if (!force) {
       const stored = await readFactorWindow(scope);
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
-        const currentPrices = getScopePriceDefaults(scope);
-        const repaired = await validateAndRepairWindow(stored.factors, currentPrices, undefined);
-        // Write repaired factors back to cache so old bad factors aren't re-served
-        await writeFactorWindow(scope, repaired, stored.aiCurated);
+        // runFactorAnalysis already validates/repairs; trust the cached window
         return Response.json(
-          toFactorsPayload(repaired, scope, stored.aiCurated, { updatedAt: stored.updatedAt }),
+          toFactorsPayload(stored.factors, scope, stored.aiCurated, { updatedAt: stored.updatedAt }),
           { status: 200 },
         );
       }
@@ -64,10 +59,8 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     try {
       const result = await runFactorAnalysis(scope, { abortSignal: abortController.signal });
       const stored = await writeFactorWindow(scope, result.factors, result.aiCurated);
-      const currentPrices = getScopePriceDefaults(scope);
-      const repaired = await validateAndRepairWindow(stored.factors, currentPrices, abortController.signal);
       return Response.json(
-        toFactorsPayload(repaired, scope, stored.aiCurated, { updatedAt: stored.updatedAt }),
+        toFactorsPayload(result.factors, scope, result.aiCurated, { updatedAt: stored.updatedAt }),
         { status: 200 },
       );
     } finally {
@@ -79,10 +72,8 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     // than failing the request outright.
     const stored = await readFactorWindow(scope).catch(() => null);
     const factors = filterStaticFallbacks(stored?.factors.length ? stored.factors : buildFallbackFactors(scope));
-    const currentPrices = getScopePriceDefaults(scope);
-    const repaired = await validateAndRepairWindow(factors, currentPrices, undefined);
     return Response.json(
-      toFactorsPayload(repaired, scope, stored?.aiCurated ?? false, {
+      toFactorsPayload(factors, scope, stored?.aiCurated ?? false, {
         updatedAt: stored?.updatedAt ?? new Date().toISOString(),
         error: "Dynamic factors temporarily unavailable; static fallbacks returned",
       }),

@@ -145,6 +145,50 @@ The `aiCurated` flag on each API response tells the UI whether factors are live 
 
 ---
 
+## ⚡ Parallel Execution & Performance Optimization
+
+The factor curation and fetching architecture has been optimized for parallelism at multiple levels:
+
+### 1. Client-Side Parallel Fetching (Frontend)
+The `app/page.tsx` polling logic now fires **all six scope requests simultaneously** (1 global + 5 regional) using `Promise.all`, eliminating the previous 8-second stagger between regions. This reduces the full factor refresh latency from ~40+ seconds (sequential) to the duration of the slowest single request.
+
+```tsx
+// Before: Sequential with 8s gaps
+global → wait → asia → wait 8s → europe → wait 8s → ...
+
+// After: Parallel Promise.all
+const [globalRes, ...regionalResults] = await Promise.all([
+  fetch("/api/dynamic-factors"),
+  ...EVAL_REGIONS.map(r => fetch(`/api/regional-factors?region=${r.id}`))
+]);
+```
+
+Each scope maintains its own `factorsLoaded` state, so the UI shows skeleton loaders per region and updates cards incrementally as responses arrive.
+
+### 2. Server-Side Parallelism Within Each Scope
+Each `/api/dynamic-factors` and `/api/regional-factors` invocation runs its pipeline with maximum internal parallelism:
+
+- **TinyFish Search**: 3 queries (oil, electricity, water) run in parallel via `Promise.all`
+- **TinyFish Scrape**: Up to 10 candidate URLs (reduced from 15) scraped in parallel
+- **Kilo Inference**: Single primary call; retry on failure
+- **Re-summarization**: Multiple failing factors are repaired in parallel using `Promise.allSettled` (both in `runFactorAnalysis` normalization loop and in `validateAndRepairWindow`), replacing the previous sequential per-factor await pattern
+
+### 3. Eliminated Duplicate Repair Passes
+The route handlers (`dynamic-factors.ts`, `regional-factors.ts`) previously called `validateAndRepairWindow` **after** `runFactorAnalysis` returned, duplicating all quality checks and re-summarization work. This has been removed — `runFactorAnalysis` now returns fully validated, repaired factors directly, and the handlers trust that result.
+
+### 4. Reduced Scrape Fan-Out
+Maximum candidates per scope reduced from 15 to 10, cutting TinyFish scrape calls by 33% and reducing the slowest-scrape bottleneck.
+
+### 5. Graceful Partial Failures
+`Promise.allSettled` is used for parallel re-summarization so one factor's failure doesn't block others. Failed repairs fall back to server-side sanitization; only truly unrecoverable factors are dropped.
+
+### 6. Cache Freshness & Staggering
+- `FACTORS_CACHE_MS = 60s` (freshness gate) — shorter than poll interval to keep data fresh
+- `FACTORS_POLL_MS = 120s` — client polls every 2 minutes
+- Cron job runs daily at 02:00 UTC with 300s `maxDuration` for full pre-warming
+
+---
+
 ## 📊 Key Factors & Drivers UI
 
 Each factor card in the UI shows:

@@ -27,7 +27,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
           <div>
             <Logo variant="lobot" />
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-              LoBot LLC is an AI-native startup that creates business solutions enabling large
+              LoBot LLC is a Vietnamese AI-native startup that creates business solutions enabling large
               enterprises to make future-ready strategic decisions.
             </p>
             <a

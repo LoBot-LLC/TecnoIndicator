@@ -314,7 +314,7 @@ export default function HomePage() {
       <div className="min-h-screen bg-base font-sans text-slate-900 dark:text-white antialiased">
         <Navbar />
         <main>
-          <Hero prices={prices} deltas={deltas} points={points} horizon={horizon} />
+          <Hero prices={prices} deltas={deltas} oilLive={oilLive} electricityLive={electricityLive} waterLive={waterLive} points={points} horizon={horizon} />
           <MarketIndexStrip scope={scope} analytics={scopeAnalytics} />
           <ForecastTool
             horizon={horizon}

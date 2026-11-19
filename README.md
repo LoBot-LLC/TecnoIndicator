@@ -143,6 +143,8 @@ The `aiCurated` flag on each API response tells the UI whether factors are live 
 
 **Timeouts & Limits:** The global and regional factor routes are configured with `maxDuration = 60` seconds in their route handlers (matching `vercel.json`), and the internal abort signals are set to 58 seconds to allow the full pipeline (TinyFish search + scrape + Kilo inference) to complete before the platform timeout. The regional route previously used a 25s abort which was too short for the full pipeline; this has been increased to 58s to match the global route.
 
+**Factor Curation Validation (lib/api/handlers/factor-analysis.ts):** Every explanation produced by the pipeline is validated to be **1–3 complete sentences ≤400 chars** and must open with `With <commodity> at $<price>/<unit>,` (e.g. `With oil at $104.86/bbl, OPEC+ members have agreed to extend voluntary production cuts…`) or `<Commodity> <verb> …` (e.g. `Brent crude rose …`). Raw page chrome / tweet tickers / mid-sentence fragments are rejected. Titles derive cleanly from explanations — `deriveFactorNameFromExplanation` strips the grounding preamble, takes the leading clause up to the first comma/semicolon, title-cases tokens while preserving acronyms (OPEC+, IEA) and units (mb/d, MWh), and truncates to ~80 chars — so units with spaces (e.g. "USD per barrel") render correctly. Client-side truncation in `src/components/{FactorsSection,RegionalEvaluation}.tsx` is sentence-boundary aware via `src/lib/truncate.ts` (`truncateAtSentence`), cutting at the last `.`, `!`, or `?` within the limit and never mid-word.
+
 ---
 
 ## ⚡ Parallel Execution & Performance Optimization
@@ -318,8 +320,9 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js** — Runtime environment (via Next.js on Vercel)
 - **Kilo AI Gateway** — OpenAI-compatible inference API at `api.kilo.ai/api/gateway` (price extraction, factor curation, solutions, forecasting)
-- **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search, with optional `include_domains` restriction for factor curation) and `api.fetch.tinyfish.ai` (single + batch URL scraping, up to 10 URLs per request via `tinyfishScrapeBatch` for the live-prices pipeline); each scrape uses `ttl: 0` for live (non-cached) fetches and carries a `purpose` statement to tailor extraction to price-relevance.
-- **TinyFish API (updated)** — Batch scraping via `tinyfishScrapeBatch` (up to 10 URLs per request, per-URL isolation), `ttl: 0` on live fetches to bypass cache and always return fresh prices, and markdown-format responses for clean downstream parsing by Kilo extraction and deterministic fallbacks.
+- **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search with `include_domains` restriction and `recency_minutes` for both factor curation and the live-prices pipeline) and `api.fetch.tinyfish.ai` (single + batch URL scraping, up to 10 URLs per request via `tinyfishScrapeBatch`); each scrape uses `ttl: 0` for live (non-cached) fetches, returns markdown-format responses for clean downstream parsing, and carries a `purpose` statement to tailor extraction to price-relevance.
+- **Live Prices Pipeline** (`lib/api/handlers/prices.ts`) — Per-commodity TinyFish search (`include_domains`, `recency_minutes`) → batch Fetch/Scrape (`ttl: 0`, markdown) → Kilo extraction → deterministic regex fallback, with per-commodity plausibility ranges (oil 40–200 USD/bbl, electricity 30–300 USD/MWh, water 0.5–15 USD/m³), comma-aware number parsing, per-unit qualifier preference, annual-bill rejection, and USD/kWh → USD/MWh normalization. Three-tier degradation: Kilo → deterministic regex → static benchmark defaults.
+- **Single-Source-of-Truth Live Flow** — `src/hook/useLiveMarket.ts` refreshes `liveQuotes` (price + source + asOf) on every fetch/poll, and the Hero "Market Snapshot" / live global feed renders those URL-sourced numbers (matching the Interactive price forecast cards) with no ad-hoc unit conversion.
 - **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis for cross-instance sharing
 - **Text utilities** (`lib/api/_shared/textUtils.ts`) — Shared `truncateAtWordBoundary` and `truncateAtSentenceBoundary` for word-safe truncation of factor explanations.
 
@@ -435,6 +438,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   ├── fonts.ts                     # Font definitions & loading
 │   │   ├── markdown.ts                  # Markdown report generation
 │   │   ├── model.ts                     # Forecast engine + static FACTORS/REGIONAL_FACTORS
+│   │   ├── truncate.ts                  # Sentence-boundary truncation helper (truncateAtSentence)
 │   │   └── units.ts                     # Unit conversion & display
 │   └── utils/                           # Shared frontend utilities
 │       └── cn.ts                        # clsx + tailwind-merge helper

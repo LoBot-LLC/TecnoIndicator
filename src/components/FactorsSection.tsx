@@ -19,6 +19,7 @@ import {
   type Factor,
   type Magnitude,
 } from "../lib/model";
+import { truncateAtSentence } from "../lib/truncate";
 
 const MAG_COLOR: Record<Magnitude, string> = {
   High: "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15",
@@ -66,11 +67,7 @@ function FactorCard({
   const shouldTruncate = factor.explanation.length > MAX_CHARS;
   const displayText = isExpanded || !shouldTruncate
     ? factor.explanation
-    : (() => {
-        const cut = factor.explanation.slice(0, MAX_CHARS);
-        const lastSpace = cut.lastIndexOf(" ");
-        return (lastSpace > 0 ? cut.slice(0, lastSpace) : factor.explanation.slice(0, MAX_CHARS)) + "…";
-      })();
+    : truncateAtSentence(factor.explanation, MAX_CHARS);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 transition-all duration-300 hover:border-line-strong hover:bg-panel">

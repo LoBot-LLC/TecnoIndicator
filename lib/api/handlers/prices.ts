@@ -171,36 +171,91 @@ async function resolvePrices(req: Request): Promise<Response> {
   return Response.json(fallbackResult, { status: 200 });
 }
 
-function extractPriceFromText(text: string): number | null {
+/**
+ * Plausible per-unit ranges for each commodity. Extracted figures outside these
+ * bounds are treated as mis-parsed (e.g. an annual water bill "2,026" or a
+ * per-kWh electricity tariff) and rejected so they never reach the live feed.
+ */
+const PLAUSIBLE_RANGES: Record<string, { min: number; max: number }> = {
+  oil: { min: 40, max: 200 },
+  electricity: { min: 30, max: 300 },
+  water: { min: 0.5, max: 15 },
+};
+
+/** Unit qualifiers used to prefer the number actually quoted per unit. */
+const UNIT_QUALIFIERS: Record<string, RegExp> = {
+  oil: /(?:per\s+barrel|a\s+barrel|\/\s*bbl|\bbbl\b)/i,
+  electricity: /(?:per\s+mwh|per\s+megawatt|\/\s*mwh|per\s+kwh|\/\s*kwh|\bmwh\b)/i,
+  water: /(?:per\s+cubic\s+met(?:er|re)|cubic\s+met(?:er|re)|\/\s*m3|per\s+gallon|\/\s*gal)/i,
+};
+
+/** Annual / monthly bill wording that signals a total, not a per-unit price. */
+const BILL_PERIOD =
+  /(?:per\s+year|a\s+year|annual|annually|\/\s*year|per\s+month|a\s+month|monthly|\/\s*month)/i;
+
+function parsePriceNumber(raw: string): number {
+  return Number.parseFloat(raw.replace(/,/g, ""));
+}
+
+/**
+ * Normalize an extracted figure into the pipeline's canonical per-unit value.
+ * - Electricity quoted in USD/kWh is converted to USD/MWh.
+ * - Figures outside the commodity's plausible range are rejected (return null).
+ */
+function normalizeCommodityPrice(commodity: string, rawPrice: number, unit?: string): number | null {
+  if (!Number.isFinite(rawPrice) || rawPrice <= 0) return null;
+  let price = rawPrice;
+  if (commodity === "electricity") {
+    const unitSaysKwh = typeof unit === "string" && /kwh/i.test(unit);
+    if (unitSaysKwh || (price > 0 && price < 1)) price = price * 1000;
+  }
+  const range = PLAUSIBLE_RANGES[commodity];
+  if (range && (price < range.min || price > range.max)) return null;
+  return price;
+}
+
+function extractPriceFromText(text: string, commodity?: string): number | null {
   // Prefer "from $X to $Y" → Y (the current/updated figure), e.g. GWI's
   // "lifts the average price from $2.97 to $3.47 per cubic metre".
-  const rangeMatch = text.match(/from\s+\$(\d+(?:\.\d+)?)\s*(?:to|→|-|–)\s*\$(\d+(?:\.\d+)?)/i);
+  const rangeMatch = text.match(/from\s+\$([\d,]+(?:\.\d+)?)\s*(?:to|→|-|–)\s*\$([\d,]+(?:\.\d+)?)/i);
   if (rangeMatch) {
-    const rangePrice = parseFloat(rangeMatch[2]);
-    if (rangePrice >= 0.01 && rangePrice <= 10000) return rangePrice;
+    const rangePrice = parsePriceNumber(rangeMatch[2]);
+    if (Number.isFinite(rangePrice) && rangePrice >= 0.01 && rangePrice <= 100000) return rangePrice;
   }
+
   const pricePatterns = [
-    /\$(\d+(?:\.\d+)?)/g,
-    /(\d+(?:\.\d+)?)\s*USD/g,
-    /(\d+(?:\.\d+)?)\s*dollars?/gi,
-    /(\d+(?:\.\d+)?)\s*€/g,
-    /(\d+(?:\.\d+)?)\s*EUR/g,
-    /(\d+(?:\.\d+)?)\s*¥/g,
-    /(\d+(?:\.\d+)?)\s*元/g,
+    /\$([\d,]+(?:\.\d+)?)/g,
+    /([\d,]+(?:\.\d+)?)\s*USD/gi,
+    /([\d,]+(?:\.\d+)?)\s*dollars?/gi,
+    /([\d,]+(?:\.\d+)?)\s*€/g,
+    /([\d,]+(?:\.\d+)?)\s*EUR/gi,
+    /([\d,]+(?:\.\d+)?)\s*¥/g,
+    /([\d,]+(?:\.\d+)?)\s*元/g,
   ];
 
+  const qualifier = commodity ? UNIT_QUALIFIERS[commodity] : undefined;
+  const candidates: Array<{ price: number; score: number }> = [];
+
   for (const pattern of pricePatterns) {
-    const matches = [...text.matchAll(pattern)];
-    if (matches.length > 0) {
-      for (const match of matches) {
-        const price = parseFloat(match[1]);
-        if (price >= 0.01 && price <= 10000) {
-          return price;
-        }
-      }
+    for (const match of text.matchAll(pattern)) {
+      const price = parsePriceNumber(match[1]);
+      if (!Number.isFinite(price) || price < 0.01 || price > 100000) continue;
+      const index = match.index ?? 0;
+      const context = text.slice(Math.max(0, index - 48), index + match[0].length + 48);
+      let score = 0;
+      // Prefer a figure quoted next to the commodity's per-unit qualifier.
+      if (qualifier && qualifier.test(context)) score += 10;
+      // Penalize annual/monthly bill totals so a per-unit figure wins instead.
+      if (BILL_PERIOD.test(context)) score -= 10;
+      candidates.push({ price, score });
     }
+    // A qualifier-tagged candidate is the strongest signal; stop scanning.
+    if (candidates.some((candidate) => candidate.score >= 10)) break;
   }
-  return null;
+
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0].price;
 }
 
 interface CommodityEvidence {
@@ -318,21 +373,27 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
       const extracted = parsed.prices
         .map((p) => {
           const item = (p ?? {}) as Record<string, unknown>;
-          const commodity = item.commodity;
+          const commodity = typeof item.commodity === "string" ? item.commodity : "";
+          const rawPrice = typeof item.price === "number" ? item.price : null;
+          const unit = typeof item.unit === "string" ? item.unit : getCommodityUnit(commodity);
           return {
-            commodity: typeof commodity === "string" ? commodity : "",
-            price: typeof item.price === "number" ? item.price : null,
-            unit: typeof item.unit === "string" ? item.unit : getCommodityUnit(String(commodity)),
+            commodity,
+            // Reject mis-parsed figures (annual bills, per-kWh tariffs) before use.
+            price: rawPrice !== null ? normalizeCommodityPrice(commodity, rawPrice, unit) : null,
             source: typeof item.source === "string" ? sanitizeUrl(item.source) ?? item.source : "",
             confidence: typeof item.confidence === "number" ? item.confidence : 0,
           };
         })
-        .filter((p) => p.commodity && p.price !== null && p.price > 0 && p.confidence >= 30);
+        .filter((p) => p.commodity && p.price !== null && p.confidence >= 30);
 
       const prices: Record<string, { price: number; unit: string; source: string }> = {};
       for (const item of extracted) {
         if (item.commodity === "oil" || item.commodity === "electricity" || item.commodity === "water") {
-          prices[item.commodity] = { price: item.price as number, unit: item.unit, source: item.source };
+          prices[item.commodity] = {
+            price: item.price as number,
+            unit: getCommodityUnit(item.commodity),
+            source: item.source,
+          };
         }
       }
 
@@ -372,7 +433,8 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
     if (commodity !== "oil" && commodity !== "electricity" && commodity !== "water") continue;
 
     for (const page of pages) {
-      const price = extractPriceFromText(`${page.title} ${page.text}`);
+      const rawPrice = extractPriceFromText(`${page.title} ${page.text}`, commodity);
+      const price = rawPrice !== null ? normalizeCommodityPrice(commodity, rawPrice) : null;
       if (price !== null) {
         deterministic[commodity] = { price, source: sanitizeUrl(page.url) || page.url };
         break;
@@ -381,7 +443,8 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
     if (deterministic[commodity].price !== null) continue;
 
     for (const res of snippets) {
-      const price = extractPriceFromText(`${res.title} ${res.snippet}`);
+      const rawPrice = extractPriceFromText(`${res.title} ${res.snippet}`, commodity);
+      const price = rawPrice !== null ? normalizeCommodityPrice(commodity, rawPrice) : null;
       if (price !== null) {
         deterministic[commodity] = { price, source: sanitizeUrl(res.url) || res.url };
         break;

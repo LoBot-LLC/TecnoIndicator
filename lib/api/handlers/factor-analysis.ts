@@ -364,8 +364,9 @@ function extractSummaryFromArticle(text: string): string {
     return sanitizeExplanation(sentenceMatch[0]);
   }
 
-  // Last resort: sanitize the first 300 chars
-  return sanitizeExplanation(result.slice(0, 300));
+  // Last resort: sentence- then word-boundary aware truncation (no mid-word clip)
+  const truncated = truncateAtSentenceBoundary(result, 300, { minPrefix: 1, ellipsis: "" });
+  return sanitizeExplanation(truncated || truncateAtWordBoundary(result, 300, { minPrefix: 1, ellipsis: "" }));
 }
 
 /**
@@ -551,6 +552,13 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
     // "... gas co".
     /\.\s*[a-z]{1,3}\s*$/i,
     /\b(e|u|s|gas|co|oil|elec|wat)\.\s*$/i,
+    // Bug 2 chrome/fragment rejection
+    /in\s+this\s+article/i,
+    /@[A-Z]{2,4}\d{1,4}\b/,
+    /were\s+down\s+\d/i,
+    /were\s+up\s+\d/i,
+    /\bby\s+\d+\s+cents?\b/i,
+    /[A-Z][a-z]{2,}[A-Z][a-z]/,
   ];
   for (const pattern of genericBodyPatterns) {
     if (pattern.test(body)) {
@@ -1289,8 +1297,7 @@ function deriveFactorNameFromExplanation(explanation: string): string {
 
   const trimmed = explanation.trim();
   // Strip the "with [commodity] at $[price]/[unit], " preamble prefix.
-  const body = trimmed.replace(/^with\s+.+?at\s+\$[\d,.]+\/[^,\s]+,\s*/i, "");
-  if (body === trimmed || body.length === 0) return "";
+  const body = trimmed.replace(/^with\s+.+?at\s+\$[\d,.]+\s*\/\s*[^,]+,\s*/i, "");  if (body === trimmed || body.length === 0) return "";
 
   // Take the first clause up to a comma/semicolon, dropping a leading
   // conjunction if one leaked in.
@@ -1465,6 +1472,23 @@ function clauseQualityCheck(clause: string): boolean {
     return false;
   }
 
+  // Reject raw page chrome / fragments (Bug 2). These indicate a clipped or
+  // non-prose clause that must not be emitted.
+  const chromeFragments = [
+    /in\s+this\s+article/i,
+    /@[A-Z]{2,4}\d{1,4}\b/,
+    /were\s+down\s+\d/i,
+    /were\s+up\s+\d/i,
+    /\bby\s+\d+\s+cents?\b/i,
+    /[A-Z][a-z]{2,}[A-Z][a-z]/, // mid-word CamelCase glue e.g. MiddleNew
+  ];
+  for (const p of chromeFragments) {
+    if (p.test(trimmed)) return false;
+  }
+  // post-period restart: a period inside the clause followed by a lowercase
+  // verb/number, e.g. "region. were down"
+  if (/\.\s+[a-z]/.test(trimmed.slice(0, trimmed.length - 1))) return false;
+
   // Reject clauses that do not end with terminal punctuation — these are
   // mid-sentence clips from scraped pages (e.g. "...reflected in prices during
   // late October and early"). A complete price-driver sentence ends with a
@@ -1591,10 +1615,6 @@ function clauseQualityCheck(clause: string): boolean {
             // Preserve all-caps acronyms (IEA, OPEC, WTI, OPEC+)
           } else {
             clause = clause.charAt(0).toLowerCase() + clause.slice(1);
-          }
-          // Ensure the clause ends with ".".
-          if (!clause.endsWith(".") && !clause.endsWith("!") && !clause.endsWith("?")) {
-            clause += ".";
           }
         }
         // Validate the clause contains meaningful price-driver content before
@@ -2212,7 +2232,11 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
       if (f.scope !== scope) continue;
 
       const quality = validateExplanationQuality(f.explanation);
-      normalizedCandidates.push({ f, quality });
+      // Bug 2: also run clauseQualityCheck on the body after the grounding prefix
+      const clause = f.explanation.replace(/^with\s+.+?\s+at\s+\$[^,]+,\s*/i, "").trim();
+      const clauseOk = clauseQualityCheck(clause);
+      const combinedQuality = quality.ok && clauseOk ? quality : { ok: false, reason: clauseOk ? (quality.reason ?? "quality failed") : "clause quality failed" };
+      normalizedCandidates.push({ f, quality: combinedQuality });
       if (normalizedCandidates.length >= FACTOR_COUNT) break;
     }
 

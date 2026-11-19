@@ -53,7 +53,6 @@ export function useLiveMarket(): UseLiveMarketReturn {
     setLiveQuotes((prev) => ({ ...prev, [commodity]: quote }));
   }, []);
 
-  // Fetch prices from API
   const fetchPrices = useCallback(async (force = false) => {
     try {
       const url = force ? "/api/prices?force=true" : "/api/prices";
@@ -65,76 +64,6 @@ export function useLiveMarket(): UseLiveMarketReturn {
         electricity: data.electricity.price,
         water: data.water.price,
       };
-      // Compute real deltas from previous prices
-      setDeltas({
-        oil: (newPrices.oil - prevPricesRef.current.oil) / prevPricesRef.current.oil,
-        electricity: (newPrices.electricity - prevPricesRef.current.electricity) / prevPricesRef.current.electricity,
-        water: (newPrices.water - prevPricesRef.current.water) / prevPricesRef.current.water,
-      });
-      prevPricesRef.current = newPrices;
-      setPrices(newPrices);
-      setIsLive(data.isLive);
-      setLastUpdated(new Date(data.asOf));
-    } catch {
-      setPrices(getDefaultPrices());
-      setIsLive(false);
-    }
-  }, []);
-
-  // Manual refresh - fetches with force=true
-  const refresh = useCallback(() => {
-    void fetchPrices(true);
-  }, [fetchPrices]);
-
-  // Fetch live quote for a single commodity from the API with force=true
-  const fetchCommodityLive = useCallback(async (commodity: CommodityId) => {
-    setFetchingStatus(commodity, true);
-    try {
-      const res = await fetch("/api/prices?force=true");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as LivePricesResponse;
-      const newPrices = {
-        oil: data.oil.price,
-        electricity: data.electricity.price,
-        water: data.water.price,
-      };
-      // Compute real deltas from previous prices
-      setDeltas({
-        oil: (newPrices.oil - prevPricesRef.current.oil) / prevPricesRef.current.oil,
-        electricity: (newPrices.electricity - prevPricesRef.current.electricity) / prevPricesRef.current.electricity,
-        water: (newPrices.water - prevPricesRef.current.water) / prevPricesRef.current.water,
-      });
-      prevPricesRef.current = newPrices;
-      setPrices(newPrices);
-      const commodityData = data[commodity];
-      setLiveQuote(commodity, {
-        price: commodityData.price,
-        asOf: new Date(data.asOf).toLocaleTimeString("en-GB", { hour12: false }),
-        source: commodityData.source || data.dataSource,
-        range: commodityData.isLive ? "Live feed" : "Static benchmark",
-      });
-      setIsLive(data.isLive);
-      setLastUpdated(new Date(data.asOf));
-    } catch {
-      setLiveQuote(commodity, null);
-    } finally {
-      setFetchingStatus(commodity, false);
-    }
-  }, [setFetchingStatus, setLiveQuote]);
-
-  // Fetch all live quotes in a single API call
-  const fetchAllLive = useCallback(async () => {
-    COMMODITIES.forEach((c) => setFetchingStatus(c.id, true));
-    try {
-      const res = await fetch("/api/prices?force=true");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as LivePricesResponse;
-      const newPrices = {
-        oil: data.oil.price,
-        electricity: data.electricity.price,
-        water: data.water.price,
-      };
-      // Compute real deltas from previous prices
       setDeltas({
         oil: (newPrices.oil - prevPricesRef.current.oil) / prevPricesRef.current.oil,
         electricity: (newPrices.electricity - prevPricesRef.current.electricity) / prevPricesRef.current.electricity,
@@ -156,11 +85,25 @@ export function useLiveMarket(): UseLiveMarketReturn {
       setIsLive(data.isLive);
       setLastUpdated(new Date(data.asOf));
     } catch {
-      COMMODITIES.forEach((c) => setLiveQuote(c.id, null));
-    } finally {
-      COMMODITIES.forEach((c) => setFetchingStatus(c.id, false));
+      setPrices(getDefaultPrices());
+      setIsLive(false);
     }
-  }, [setFetchingStatus, setLiveQuote]);
+  }, []);
+
+  const refresh = useCallback(() => {
+    void fetchPrices(true);
+  }, [fetchPrices]);
+
+  const fetchCommodityLive = useCallback(async (commodity: CommodityId) => {
+    setFetchingStatus(commodity, true);
+    try {
+      await fetchPrices(true);
+    } catch {
+      setLiveQuote(commodity, null);
+    } finally {
+      setFetchingStatus(commodity, false);
+    }
+  }, [fetchPrices, setFetchingStatus, setLiveQuote]);
 
   const fetchWater = useCallback(() => fetchCommodityLive("water"), [fetchCommodityLive]);
   const fetchOil = useCallback(() => fetchCommodityLive("oil"), [fetchCommodityLive]);
@@ -170,7 +113,6 @@ export function useLiveMarket(): UseLiveMarketReturn {
     setIsLive((prev) => !prev);
   }, []);
 
-  // Poll /api/prices every 60s when isLive is true
   useEffect(() => {
     const clear = () => {
       if (tickRef.current !== null) {
@@ -188,7 +130,6 @@ export function useLiveMarket(): UseLiveMarketReturn {
       setStreaming(true);
       tickRef.current = window.setInterval(() => {
         void fetchPrices();
-        // Keep jitter for forecast model compatibility
         setJitter((j) => j + 0.01);
       }, 60_000);
     };
@@ -211,11 +152,8 @@ export function useLiveMarket(): UseLiveMarketReturn {
     };
   }, [isLive, fetchPrices]);
 
-  // Initial fetch
   useEffect(() => {
     void fetchPrices();
-    // Initial live quotes for all commodities
-    void fetchAllLive();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

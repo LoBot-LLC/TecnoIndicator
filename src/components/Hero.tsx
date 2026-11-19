@@ -12,10 +12,9 @@ import {
 } from "lucide-react";
 import Reveal from "./Reveal";
 import Ticker from "./Ticker";
-import { useFlash } from "../hook/useFlash";
 import { useCurrency } from "../context/CurrencyContext";
 import { useUnit } from "../context/UnitContext";
-import { convertEnergy, convertWater, energyLabel, waterLabel } from "../lib/units";
+import { energyLabel, waterLabel } from "../lib/units";
 import {
   COMMODITIES,
   fmtFullDate,
@@ -23,6 +22,7 @@ import {
   START_YEAR,
   type CommodityId,
   type ForecastPoint,
+  type LiveCommodityQuote,
 } from "../lib/model";
 
 function forecastPath(
@@ -47,16 +47,11 @@ function forecastPath(
   return d;
 }
 
-function LivePrice({ value, id }: { value: number; id: CommodityId }) {
-  const flash = useFlash(value);
+function LivePrice({ value }: { value: number }) {
   const { selectedCurrency, formatPrice } = useCurrency();
-  const { lengthUnit, energyUnit } = useUnit();
-  let v = value;
-  if (id === "electricity") v = convertEnergy(value, energyUnit);
-  else if (id === "water") v = convertWater(value, lengthUnit);
   return (
-    <span className={`font-display text-lg font-semibold tabular-nums text-slate-900 dark:text-white ${flash}`}>
-      {formatPrice(v, selectedCurrency)}
+    <span className={`font-display text-lg font-semibold tabular-nums text-slate-900 dark:text-white `}>
+      {formatPrice(value, selectedCurrency)}
     </span>
   );
 }
@@ -71,7 +66,9 @@ const STATS = [
 interface HeroProps {
   prices: Record<CommodityId, number>;
   deltas: Record<CommodityId, number>;
-  /** Optional pre-computed forecast series; when omitted a default 10-year series is generated. */
+  oilLive?: LiveCommodityQuote | null;
+  electricityLive?: LiveCommodityQuote | null;
+  waterLive?: LiveCommodityQuote | null;
   points?: ForecastPoint[];
   /** Forecast horizon in years; drives the x-axis extent and trajectory label. */
   horizon?: number;
@@ -80,6 +77,9 @@ interface HeroProps {
 export default function Hero({
   prices,
   deltas,
+  oilLive,
+  electricityLive,
+  waterLive,
   points: pointsProp,
   horizon: horizonProp,
 }: HeroProps) {
@@ -294,6 +294,7 @@ export default function Hero({
             <div className="mt-4 space-y-2.5">
               {commodityRows.map((r) => {
                 const Icon = r.icon;
+                const liveQuote = r.id === "oil" ? oilLive : r.id === "electricity" ? electricityLive : waterLive;
                 return (
                   <div
                     key={r.id}
@@ -311,7 +312,7 @@ export default function Hero({
                         <p className="text-[11px] text-slate-600 dark:text-slate-500">{r.unit}</p>
                       </div>
                     </div>
-                    <LivePrice value={prices[r.id]} id={r.id} />
+                    <LivePrice value={liveQuote?.price ?? prices[r.id]} />
                   </div>
                 );
               })}

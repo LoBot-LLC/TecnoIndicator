@@ -342,7 +342,7 @@ await this.refreshKiloModels(true, abortSignal);
           max_tokens: 4,
           temperature: 0,
         }),
-        signal: abortSignal ? abortSignal : AbortSignal.timeout(10000),
+        signal: abortSignal ? abortSignal : AbortSignal.timeout(12000),
       });
 
       const status = response.status;
@@ -537,7 +537,7 @@ await this.refreshKiloModels(true, abortSignal);
               temperature: payload.temperature ?? 0.7,
               response_format: payload.response_format ?? undefined,
             }),
-            signal: abortSignal ?? AbortSignal.timeout(10000),
+            signal: abortSignal ?? AbortSignal.timeout(20000),
           });
 
           const status = response.status;

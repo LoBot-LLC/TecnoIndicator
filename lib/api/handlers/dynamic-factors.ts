@@ -1,5 +1,6 @@
 import {
   buildFallbackFactors,
+  filterStaticFallbacks,
   isFreshWindow,
   readFactorWindow,
   runFactorAnalysis,
@@ -10,6 +11,8 @@ import { FACTORS_CACHE_MS } from "../_shared/http";
 import { isRegion, type Region } from "../_shared/regions";
 import { sanitizeError } from "../_shared/validation";
 import type { RegionId } from "../_shared/types";
+
+export const maxDuration = 58;
 
 function resolveScope(url: URL): { ok: true; scope: RegionId } | { ok: false; response: Response } {
   const regionParam = url.searchParams.get("region");
@@ -43,6 +46,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     if (!force) {
       const stored = await readFactorWindow(scope);
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
+        // runFactorAnalysis already validates/repairs; trust the cached window
         return Response.json(
           toFactorsPayload(stored.factors, scope, stored.aiCurated, { updatedAt: stored.updatedAt }),
           { status: 200 },
@@ -51,12 +55,12 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     }
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 25000);
+    const timeoutId = setTimeout(() => abortController.abort(), 55000);
     try {
       const result = await runFactorAnalysis(scope, { abortSignal: abortController.signal });
       const stored = await writeFactorWindow(scope, result.factors, result.aiCurated);
       return Response.json(
-        toFactorsPayload(stored.factors, scope, stored.aiCurated, { updatedAt: stored.updatedAt }),
+        toFactorsPayload(result.factors, scope, result.aiCurated, { updatedAt: stored.updatedAt }),
         { status: 200 },
       );
     } finally {
@@ -67,7 +71,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     // Degrade to whatever is already stored (or the static fallbacks) rather
     // than failing the request outright.
     const stored = await readFactorWindow(scope).catch(() => null);
-    const factors = stored?.factors.length ? stored.factors : buildFallbackFactors(scope);
+    const factors = filterStaticFallbacks(stored?.factors.length ? stored.factors : buildFallbackFactors(scope));
     return Response.json(
       toFactorsPayload(factors, scope, stored?.aiCurated ?? false, {
         updatedAt: stored?.updatedAt ?? new Date().toISOString(),

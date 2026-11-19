@@ -7,6 +7,7 @@ import {
   type LiveOilQuote,
   type LivePricesResponse,
   type LiveWaterQuote,
+  type RegionId,
 } from "../lib/model";
 
 function getDefaultPrices(): Record<CommodityId, number> {
@@ -33,7 +34,7 @@ export interface UseLiveMarketReturn {
   toggleLive: () => void;
 }
 
-export function useLiveMarket(): UseLiveMarketReturn {
+export function useLiveMarket(scope: RegionId = "global") {
   const [prices, setPrices] = useState<Record<CommodityId, number>>(getDefaultPrices);
   const [deltas, setDeltas] = useState<Record<CommodityId, number>>({ oil: 0, electricity: 0, water: 0 });
   const [jitter, setJitter] = useState(0);
@@ -55,7 +56,11 @@ export function useLiveMarket(): UseLiveMarketReturn {
 
   const fetchPrices = useCallback(async (force = false) => {
     try {
-      const url = force ? "/api/prices?force=true" : "/api/prices";
+      // Scope is always sent explicitly: a "Re-fetch Live … Price" button on a
+      // regional view (Americas WTI / Americas Electricity / Americas Water)
+      // must hit the regional pipeline, not silently fall back to global.
+      const scopeQuery = scope === "global" ? "" : `&region=${scope}`;
+      const url = force ? `/api/prices?force=true${scopeQuery}` : `/api/prices${scopeQuery}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as LivePricesResponse;
@@ -100,7 +105,7 @@ export function useLiveMarket(): UseLiveMarketReturn {
       setPrices(getDefaultPrices());
       setIsLive(false);
     }
-  }, []);
+  }, [scope]);
 
   const refresh = useCallback(() => {
     void fetchPrices(true);
@@ -166,8 +171,7 @@ export function useLiveMarket(): UseLiveMarketReturn {
 
   useEffect(() => {
     void fetchPrices();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchPrices]);
 
   const oilLive = liveQuotes.oil as LiveOilQuote | null;
   const electricityLive = liveQuotes.electricity as LiveElectricityQuote | null;

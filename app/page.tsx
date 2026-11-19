@@ -52,7 +52,7 @@ export default function HomePage() {
     fetchOil,
     fetchElectricity,
     toggleLive,
-  } = useLiveMarket();
+  } = useLiveMarket(region);
 
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("Initializing AI");
   const [globalFactors, setGlobalFactors] = useState<Factor[]>([]);

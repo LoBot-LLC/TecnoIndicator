@@ -218,7 +218,9 @@ Maximum candidates per scope reduced from 15 to 10, cutting TinyFish scrape call
 
 **Three-tier degradation:** Kilo extraction → deterministic regex (scraped text then snippets) → static benchmark defaults.
 
-**Files modified in this change:** `lib/api/handlers/prices.ts`, `lib/api/_shared/tinyfishRouter.ts`, `src/hook/useLiveMarket.ts`
+**Regional scope (Americas WTI / Americas Electricity / Americas Water):** `useLiveMarket(scope)` now takes the active region id and always sends it explicitly on every `/api/prices` call (`/api/prices?force=true&region=americas`). Previously the per-commodity "Fetch Live … Price" buttons dropped the region, so `resolvePrices` silently fell back to the **global** pipeline and the Americas cards showed no live quote at all. Switching regions also re-fetches live prices immediately instead of waiting for the next 60s poll. The regional pipeline uses the same search → batch-scrape → extract flow with regional defaults (`getScopePriceDefaults`), so WTI Cushing, Americas electricity and Americas water are each quoted in their own units.
+
+**Files modified in this change:** `lib/api/handlers/prices.ts`, `lib/api/_shared/tinyfishRouter.ts`, `src/hook/useLiveMarket.ts`, `app/page.tsx`
 
 ---
 

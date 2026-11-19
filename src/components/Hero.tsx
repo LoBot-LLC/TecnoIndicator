@@ -313,7 +313,6 @@ export default function Hero({
                       </div>
                     </div>
                     <LivePrice value={liveQuote?.price ?? prices[r.id]} />
-                     {liveQuote ? <p className="text-[10px] text-slate-500">{liveQuote.source} · {liveQuote.asOf}</p> : null}
                   </div>
                 );
               })}

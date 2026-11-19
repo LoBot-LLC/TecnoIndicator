@@ -467,7 +467,7 @@ function CommodityCard({
             <span className={livePriceTextClass}>
               {formatPrice(conv(live.price), selectedCurrency)}/{unitSuffix}
             </span>{" "}
-            · {live.asOf} · {live.source} · {live.range}
+            {live.range}
           </p>
         )}
       </div>

@@ -19,7 +19,7 @@ A commodity price forecasting dashboard for **oil**, **electricity**, and **wate
   - Three commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Water (USD/M³)**, and **Global Electricity (USD/MWh)**
   - Three scenarios per commodity: Average, Optimistic (Min), Pessimistic (Max)
   - Interactive line chart (Chart.js) + clean data table
-- **Real-time Feel** — Live-updating timestamp + "Refresh Data" button. Each commodity card has its own "Re-fetch Live … Price" button that re-fetches the live TinyFish source and displays the fetched source URL, timestamp, and live/benchmark range.
+- **Real-time Feel** — Live-updating timestamp + "Refresh Data" button. Each commodity card has its own "Re-fetch Live … Price" button that re-fetches the live TinyFish source and displays the live price with its live/benchmark range — no raw source URL or search timestamp next to the price.
 - **Key Factors & Drivers** — Dynamic grid of 8 major price influencers with:
   - Factor name + explanation (reasons summarized from TinyFish-fetched source URLs, not hard-coded)
   - **Factor names derived from explanations** (price drivers), not publication titles — the pipeline auto-replaces report/outlook titles and agency names with concise names extracted from the curated explanation

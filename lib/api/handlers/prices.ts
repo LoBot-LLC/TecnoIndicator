@@ -292,10 +292,15 @@ interface CommodityEvidence {
  * static benchmark defaults. Scraping the top candidate URLs gives the model
  * the full price table (e.g. "$92.64", "153.4 EUR/MWh", "3.47 USD per m3").
  */
-async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
-  // 1. Search every commodity in parallel.
+async function getLivePricesFromTinyFish(
+  scope: RegionId,
+  abortSignal: AbortSignal,
+  force: boolean = false,
+): Promise<PricesPayload> {
+  // 1. Search every commodity in parallel. A forced refetch bypasses the 60s
+  // search cache so the "Re-fetch Live … Price" buttons actually re-hit TinyFish.
   const searchResults = await Promise.all(
-    COMMODITY_QUERIES.map(async ({ commodity, queryTemplate }) => {
+    COMMODITY_QUERIES.map(async ({ commodity, queryTemplate, domains }) => {
       try {
         return await tinyfishRouter.tinyfishSearch(
           queryTemplate,
@@ -304,6 +309,8 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
             region: scope === "global" ? undefined : scope,
             purpose: "Find live price pages showing the current price in USD with a dated figure.",
             recencyMinutes: 1440,
+            includeDomains: domains,
+            bypassCache: force,
           },
           abortSignal,
         );
@@ -314,10 +321,40 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
     }),
   );
 
+  // 1b. Fallback search: if a commodity returned nothing, retry once with its
+  // alternate query, broadened (no include_domains, no recency restriction).
+  const fallbackSearches = await Promise.all(
+    COMMODITY_QUERIES.map(async ({ commodity, alternateQuery }, idx) => {
+      const primary = searchResults[idx];
+      const hadResults = primary && primary.results && primary.results.length > 0;
+      if (hadResults) return null;
+      try {
+        return await tinyfishRouter.tinyfishSearch(
+          alternateQuery,
+          {
+            limit: 10,
+            region: scope === "global" ? undefined : scope,
+            purpose: "Find live price pages showing the current price in USD with a dated figure.",
+            bypassCache: force,
+          },
+          abortSignal,
+        );
+      } catch (error) {
+        console.warn(`Failed to fallback-search for ${commodity}:`, error);
+        return null;
+      }
+    }),
+  );
+
   // 2. Scrape the top candidate URLs per commodity in parallel.
   const evidence: CommodityEvidence[] = await Promise.all(
     COMMODITY_QUERIES.map(async ({ commodity }, index) => {
-      const results = searchResults[index].results ?? [];
+      const primary = searchResults[index];
+      const fallback = fallbackSearches[index];
+      const results = [
+        ...((primary && primary.results) ?? []),
+        ...((fallback && fallback.results) ?? []),
+      ];
       const snippets = results.map((r) => ({
         title: r.title,
         snippet: r.snippet,
@@ -325,11 +362,14 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
         publishedAt: r.publishedAt,
       }));
 
-      // Prefer reputable hosts, then any other URL. Dedupe and cap at 5.
+      // Always merge the known stable price pages so a thin or irrelevant
+      // search never strands the pipeline on news URLs. Reputable hits first,
+      // then other hits, then KNOWN_PRICE_URLS, deduped and capped at 8 (under
+      // TinyFish's 10-URL batch limit).
       const reputable = results.map((r) => r.url).filter((u) => u && isReputableSource(u));
       const others = results.map((r) => r.url).filter((u) => u && !isReputableSource(u));
-      const candidates = [...new Set([...reputable, ...others])].slice(0, 5);
-      const urlsToScrape = candidates.length > 0 ? candidates : KNOWN_PRICE_URLS[commodity] ?? [];
+      const candidates = [...new Set([...reputable, ...others, ...(KNOWN_PRICE_URLS[commodity] ?? [])])].slice(0, 8);
+      const urlsToScrape = candidates;
 
       let pages: Array<{ url: string; title: string; text: string }> = [];
       if (urlsToScrape.length > 0) {
@@ -340,11 +380,35 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
             {
               purpose:
                 "Extract the current price figure, unit, currency and publication date for this commodity.",
+              bypassCache: force,
             },
           );
+          if (batch.errors && batch.errors.length > 0) {
+            console.warn(`[prices] scrape errors for ${commodity}`, batch.errors);
+          }
           pages = batch.results
             .filter((p) => typeof p.text === "string" && p.text.trim().length > 0)
             .map((p) => ({ url: p.url, title: p.title, text: p.text }));
+
+          // Bounded single-URL retry: if the batch yielded no usable page text,
+          // try the first known price pages directly.
+          if (pages.length === 0) {
+            const known = KNOWN_PRICE_URLS[commodity] ?? [];
+            for (let i = 0; i < known.length && pages.length === 0; i++) {
+              try {
+                const single = await tinyfishRouter.tinyfishScrape(
+                  known[i],
+                  abortSignal,
+                  { purpose: "Extract the current price figure for this commodity." },
+                );
+                if (single && typeof single.text === "string" && single.text.trim().length > 0) {
+                  pages = [{ url: single.url, title: single.title, text: single.text }];
+                }
+              } catch (error) {
+                console.warn(`[prices] single-URL retry failed for ${known[i]}:`, error);
+              }
+            }
+          }
         } catch (error) {
           console.warn(`Failed to scrape ${commodity} pages:`, error);
         }

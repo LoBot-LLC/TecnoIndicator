@@ -1,7 +1,7 @@
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getCache, setCache } from "../_shared/cache";
-import { SEARCH_CACHE_MS, sanitizeUrl } from "../_shared/http";
+import { SEARCH_CACHE_MS, sanitizeUrl, isReputableSource } from "../_shared/http";
 import {
   getGlobalAnalytics,
   getRegionalAnalytics,
@@ -12,14 +12,41 @@ import type { RegionId } from "../_shared/types";
 import { safeParseJson } from "../_shared/validation";
 
 const COMMODITY_QUERIES = [
-  { commodity: "oil", queryTemplate: "Brent crude oil price 2026" },
-  { commodity: "electricity", queryTemplate: "electricity wholesale price 2026" },
-  { commodity: "water", queryTemplate: "water price per cubic meter 2026" },
+  { commodity: "oil", queryTemplate: "Brent crude oil price today USD per barrel live" },
+  { commodity: "electricity", queryTemplate: "wholesale electricity price today EUR per MWh live" },
+  { commodity: "water", queryTemplate: "global water price per cubic meter USD 2026 tariff" },
 ];
 
-const PRICE_EXTRACTION_PROMPT = `You are an expert financial data analyst specializing in commodity pricing. Your task is to extract precise price data from search results.
+/**
+ * Known, stable price pages per commodity. Used as a scrape fallback only when
+ * TinyFish search returns no usable URLs, so the "Re-fetch Live" buttons can
+ * still resolve a real source instead of dropping straight to static defaults.
+ */
+const KNOWN_PRICE_URLS: Record<string, string[]> = {
+  oil: [
+    "https://tradingeconomics.com/commodity/brent-crude-oil",
+    "https://www.economies.com/commodities/brent-oil",
+    "https://fueldataportal.com/data/brent-crude-price",
+    "https://worldoilmonitor.com/brent",
+  ],
+  electricity: [
+    "https://electricity-spot.com/",
+    "https://euroenergy.live/en/prices",
+    "https://euenergy.live/",
+  ],
+  water: [
+    "https://www.globalwaterintel.com/documents/the-global-water-tariff-survey-2026",
+    "https://data360.worldbank.org/en/indicator/WB_CLEAR_AVWB",
+  ],
+};
 
-From the provided search results, identify the most recent, reliable price figures for each commodity (oil, electricity, water) with their sources.
+const PRICE_EXTRACTION_PROMPT = `You are an expert financial data analyst specializing in commodity pricing. Your task is to extract precise, current price data for Brent crude oil, electricity and water from web search snippets AND scraped web page text.
+
+Each commodity block below contains:
+- Search snippets (title, snippet, URL)
+- Scraped page text from the most relevant sources
+
+Identify the most recent, reliable price figure for each commodity (oil, electricity, water). Prefer the scraped page text over the snippets when both are present, because the scraped page carries the full price table. Prioritise the freshest, most authoritative source and ignore historical averages, yearly archives and forecasts.
 
 Return strict JSON only with this schema:
 {
@@ -28,15 +55,18 @@ Return strict JSON only with this schema:
       "commodity": "oil" | "electricity" | "water",
       "price": number (USD),
       "unit": "string (e.g., 'USD per barrel', 'USD per MWh', 'USD per cubic meter')",
-      "source": "string (URL to the source)",
+      "source": "string (exact URL the price came from)",
       "confidence": number (0-100)
     }
   ]
 }
 
-Search results may contain prices in various formats ($XX.XX, XX.XX USD, etc.). Extract the most plausible price from the most reliable source. Prioritize recent, authoritative sources. If a price cannot be clearly identified, set confidence to 0 and omit that commodity. Do not invent prices.
-
-Do not include any text outside the JSON.`;
+Rules:
+- Prices may appear in various formats: $92.64, 92.64 USD, 153.4 EUR/MWh, 3.47 USD per cubic metre.
+- If a price is quoted in EUR, convert it to USD using 1 EUR = 1.08 USD and note the original currency in the unit string (e.g. 'USD per MWh (from EUR)').
+- The source must be the real URL of the page the price came from, never a bare publication name.
+- Do not invent prices. If a commodity has no clear current price, set confidence to 0 and omit that commodity.
+- Do not include any text outside the JSON.`;
 
 export interface CommodityQuote {
   price: number;
@@ -102,9 +132,10 @@ async function resolvePrices(req: Request): Promise<Response> {
     }
   }
 
-  // Bounded live-price attempt: TinyFish search + Kilo extraction.
+  // Bounded live-price attempt: TinyFish search + scrape + Kilo extraction.
+  // Scraping adds latency, so the budget is larger than the old search-only path.
   const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), 25000);
+  const timeoutId = setTimeout(() => abortController.abort(), 55000);
 
   try {
     const searchResults = await getLivePricesFromTinyFish(scope, abortController.signal);
@@ -163,14 +194,34 @@ function extractPriceFromText(text: string): number | null {
   return null;
 }
 
+interface CommodityEvidence {
+  commodity: string;
+  snippets: Array<{ title: string; snippet: string; url: string; publishedAt?: string }>;
+  pages: Array<{ url: string; title: string; text: string }>;
+}
+
+/**
+ * Resolve live commodity prices from TinyFish search **plus** scraped pages.
+ *
+ * The old implementation relied on search snippets alone, which are usually
+ * news headlines without a price figure, so every fetch fell through to the
+ * static benchmark defaults. Scraping the top candidate URLs gives the model
+ * the full price table (e.g. "$92.64", "153.4 EUR/MWh", "3.47 USD per m3").
+ */
 async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSignal): Promise<PricesPayload> {
+  // 1. Search every commodity in parallel.
   const searchResults = await Promise.all(
     COMMODITY_QUERIES.map(async ({ commodity, queryTemplate }) => {
       try {
-        return await tinyfishRouter.tinyfishSearch(queryTemplate, {
-          limit: 10,
-          region: scope === "global" ? undefined : scope,
-        }, abortSignal);
+        return await tinyfishRouter.tinyfishSearch(
+          queryTemplate,
+          {
+            limit: 10,
+            region: scope === "global" ? undefined : scope,
+            purpose: "Find live price pages showing the current price in USD with a dated figure.",
+          },
+          abortSignal,
+        );
       } catch (error) {
         console.warn(`Failed to search for ${commodity}:`, error);
         return { results: [], total: 0, keyIndex: -1 };
@@ -178,28 +229,77 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
     }),
   );
 
-  const searchResultsText = searchResults
-    .map((result, index) => {
-      const commodity = COMMODITY_QUERIES[index].commodity;
-      const resultLines = (result.results ?? [])
-        .map((r) => `- ${r.title}\n  Snippet: ${r.snippet}\n  URL: ${r.url}\n  Published: ${r.publishedAt}\n`)
-        .join("\n");
-      return `Commodity: ${commodity}\n${resultLines}`;
+  // 2. Scrape the top candidate URLs per commodity in parallel.
+  const evidence: CommodityEvidence[] = await Promise.all(
+    COMMODITY_QUERIES.map(async ({ commodity }, index) => {
+      const results = searchResults[index].results ?? [];
+      const snippets = results.map((r) => ({
+        title: r.title,
+        snippet: r.snippet,
+        url: r.url,
+        publishedAt: r.publishedAt,
+      }));
+
+      // Prefer reputable hosts, then any other URL. Dedupe and cap at 5.
+      const reputable = results.map((r) => r.url).filter((u) => u && isReputableSource(u));
+      const others = results.map((r) => r.url).filter((u) => u && !isReputableSource(u));
+      const candidates = [...new Set([...reputable, ...others])].slice(0, 5);
+      const urlsToScrape = candidates.length > 0 ? candidates : KNOWN_PRICE_URLS[commodity] ?? [];
+
+      let pages: Array<{ url: string; title: string; text: string }> = [];
+      if (urlsToScrape.length > 0) {
+        try {
+          const batch = await tinyfishRouter.tinyfishScrapeBatch(
+            urlsToScrape,
+            abortSignal,
+            {
+              purpose:
+                "Extract the current price figure, unit, currency and publication date for this commodity.",
+            },
+          );
+          pages = batch.results
+            .filter((p) => typeof p.text === "string" && p.text.trim().length > 0)
+            .map((p) => ({ url: p.url, title: p.title, text: p.text }));
+        } catch (error) {
+          console.warn(`Failed to scrape ${commodity} pages:`, error);
+        }
+      }
+
+      return { commodity, snippets, pages };
+    }),
+  );
+
+  // 3. Build the model prompt from snippets and scraped page text.
+  const evidenceText = evidence
+    .map(({ commodity, snippets, pages }) => {
+      const snippetLines =
+        snippets
+          .map(
+            (r) =>
+              `- ${r.title}\n  Snippet: ${r.snippet}\n  URL: ${r.url}${
+                r.publishedAt ? `\n  Published: ${r.publishedAt}` : ""
+              }`,
+          )
+          .join("\n") || "(no snippets)";
+      const pageLines =
+        pages
+          .slice(0, 3)
+          .map((p) => `- ${p.title || p.url}\n  URL: ${p.url}\n  Text: ${p.text.slice(0, 3000)}`)
+          .join("\n\n") || "(no scraped pages)";
+      return `Commodity: ${commodity}\n\nSearch snippets:\n${snippetLines}\n\nScraped pages:\n${pageLines}`;
     })
-    .join("\n\n");
+    .join("\n\n---\n\n");
 
   const payload = {
     messages: [
       { role: "system", content: PRICE_EXTRACTION_PROMPT },
-      {
-        role: "user",
-        content: `Scope: ${scope}\n\n${searchResultsText}`,
-      },
+      { role: "user", content: `Scope: ${scope}\n\n${evidenceText}` },
     ],
     max_tokens: 2048,
     temperature: 0.1,
   };
 
+  // 4. Tier 1: Kilo AI extraction over snippets + scraped text.
   try {
     const response = await kiloRouter.kiloInfer(payload, abortSignal);
     const content = response.choices?.[0]?.message?.content ?? "";
@@ -232,7 +332,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
           electricity: { ...prices.electricity, isLive: true },
           water: { ...prices.water, isLive: true },
           asOf: new Date().toISOString(),
-          dataSource: "Kilo AI analysis of TinyFish search results",
+          dataSource: "Kilo AI analysis of TinyFish search + scraped pages",
           isLive: true,
         };
       }
@@ -241,40 +341,59 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
     console.warn("Kilo AI price analysis failed, falling back to deterministic extraction:", error);
   }
 
-  const prices: Record<string, { price: number | null; source: string }> = {
+  // 5. Tier 2: deterministic extraction — scraped page text first, then snippets.
+  const deterministic: Record<
+    "oil" | "electricity" | "water",
+    { price: number | null; source: string }
+  > = {
     oil: { price: null, source: "" },
     electricity: { price: null, source: "" },
     water: { price: null, source: "" },
   };
 
-  searchResults.forEach((result, index) => {
-    const commodity = COMMODITY_QUERIES[index].commodity;
-    for (const res of result.results ?? []) {
-      const price = extractPriceFromText(`${res.title} ${res.snippet}`);
+  for (const { commodity, snippets, pages } of evidence) {
+    if (commodity !== "oil" && commodity !== "electricity" && commodity !== "water") continue;
+
+    for (const page of pages) {
+      const price = extractPriceFromText(`${page.title} ${page.text}`);
       if (price !== null) {
-        prices[commodity] = { price, source: sanitizeUrl(res.url) || res.url };
+        deterministic[commodity] = { price, source: sanitizeUrl(page.url) || page.url };
         break;
       }
     }
-  });
+    if (deterministic[commodity].price !== null) continue;
 
-  if (Object.values(prices).every((p) => p.price !== null)) {
+    for (const res of snippets) {
+      const price = extractPriceFromText(`${res.title} ${res.snippet}`);
+      if (price !== null) {
+        deterministic[commodity] = { price, source: sanitizeUrl(res.url) || res.url };
+        break;
+      }
+    }
+  }
+
+  if (
+    deterministic.oil.price !== null &&
+    deterministic.electricity.price !== null &&
+    deterministic.water.price !== null
+  ) {
     return {
-      oil: { price: prices.oil.price as number, unit: getCommodityUnit("oil"), source: prices.oil.source, isLive: true },
-      electricity: { price: prices.electricity.price as number, unit: getCommodityUnit("electricity"), source: prices.electricity.source, isLive: true },
-      water: { price: prices.water.price as number, unit: getCommodityUnit("water"), source: prices.water.source, isLive: true },
+      oil: { price: deterministic.oil.price, unit: getCommodityUnit("oil"), source: deterministic.oil.source, isLive: true },
+      electricity: { price: deterministic.electricity.price, unit: getCommodityUnit("electricity"), source: deterministic.electricity.source, isLive: true },
+      water: { price: deterministic.water.price, unit: getCommodityUnit("water"), source: deterministic.water.source, isLive: true },
       asOf: new Date().toISOString(),
-      dataSource: "TinyFish search (deterministic fallback)",
+      dataSource: "TinyFish scrape (deterministic fallback)",
       isLive: true,
     };
   }
 
+  // 6. Tier 3: insufficient data — the caller serves static benchmark defaults.
   return {
     oil: { price: 0, unit: "USD per barrel", source: "insufficient data", isLive: false },
     electricity: { price: 0, unit: "USD per MWh", source: "insufficient data", isLive: false },
     water: { price: 0, unit: "USD per cubic meter", source: "insufficient data", isLive: false },
     asOf: new Date().toISOString(),
-    dataSource: "TinyFish search (insufficient data)",
+    dataSource: "TinyFish search + scrape (insufficient data)",
     isLive: false,
   };
 }

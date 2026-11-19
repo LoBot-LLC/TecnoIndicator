@@ -1,4 +1,6 @@
 # TinyFish + Kilo Gateway: Prices Pipeline vs Factor-Curation Pipeline
+
+> **⚠️ Update (current implementation):** The analysis below documents the *pre-fix* state. \`lib/api/handlers/prices.ts\` now resolves live prices via TinyFish search **plus** \`tinyfishRouter.tinyfishScrapeBatch(...)\` batch scraping (up to 10 URLs per request), with a \`KNOWN_PRICE_URLS\` fallback when search returns no usable URLs, Kilo extraction over scraped page text + snippets, and a deterministic scrape-text fallback before the static defaults. Statements later in this report claiming prices.ts "never scrapes" are historical and no longer accurate.
 ## Technical Comparison Report (READ-ONLY ANALYSIS)
 
 ---
@@ -45,7 +47,7 @@ GET /api/prices (route.ts:7-8)
 | 167-179 | `Promise.all(COMMODITY_QUERIES.map(... → tinyfishRouter.tinyfishSearch(...)))` |
 | 170-173 | Calls `tinyfishSearch(queryTemplate, {limit: 10, region: scope})` |
 | 181-189 | Builds `searchResultsText` from **snippets only** (title, snippet, URL, publishedAt) |
-| **No call** | `tinyfishRouter.tinyfishScrape()` is **never called** in prices.ts |
+| **Scrape** | Calls \`tinyfishRouter.tinyfishScrapeBatch()\` after search (up to 10 URLs/request), plus \`KNOWN_PRICE_URLS\` fallback (see Update note above) |
 
 **Queries executed (3 total, parallel):**
 ```typescript

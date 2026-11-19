@@ -5,7 +5,7 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "functions": {
-    "app/api/prices/route.ts": { "maxDuration": 60 },
+    "app/api/prices/route.ts": { "maxDuration": 120 },
     "app/api/analytics/route.ts": { "maxDuration": 60 },
     "app/api/regional-analytics/route.ts": { "maxDuration": 60 },
     "app/api/dynamic-factors/route.ts": { "maxDuration": 120 },

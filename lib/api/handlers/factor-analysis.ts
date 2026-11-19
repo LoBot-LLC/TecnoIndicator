@@ -861,7 +861,10 @@ export async function validateAndRepairWindow(
     }
   }
 
-  return repaired;
+  return repaired.map((f) => {
+    const safeName = sanitizeFactorTitle(f.name, f.explanation);
+    return safeName && safeName !== f.name ? { ...f, name: safeName } : f;
+  });
 }
 
 const SYSTEM_PROMPT_GLOBAL =
@@ -947,7 +950,7 @@ Every factor's explanation MUST reference the current price numbers supplied in 
 Each factor object must be exactly: { id: string; name: string; category: "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"; commodities: string[] (subset of oil, electricity, water); explanation: string (1-3 meaningful sentences summarizing the reason found in the supplied source URL, starting with commodity + current price number); direction: "up"|"down"|"mixed"; magnitude: "High"|"Medium"|"Low"; source: string (the EXACT URL string from the candidate list — a URL, never a publication name); bias: "short"|"mid"|"long"|"flat"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }.
 
 The source field MUST be an exact URL string from the supplied candidate list. It is a URL, never a publication name.
-
+- The \`name\` field MUST be a concise title of 2-8 words (e.g. "OPEC+ Output Restraint", "Middle East Supply Risk"). It MUST NOT be a full sentence, MUST NOT repeat the explanation, and MUST NOT include the grounding preamble ("With oil at $..."), URLs, @ticker tags, or page chrome.
 Return strict JSON only. Do not return markdown or commentary outside JSON.
 
 The response must contain up to eight validated global factors matching the required schema. If a new legitimate trend is identified, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.`;
@@ -1040,7 +1043,7 @@ Every factor's explanation MUST reference the current price numbers supplied in 
 Each factor object must be exactly: { id: string; name: string; category: "Market"|"Policy"|"Structural"|"Infrastructure"|"Environmental"|"Geopolitical"|"Technological"; commodities: string[] (subset of oil, electricity, water); explanation: string (1-3 meaningful sentences summarizing the reason found in the supplied source URL, starting with commodity + current price number); direction: "up"|"down"|"mixed"; magnitude: "High"|"Medium"|"Low"; source: string (the EXACT URL string from the candidate list — a URL, never a publication name); bias: "short"|"mid"|"long"|"flat"; importanceScore: integer 0-100; drift: object mapping commodity to a small decimal adjustment }.
 
 The source field MUST be an exact URL string from the supplied candidate list. It is a URL, never a publication name.
-
+- The \`name\` field MUST be a concise title of 2-8 words (e.g. "OPEC+ Output Restraint", "Middle East Supply Risk"). It MUST NOT be a full sentence, MUST NOT repeat the explanation, and MUST NOT include the grounding preamble ("With oil at $..."), URLs, @ticker tags, or page chrome.
 Return strict JSON only. Do not return markdown or commentary outside JSON.
 
 The response must contain up to eight validated ${regionName} factors matching the required schema. If a new legitimate trend is identified for ${regionName}, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.`;
@@ -1284,39 +1287,127 @@ const PUBLICATION_NAME_PATTERNS: RegExp[] = [
   /\b(iea|opec|eia|un[- ]water|wri|irena)\b/i,
 ];
 
-/**
- * Derives a concise, human-readable factor name (max ~80 chars) from an
- * explanation that starts with "with [commodity] at $[price]/[unit], ...".
- * Strips the price-preamble prefix, takes the leading clause (up to the first
- * comma/semicolon), title-cases each token while preserving acronyms
- * (OPEC+, IEA) and units (mb/d, MWh), and truncates. Returns "" when the
- * explanation doesn't match the expected format so callers can fall back.
- */
-function deriveFactorNameFromExplanation(explanation: string): string {
-  if (!explanation || typeof explanation !== "string") return "";
+/** Max characters for a displayed factor title. */
+const TITLE_MAX_CHARS = 100;
 
-  const trimmed = explanation.trim();
-  // Strip the "with [commodity] at $[price]/[unit], " preamble prefix.
-  const body = trimmed.replace(/^with\s+.+?at\s+\$[\d,.]+\s*\/\s*[^,]+,\s*/i, "");  if (body === trimmed || body.length === 0) return "";
+/** Trailing tokens that signal a title was cut mid-phrase. */
+const DANGLING_TITLE_TAIL = new Set<string>([
+  "a", "an", "the", "and", "or", "but", "nor", "so", "yet", "as", "while",
+  "whilst", "although", "though", "because", "since", "if", "when", "where",
+  "which", "that", "who", "whom", "whose", "of", "in", "on", "at", "to", "for",
+  "from", "by", "with", "without", "into", "onto", "over", "under", "after",
+  "before", "during", "about", "against", "between", "among", "through", "per",
+  "via", "across", "is", "are", "was", "were", "be", "been", "being", "has",
+  "have", "had", "do", "does", "did", "will", "would", "can", "could", "may",
+  "might", "must", "shall", "should", "limited", "entering", "recovering",
+  "following", "including", "excluding", "reaching", "hitting", "creating",
+  "leading", "causing", "driving", "pushing", "lifting", "boosting",
+  "weighing", "supporting",
+]);
 
-  // Take the first clause up to a comma/semicolon, dropping a leading
-  // conjunction if one leaked in.
-  const clause = body.split(/[,;]/)[0].trim().replace(/^(and|or|but|so|yet|for|nor)\s+/i, "");
-  if (!clause) return "";
+/** Leading site / publication prefixes to drop from a title. */
+const TITLE_LEADING_PREFIX =
+  /^(?:investing\.com|reuters|bloomberg|cnbc|financial\s+times|ft\.com|the\s+economist|oilprice\.com|argus(?:\s+media)?|s&p\s+global|spglobal|platts|marketwatch|yahoo\s+finance|morningstar|trading\s+economics|economies\.com|business\s+standard|the\s+hindu)\s*(?:--|—|–|:|\||-)\s*/i;
 
-  const name = clause
+/** Removes grounding preamble, leading publication prefixes and page chrome. */
+function stripTitleNoise(text: string): string {
+  if (!text || typeof text !== "string") return "";
+  let t = text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/https?:\/\/[^\s)]+/g, "")
+    .replace(/\*+/g, "")
+    .replace(/#+/g, " ")
+    .replace(/^\s*[-•*–—]+\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Strip the grounding preamble, e.g. "With oil at $104.86/USD per barrel, ..."
+  t = t.replace(/^with\s+.+?\s+at\s+\$[\d,.]+\s*(?:\/\s*[^,]+)?,\s*/i, "");
+  // Strip a leading publication / site prefix.
+  t = t.replace(TITLE_LEADING_PREFIX, "");
+  // Remove inline page chrome / ticker tags.
+  t = t
+    .replace(/\bin\s+this\s+article\b/gi, " ")
+    .replace(/@[A-Za-z0-9]{2,12}/g, " ")
+    .replace(/\bskip\s+to\s+(?:page\s+)?content\b/gi, " ")
+    .replace(/\bshare\s+this\s+(?:report|story|article)\b/gi, " ")
+    .replace(/\breport\s+options\b/gi, " ")
+    .replace(/\bread\s+more\b/gi, " ")
+    .replace(/\badvertisement\b/gi, " ")
+    .replace(/\bphoto\s*:/gi, " ")
+    .replace(/\bimage\s*:/gi, " ")
+    .replace(/\bwere\s+(?:down|up)\s+\d/gi, " ")
+    .replace(/\bby\s+\d+\s+cents?\b/gi, " ");
+
+  // Split accidental CamelCase glue, e.g. "MiddleNew" -> "Middle New".
+  t = t.replace(/([a-z])([A-Z])/g, "$1 $2");
+
+  return t.replace(/\s+/g, " ").replace(/^[\s,;:.\-–—|]+/, "").trim();
+}
+
+/** Drops trailing dangling words/punctuation left by a mid-phrase cut. */
+function stripDanglingTitleTail(text: string): string {
+  let t = text.trim().replace(/[\s,;:.\-–—|]+$/, "");
+  for (let guard = 0; guard < 8; guard++) {
+    const m = t.match(/([A-Za-z][A-Za-z'’\-]*)$/);
+    if (!m || !DANGLING_TITLE_TAIL.has(m[1].toLowerCase())) break;
+    t = t.slice(0, t.length - m[1].length).replace(/[\s,;:.\-–—|]+$/, "").trim();
+  }
+  return t;
+}
+
+/** Trims text to a concise, complete-looking title (<= TITLE_MAX_CHARS). */
+function toConciseTitle(text: string): string {
+  const cleaned = text.trim();
+  if (!cleaned) return "";
+  // Prefer the first natural clause boundary.
+  const match = cleaned.match(/^(.{12,}?)(?:[,;:]|\s[—–]\s|$)/);
+  let candidate = (match ? match[1] : cleaned).trim();
+  if (candidate.length > TITLE_MAX_CHARS) {
+    candidate = truncateAtWordBoundary(candidate, TITLE_MAX_CHARS, { minPrefix: 1, ellipsis: "" });
+  }
+  return stripDanglingTitleTail(candidate);
+}
+
+/** Title-cases tokens while preserving acronyms (OPEC+, IEA) and units (mb/d). */
+function titleCaseTokens(text: string): string {
+  return text
     .split(/\s+/)
     .map((token) => {
-      // Preserve all-caps acronyms (OPEC+, IEA, EIA) and mixed units (mb/d).
       if (/^[A-Z][A-Z0-9+/]+$/.test(token)) return token;
       return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
     })
     .join(" ")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
 
-  // Truncate at word boundary (never mid-word) to ~80 chars
-  return truncateAtWordBoundary(name, 80, { minPrefix: 1, ellipsis: "" }) || "";
+/**
+ * Derives a concise, human-readable factor name (max ~80 chars) from an
+ * explanation. Strips the price preamble and page chrome, takes the leading
+ * clause, title-cases it, and trims any dangling tail so the title is never a
+ * mid-word/mid-phrase fragment. Returns "" when nothing usable remains.
+ */
+function deriveFactorNameFromExplanation(explanation: string): string {
+  const body = stripTitleNoise(explanation);
+  if (!body) return "";
+  const clause = body.split(/[,;:]/)[0].trim().replace(/^(and|or|but|so|yet|for|nor)\s+/i, "");
+  if (!clause) return "";
+  return titleCaseTokens(toConciseTitle(clause));
+}
+
+/**
+ * Produces a clean, complete factor title from a raw model-provided name (or,
+ * failing that, from the explanation). Never returns a title with the grounding
+ * preamble, page chrome / @ticker tags, a leading publication prefix, a
+ * mid-word cut, or a dangling article/preposition/verb tail.
+ */
+function sanitizeFactorTitle(rawName: string, explanation: string): string {
+  const fromRaw = toConciseTitle(stripTitleNoise(rawName));
+  if (fromRaw.length >= 6) return fromRaw;
+  const derived = deriveFactorNameFromExplanation(explanation);
+  if (derived.length >= 6) return derived;
+  return fromRaw || stripTitleNoise(explanation).slice(0, TITLE_MAX_CHARS).trim();
 }
 
 /**
@@ -1688,10 +1779,10 @@ function clauseQualityCheck(clause: string): boolean {
       }
       seenExplanations.add(dedupKey);
 
-      const fallbackName = deriveFactorNameFromExplanation(explanation)
-      || truncateAtWordBoundary(explanation, 160, { minPrefix: 1, ellipsis: "" })
-      || `Market update: ${candidate.url}`;
-  const name = truncateAtWordBoundary(fallbackName, 160, { minPrefix: 1, ellipsis: "" });
+      const name =
+        sanitizeFactorTitle("", explanation)
+        || truncateAtWordBoundary(explanation, 160, { minPrefix: 1, ellipsis: "" })
+        || `Market update: ${candidate.url}`;
 
       const haystack = `${title} ${snippet} ${text}`.toLowerCase();
 
@@ -1763,10 +1854,10 @@ export function normalizeFactor(
   // Replace publication-like names (report/outlook titles, agency names) with a
   // concise name derived from the explanation, so the UI never shows a bare
   // publication name such as "World Oil Outlook" or "Monthly Oil Market Report".
-  const finalName =
-    PUBLICATION_NAME_PATTERNS.some((p) => p.test(name))
-      ? deriveFactorNameFromExplanation(explanation) || name
-      : name;
+  let finalName = sanitizeFactorTitle(name, explanation);
+  if (!finalName || PUBLICATION_NAME_PATTERNS.some((p) => p.test(finalName))) {
+    finalName = deriveFactorNameFromExplanation(explanation) || finalName || name;
+  }
   const id =
     typeof f.id === "string" && f.id.trim()
       ? f.id.trim()

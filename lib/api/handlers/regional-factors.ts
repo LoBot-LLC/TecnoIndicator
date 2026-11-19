@@ -1,5 +1,6 @@
 import {
   buildFallbackFactors,
+  filterStaticFallbacks,
   isFreshWindow,
   readFactorWindow,
   runFactorAnalysis,
@@ -33,6 +34,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     if (!force) {
       const stored = await readFactorWindow(region);
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
+        // runFactorAnalysis already validates/repairs; trust the cached window
         return Response.json(
           toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
           { status: 200 },
@@ -41,12 +43,12 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     }
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 25000);
+    const timeoutId = setTimeout(() => abortController.abort(), 55000);
     try {
       const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
       const stored = await writeFactorWindow(region, result.factors, result.aiCurated);
       return Response.json(
-        toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
+        toFactorsPayload(result.factors, region, result.aiCurated, { updatedAt: stored.updatedAt }),
         { status: 200 },
       );
     } finally {
@@ -55,7 +57,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
   } catch (error) {
     console.error("Regional factors error:", sanitizeError(String(error)));
     const stored = await readFactorWindow(region).catch(() => null);
-    const factors = stored?.factors.length ? stored.factors : buildFallbackFactors(region);
+    const factors = filterStaticFallbacks(stored?.factors.length ? stored.factors : buildFallbackFactors(region));
     return Response.json(
       toFactorsPayload(factors, region, stored?.aiCurated ?? false, {
         updatedAt: stored?.updatedAt ?? new Date().toISOString(),

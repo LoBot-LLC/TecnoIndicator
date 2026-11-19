@@ -17,6 +17,7 @@ import {
   ChevronUp,
   Download,
   Droplets,
+  ExternalLink,
   FileCode2,
   FileText,
   Fuel,
@@ -44,6 +45,7 @@ import {
   type Factor,
 } from "../lib/model";
 import { buildRegionalMarkdown } from "../lib/markdown";
+import { truncateAtSentence } from "../lib/truncate";
 
 // Registered on the client only; the Chart instance is built in useEffect.
 if (typeof window !== "undefined") {
@@ -251,6 +253,15 @@ function isNewFactor(createdAt: string): boolean {
   return diffMs <= 10 * 60 * 1000;
 }
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function RegionalFactorCard({
   factor,
   index,
@@ -260,11 +271,11 @@ function RegionalFactorCard({
 }) {
   const isNew = isNewFactor(factor.createdAt);
   const [isExpanded, setIsExpanded] = useState(false);
-  const MAX_CHARS = 140;
+  const MAX_CHARS = 400;
   const shouldTruncate = factor.explanation.length > MAX_CHARS;
   const displayText = isExpanded || !shouldTruncate
     ? factor.explanation
-    : factor.explanation.slice(0, MAX_CHARS) + "…";
+    : truncateAtSentence(factor.explanation, MAX_CHARS);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-4 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -353,7 +364,101 @@ function RegionalFactorCard({
         </span>
       </div>
 
-      <p className="mt-1 text-[9px] text-slate-600 dark:text-slate-400 line-clamp-1">Source: {factor.source}</p>
+      {factor.grounding && factor.commodities.some((id) => factor.grounding?.[id]) && (
+        <div className="mt-2 rounded-lg border border-line bg-base/50 px-2 py-2">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+            Grounded in live dashboard prices
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+            {factor.commodities.map((id) => {
+              const p = factor.grounding?.[id];
+              if (!p) return null;
+              const c = COMMODITIES.find((x) => x.id === id)!;
+              return (
+                <div
+                  key={id}
+                  className="inline-flex flex-col items-start gap-1 text-[10px] text-slate-700 dark:text-slate-300"
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
+                    <span className="font-semibold">{c.short}</span>
+                    <span className="tabular-nums font-bold">
+                      ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400 text-[9px]">
+                      {p.unit.replace("USD/", "/")}
+                    </span>
+                  </div>
+                  {p.source && (
+                    <span className="text-[9px] text-slate-500 dark:text-slate-400">
+                      {p.source}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {factor.grounding?.asOf && (
+            <p className="mt-1.5 text-[9px] text-slate-500 dark:text-slate-400 italic">
+              Prices as of {factor.grounding.asOf}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="mt-2">
+        <span className="text-[9px] font-semibold text-slate-600 dark:text-slate-500 block mb-0.5">
+          Source URL
+        </span>
+        {isHttpUrl(factor.source) ? (
+          <a
+            href={factor.source}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-[9px] text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
+          >
+            {factor.source}
+            <ExternalLink className="ml-1 inline h-3 w-3" aria-label="Open source" />
+          </a>
+        ) : (
+          <span className="block text-[9px] text-slate-600 dark:text-slate-500 break-all">{factor.source}</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function RegionalFactorCardSkeleton() {
+  return (
+    <article className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-4 animate-pulse">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="h-4 w-14 rounded-full border border-line bg-base/50" />
+            <div className="h-4 w-16 rounded-full border border-line bg-base/50" />
+          </div>
+          <div className="mt-2 h-4 w-1/2 rounded bg-line" />
+        </div>
+        <div className="h-4 w-8 rounded bg-line" />
+      </div>
+
+      <div className="mt-2 h-12 bg-line rounded" />
+      <div className="mt-1 h-6 w-1/3 bg-line rounded" />
+
+      <div className="mt-2 flex flex-wrap gap-1">
+        {[1, 2].map((n) => (
+          <div key={n} className="h-4 w-12 rounded-full border border-line bg-base/40" />
+        ))}
+      </div>
+
+      <div className="mt-2 h-4 w-1/4 bg-line rounded" />
+
+      <div className="mt-2 h-8 bg-line rounded-lg" />
+
+      <div className="mt-2">
+        <div className="h-3 w-12 bg-line rounded mb-0.5" />
+        <div className="h-3 w-20 bg-line rounded" />
+      </div>
     </article>
   );
 }
@@ -366,6 +471,8 @@ interface RegionalEvaluationProps {
   onRegion: (r: RegionId) => void;
   dynamicFactors: Record<string, Factor[]>;
   healthStatus: "Initializing AI" | "Online Model Connected" | "Offline Model";
+  aiCurated?: boolean;
+  factorsLoaded?: boolean;
 }
 
 export default function RegionalEvaluation({
@@ -376,6 +483,7 @@ export default function RegionalEvaluation({
   onRegion,
   dynamicFactors,
   healthStatus,
+  factorsLoaded = false,
 }: RegionalEvaluationProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const { theme } = useTheme();
@@ -396,6 +504,15 @@ export default function RegionalEvaluation({
   const horizonYear = START_YEAR + horizon;
 
   const selected = evals.find((e) => e.region.id === region) ?? evals[0];
+
+  // The AI / regional factors section must ONLY ever render factors genuinely
+  // backed by a fetched source URL. Never fall back to the hard-coded
+  // REGIONAL_FACTORS list (which carries publication names, not URLs). While
+  // loading, show an empty array so the skeleton loaders display.
+  const isLoading = !factorsLoaded;
+  const activeRegionalFactors: Factor[] = isLoading
+    ? []
+    : (dynamicFactors[selected.region.id] ?? []).filter((f) => isHttpUrl(f.source));
 
   // Close the export menu on outside click or Escape, returning focus to the
   // trigger so keyboard users never lose their place (WAI-ARIA menu button).
@@ -616,7 +733,7 @@ export default function RegionalEvaluation({
     downloadFile(
       `tecnoindicator-region-${selected.region.id}-${horizon}y.md`,
       buildRegionalMarkdown(evals, horizonYear, selected.region.id, {
-        factors: dynamicFactors[selected.region.id] ?? [],
+        factors: activeRegionalFactors,
       }),
       "text/markdown;charset=utf-8",
     );
@@ -920,22 +1037,33 @@ export default function RegionalEvaluation({
 
 {/* AI-curated regional factors */}
                <div id="regional-factors" className="mt-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
-                    {healthStatus === "Online Model Connected"
-                      ? "AI Factors"
-                      : "Regional factors"}
-                  </p>
-                  <span className="text-[11px] text-slate-600 dark:text-slate-400">
-                    8 factors per region
-                  </span>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(dynamicFactors[selected.region.id] ?? []).map((f, i) => (
-                    <RegionalFactorCard key={f.id} factor={f} index={i} />
-                  ))}
-                </div>
-              </div>
+                 <div className="mb-3 flex items-center justify-between">
+                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
+                     {activeRegionalFactors.length > 0 && healthStatus === "Online Model Connected"
+                       ? "AI Factors"
+                       : "Regional factors"}
+                   </p>
+                   <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                     {isLoading ? "Loading…" : `${activeRegionalFactors.length} factors`}
+                   </span>
+                 </div>
+                   <div className="grid gap-2 sm:grid-cols-2">
+                     {activeRegionalFactors.length > 0 ? (
+                       activeRegionalFactors.map((f, i) => (
+                         <RegionalFactorCard key={f.id} factor={f} index={i} />
+                       ))
+                     ) : isLoading ? (
+                       [...Array(8)].map((_, i) => (
+                         <RegionalFactorCardSkeleton key={`skeleton-${i}`} />
+                       ))
+                     ) : (
+                       <p className="col-span-full text-center text-sm text-slate-500 dark:text-slate-400 py-8">
+                         No live regional factors are available right now for {selected.region.name}.
+                         Reasons appear only when traceable to a fetched source URL.
+                       </p>
+                     )}
+                   </div>
+               </div>
 
               <button
                 type="button"

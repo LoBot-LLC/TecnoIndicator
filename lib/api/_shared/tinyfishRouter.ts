@@ -34,11 +34,16 @@ interface TinyFishSearchResponse {
   keyIndex: number;
 }
 
-interface ScrapedContent {
+export interface ScrapedContent {
   url: string;
   title: string;
   text: string;
   keyIndex: number;
+}
+
+export interface TinyFishScrapeBatchResponse {
+  results: ScrapedContent[];
+  errors: Array<{ url: string; error: string }>;
 }
 
 const SEARCH_URL = "https://api.search.tinyfish.ai";
@@ -58,8 +63,23 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   return controller.signal;
 }
 
-function buildSearchUrl(query: string, limit: number): string {
+function buildSearchUrl(
+  query: string,
+  limit: number,
+  purpose?: string,
+  recencyMinutes?: number,
+  includeDomains?: string[]
+): string {
   const params = new URLSearchParams({ query, limit: String(limit) });
+  if (purpose && purpose.trim().length > 0) {
+    params.set("purpose", purpose.trim().slice(0, 2000));
+  }
+  if (recencyMinutes && recencyMinutes > 0) {
+    params.set("recency_minutes", String(recencyMinutes));
+  }
+  if (includeDomains && includeDomains.length > 0) {
+    params.set("include_domains", includeDomains.join(","));
+  }
   return `${SEARCH_URL}?${params.toString()}`;
 }
 
@@ -93,7 +113,7 @@ export class TinyFishRouter {
     const combinedSignal = abortSignal
       ? combineAbortSignals(abortSignal, controller.signal)
       : controller.signal;
-    const overallTimeout = setTimeout(() => controller.abort(), 3000);
+    const overallTimeout = setTimeout(() => controller.abort(), 5000);
     try {
       const probeResults = await Promise.all(
         this.keyStates.map(async (keyState) => {
@@ -193,14 +213,18 @@ export class TinyFishRouter {
 
   async tinyfishSearch(
     query: string,
-    options: { limit?: number; region?: Region } = {},
+    options: { limit?: number; region?: Region; purpose?: string; recencyMinutes?: number; includeDomains?: string[] } = {},
     abortSignal?: AbortSignal
   ): Promise<TinyFishSearchResponse> {
     if (!this.initialized) {
       await this.refreshTinyfishStatus(true, abortSignal);
     }
 
-    const cacheKey = `tinyfish:search:${query}:${options.region ?? "global"}`;
+    const purpose =
+      options.purpose ??
+      "Find recent articles about oil, electricity, or water price movements and their underlying causes.";
+    const recencyMinutes = options.recencyMinutes ?? 10080; // Default: last 7 days
+    const cacheKey = `tinyfish:search:${query}:${options.region ?? "global"}:${recencyMinutes}:${options.includeDomains?.join(",") ?? ""}`;
     const cached = await getCache<TinyFishSearchResponse>(cacheKey, SEARCH_CACHE_MS);
     if (cached) return cached;
 
@@ -224,12 +248,12 @@ export class TinyFishRouter {
         const region = options.region ?? "global";
         const regionPrefix = region !== "global" ? `[${region}] ` : "";
 
-         const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.limit ?? 10), {
-           headers: {
-             "X-API-Key": testKey,
-           },
-           signal: abortSignal ?? AbortSignal.timeout(10000),
-         });
+const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.limit ?? 10, purpose, recencyMinutes, options.includeDomains), {
+            headers: {
+              "X-API-Key": testKey,
+            },
+            signal: abortSignal ?? AbortSignal.timeout(10000),
+          });
 
         const status = response.status;
 
@@ -300,7 +324,11 @@ export class TinyFishRouter {
     return { results: [], total: 0, keyIndex: -1 };
   }
 
-  async tinyfishScrape(url: string, abortSignal?: AbortSignal): Promise<ScrapedContent | null> {
+  async tinyfishScrape(
+    url: string,
+    abortSignal?: AbortSignal,
+    options: { purpose?: string } = {},
+  ): Promise<ScrapedContent | null> {
     if (!this.initialized) {
       await this.refreshTinyfishStatus(true, abortSignal);
     }
@@ -328,16 +356,26 @@ export class TinyFishRouter {
           continue;
         }
 
+        const body: Record<string, unknown> = {
+          urls: [safeUrl],
+          ttl: 0,
+          format: "markdown",
+        };
+        // A short purpose statement gives TinyFish additional signal to tailor
+        // extraction to the intent (e.g. "find the price-relevant reason on this
+        // page") and returns better-quality content for the model to summarize.
+        if (options.purpose && options.purpose.trim().length > 0) {
+          body.purpose = options.purpose.trim().slice(0, 2000);
+        }
+
         const response = await fetch(FETCH_URL, {
           method: "POST",
           headers: {
             "X-API-Key": testKey,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            urls: [safeUrl],
-          }),
-          signal: abortSignal ?? AbortSignal.timeout(10000),
+          body: JSON.stringify(body),
+          signal: abortSignal ?? AbortSignal.timeout(55000),
         });
 
         const status = response.status;
@@ -394,6 +432,153 @@ export class TinyFishRouter {
 
     console.error("TinyFish scrape failed:", lastError?.message);
     return null;
+  }
+
+  async tinyfishScrapeBatch(
+    urls: string[],
+    abortSignal?: AbortSignal,
+    options: { purpose?: string } = {},
+  ): Promise<TinyFishScrapeBatchResponse> {
+    if (!this.initialized) {
+      await this.refreshTinyfishStatus(true, abortSignal);
+    }
+
+    if (urls.length === 0) {
+      return { results: [], errors: [] };
+    }
+
+    // Sanitize and dedupe URLs, cap at the TinyFish batch limit of 10.
+    const sanitizedUrls: string[] = [];
+    const seen = new Set<string>();
+    for (const rawUrl of urls) {
+      const safeUrl = sanitizeUrl(rawUrl);
+      if (!safeUrl || seen.has(safeUrl)) continue;
+      seen.add(safeUrl);
+      sanitizedUrls.push(safeUrl);
+    }
+    const batchUrls = sanitizedUrls.slice(0, 10);
+
+    const cachedResults: ScrapedContent[] = [];
+    const toFetch: string[] = [];
+    for (const url of batchUrls) {
+      const cacheKey = `tinyfish:scrape:${url}`;
+      const cached = await getCache<ScrapedContent>(cacheKey, SCRAPE_CACHE_MS);
+      if (cached) {
+        cachedResults.push(cached);
+      } else {
+        toFetch.push(url);
+      }
+    }
+
+    if (toFetch.length === 0) {
+      return { results: cachedResults, errors: [] };
+    }
+
+    let keyState = this.selectKey();
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (!keyState) {
+        await this.backoff(attempt);
+        keyState = this.selectKey();
+        if (!keyState) break;
+      }
+
+      try {
+        const testKey = process.env[keyState.envName];
+        if (!testKey) {
+          keyState = this.rotateKey(keyState);
+          continue;
+        }
+        const activeKeyIndex = keyState.keyIndex;
+
+        const body: Record<string, unknown> = {
+          urls: toFetch,
+          ttl: 0,
+          format: "markdown",
+        };
+        if (options.purpose && options.purpose.trim().length > 0) {
+          body.purpose = options.purpose.trim().slice(0, 2000);
+        }
+
+        const response = await fetch(FETCH_URL, {
+          method: "POST",
+          headers: {
+            "X-API-Key": testKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: abortSignal ?? AbortSignal.timeout(90000),
+        });
+
+        const status = response.status;
+
+        if (status === 200) {
+          const data = await response.json();
+          const fetched: ScrapedContent[] = Array.isArray(data.results)
+            ? data.results
+                .map((r: any) => ({
+                  url: typeof r?.url === "string" ? r.url : "",
+                  title: typeof r?.title === "string" ? r.title : "",
+                  text: typeof r?.text === "string" ? r.text.slice(0, 10000) : "",
+                  keyIndex: activeKeyIndex,
+                }))
+                .filter((item: ScrapedContent) => item.url)
+            : [];
+          const errors: Array<{ url: string; error: string }> = Array.isArray(
+            data.errors
+          )
+            ? data.errors
+                .map((e: any) => ({
+                  url: typeof e?.url === "string" ? e.url : "",
+                  error: typeof e?.error === "string" ? e.error : "",
+                }))
+                .filter((e: { url: string; error: string }) => e.url)
+            : [];
+
+          for (const item of fetched) {
+            await setCache(
+              `tinyfish:scrape:${item.url}`,
+              item,
+              SCRAPE_CACHE_MS
+            );
+          }
+
+          keyState.lastCheckedAt = new Date().toISOString();
+          keyState.lastSuccessAt = keyState.lastCheckedAt;
+          this.parseRateLimitHeaders(keyState, response.headers);
+
+          return { results: [...cachedResults, ...fetched], errors };
+        }
+
+        if (status === 401 || status === 403) {
+          keyState.available = false;
+          keyState.lastCheckedAt = new Date().toISOString();
+          keyState = this.rotateKey(keyState);
+          continue;
+        }
+
+        if (status === 429) {
+          this.parseRateLimitHeaders(keyState, response.headers);
+          keyState = this.rotateKey(keyState);
+          lastError = new Error("Rate limited");
+          continue;
+        }
+
+        lastError = new Error(`TinyFish scrape batch failed with status ${status}`);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+      }
+
+      if (abortSignal && abortSignal.aborted) {
+        break;
+      }
+
+      keyState = this.selectKey();
+    }
+
+    console.error("TinyFish scrape batch failed:", lastError?.message);
+    return { results: cachedResults, errors: [] };
   }
 
   async getTinyfishStatus(abortSignal?: AbortSignal, quick: boolean = false): Promise<{

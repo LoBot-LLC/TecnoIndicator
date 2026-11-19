@@ -279,8 +279,30 @@ export interface Factor {
   scope: RegionId;
   /** Importance score 0-100 based on evidence quality and expected price impact */
   importanceScore: number;
+  /** Server-attached price grounding (dashboard statistics at curation time). Never model-generated. */
+  grounding?: FactorGrounding;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Server-attached price grounding (dashboard statistics at curation time). Never model-generated. */
+export interface FactorGrounding {
+  oil?: PricePoint;
+  electricity?: PricePoint;
+  water?: PricePoint;
+  /** ISO timestamp of the prices used at curation time. */
+  asOf?: string;
+}
+
+export interface PricePoint {
+  price: number;
+  unit: string;
+  /** Human-readable description of the price source (mirrors the dashboard stats). */
+  source?: string;
+}
+
+export interface FactorWithGrounding extends Factor {
+  grounding?: FactorGrounding;
 }
 
 export const FACTORS: Factor[] = [

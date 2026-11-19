@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   ChevronDown,
   ChevronUp,
+  ExternalLink,
   GitBranch,
   Minus,
   TrendingDown,
@@ -12,13 +13,13 @@ import {
 import Reveal from "./Reveal";
 import {
   COMMODITIES,
-  FACTORS,
   factorRelevance,
   relevanceTrend,
   type Direction,
   type Factor,
   type Magnitude,
 } from "../lib/model";
+import { truncateAtSentence } from "../lib/truncate";
 
 const MAG_COLOR: Record<Magnitude, string> = {
   High: "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15",
@@ -31,6 +32,15 @@ function isNewFactor(createdAt: string): boolean {
   const now = new Date();
   const diffMs = now.getTime() - created.getTime();
   return diffMs <= 10 * 60 * 1000;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function DirectionIcon({ direction }: { direction: Direction }) {
@@ -53,11 +63,11 @@ function FactorCard({
   const width = Math.min(100, Math.round((relevance / 2.0) * 100));
   const isNew = isNewFactor(factor.createdAt);
   const [isExpanded, setIsExpanded] = useState(false);
-  const MAX_CHARS = 200;
+  const MAX_CHARS = 400;
   const shouldTruncate = factor.explanation.length > MAX_CHARS;
   const displayText = isExpanded || !shouldTruncate
     ? factor.explanation
-    : factor.explanation.slice(0, MAX_CHARS) + "…";
+    : truncateAtSentence(factor.explanation, MAX_CHARS);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -144,6 +154,48 @@ function FactorCard({
           ))}
       </div>
 
+      {factor.grounding && factor.commodities.some((id) => factor.grounding?.[id]) && (
+        <div className="mt-5 rounded-lg border border-line bg-base/50 px-3 py-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+            Grounded in live dashboard prices
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+            {factor.commodities.map((id) => {
+              const p = factor.grounding?.[id];
+              if (!p) return null;
+              const c = COMMODITIES.find((x) => x.id === id)!;
+              return (
+                <div
+                  key={id}
+                  className="inline-flex flex-col items-start gap-1 text-[11px] text-slate-700 dark:text-slate-300"
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
+                    <span className="font-semibold">{c.short}</span>
+                    <span className="tabular-nums font-bold">
+                      ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400 text-[10px]">
+                      {p.unit.replace("USD/", "/")}
+                    </span>
+                  </div>
+                  {p.source && (
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                      {p.source}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {factor.grounding?.asOf && (
+            <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 italic">
+              Prices as of {factor.grounding.asOf}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="mt-4">
         <div className="mb-1.5 flex items-center justify-between text-[11px]">
           <span className="font-semibold text-slate-700 dark:text-slate-500">Relevance @ {horizon}y</span>
@@ -170,7 +222,24 @@ function FactorCard({
         </div>
       </div>
 
-      <p className="mt-3 text-[10px] text-slate-600">Source: {factor.source}</p>
+      <div className="mt-3">
+        <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-500 block mb-1">
+          Source URL
+        </span>
+        {isHttpUrl(factor.source) ? (
+          <a
+            href={factor.source}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-[10px] text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
+          >
+            {factor.source}
+            <ExternalLink className="ml-1 inline h-3 w-3 fill-current" aria-label="Open source" />
+          </a>
+        ) : (
+          <span className="block text-[10px] text-slate-600 dark:text-slate-500 break-all">{factor.source}</span>
+        )}
+      </div>
     </article>
   );
 }
@@ -179,17 +248,73 @@ interface FactorsSectionProps {
   horizon: number;
   dynamicFactors?: Factor[];
   healthStatus?: "Initializing AI" | "Online Model Connected" | "Offline Model";
+  aiCurated?: boolean;
+  factorsLoaded?: boolean;
+}
+
+const FACTOR_COUNT = 8;
+
+function FactorCardSkeleton() {
+  return (
+    <article className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 animate-pulse">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="h-5 w-16 rounded-full border border-line bg-base/50" />
+            <div className="h-5 w-20 rounded-full border border-line bg-base/50" />
+          </div>
+          <div className="mt-3 h-5 w-3/4 rounded bg-line" />
+        </div>
+        <div className="h-5 w-10 rounded bg-line" />
+      </div>
+
+      <div className="mt-3 flex-1 h-16 bg-line rounded" />
+      <div className="mt-2 h-6 w-1/3 bg-line rounded" />
+
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {[1, 2, 3].map((n) => (
+          <div key={n} className="h-5 w-16 rounded-full border border-line bg-base/40" />
+        ))}
+      </div>
+
+      <div className="mt-5 h-20 bg-line rounded-lg" />
+
+      <div className="mt-4">
+        <div className="mb-1.5 flex items-center justify-between">
+          <div className="h-3 w-24 bg-line rounded" />
+          <div className="h-1.5 w-20 bg-line rounded-full" />
+        </div>
+        <div className="h-1.5 bg-line rounded-full" />
+      </div>
+
+      <div className="mt-3">
+        <div className="h-3 w-16 bg-line rounded mb-1" />
+        <div className="h-3 w-32 bg-line rounded" />
+      </div>
+    </article>
+  );
 }
 
 export default function FactorsSection({
   horizon,
   dynamicFactors,
   healthStatus,
+  factorsLoaded = false,
 }: FactorsSectionProps) {
-  const hasDynamicFactors = dynamicFactors && dynamicFactors.length === 8;
-  const activeFactors = hasDynamicFactors ? dynamicFactors : FACTORS;
   const isOnline = healthStatus === "Online Model Connected";
-  const aiCurated = hasDynamicFactors && isOnline;
+  const isLoading = !factorsLoaded;
+
+  // The AI-Curated section must ONLY ever render factors genuinely backed by a
+  // fetched source URL. Never fall back to hard-coded static factor arrays
+  // (which carry publication names instead of URLs), so every card displays a
+  // real source URL. If no URL-backed factors exist after loading, the grid
+  // shows an explicit empty state. While loading, show skeletons.
+  const activeFactors: Factor[] = isLoading
+    ? []
+    : (dynamicFactors ?? []).filter((f) => isHttpUrl(f.source)).slice(0, FACTOR_COUNT);
+  const hasLiveFactors = activeFactors.length > 0;
+
+  const isAiCurated = hasLiveFactors && isOnline;
 
   const sorted = useMemo(
     () =>
@@ -208,27 +333,47 @@ export default function FactorsSection({
               Key factors & drivers
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              {isOnline ? "AI-Curated Factors" : "Key factors & drivers"}
+              {isAiCurated ? "AI-Curated Factors" : "Key factors & drivers"}
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-              {aiCurated
+              {isAiCurated
                 ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."
-                : "Twelve researched drivers shape the forecast paths. Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
+                : !isLoading && activeFactors.length === 0
+                ? "Factors appear only when they can be traced to a fetched source URL. None are available right now."
+                : "Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
             </p>
             {isOnline && (
               <p className="mt-2 text-xs text-teal-400 dark:text-teal-300/80">
                 Status: {healthStatus}
               </p>
             )}
+            {isLoading && (
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Loading factors…
+              </p>
+            )}
           </div>
         </Reveal>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {sorted.map((f, i) => (
-            <Reveal key={f.id} delay={Math.min(i * 40, 280)}>
-              <FactorCard factor={f} horizon={horizon} index={i} />
-            </Reveal>
-          ))}
+          {activeFactors.length > 0 ? (
+            sorted.map((f, i) => (
+              <Reveal key={f.id} delay={Math.min(i * 40, 280)}>
+                <FactorCard factor={f} horizon={horizon} index={i} />
+              </Reveal>
+            ))
+          ) : isLoading ? (
+            [...Array(FACTOR_COUNT)].map((_, i) => (
+              <Reveal key={`skeleton-${i}`} delay={Math.min(i * 40, 280)}>
+                <FactorCardSkeleton />
+              </Reveal>
+            ))
+          ) : (
+            <p className="col-span-full text-center text-sm text-slate-500 dark:text-slate-400 py-8">
+              No live price factors are available right now. Reasons are only shown when they can be
+              traced to a fetched source URL.
+            </p>
+          )}
         </div>
       </div>
     </section>

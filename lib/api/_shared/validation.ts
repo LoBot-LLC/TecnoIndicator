@@ -4,11 +4,86 @@ import { isRegion, type Region } from "./regions";
 export const DEFAULT_CATEGORY = "Market";
 
 export function safeParseJson<T = unknown>(text: string): T | null {
+  if (typeof text !== "string" || text.trim().length === 0) return null;
+
+  const direct = tryParse<T>(text);
+  if (direct !== undefined) return direct;
+
+  // Tolerate the common LLM failure mode of wrapping JSON in markdown code
+  // fences (```json ... ```) or adding leading/trailing prose. Previously any
+  // such wrapper made JSON.parse fail and silently fell back to static factors.
+  const withoutFence = text
+    .replace(/^\s*```(?:json|JSON)?\s*/m, "")
+    .replace(/\s*```\s*$/m, "")
+    .trim();
+
+  const fenced = tryParse<T>(withoutFence);
+  if (fenced !== undefined) return fenced;
+
+  const extracted = extractFirstJsonValue(withoutFence);
+  if (extracted) {
+    const parsed = tryParse<T>(extracted);
+    if (parsed !== undefined) return parsed;
+  }
+
+  return null;
+}
+
+function tryParse<T>(text: string): T | undefined {
   try {
     return JSON.parse(text) as T;
   } catch {
-    return null;
+    return undefined;
   }
+}
+
+/**
+ * Scans for the first balanced top-level JSON object (`{...}`) or array (`[...]`)
+ * in a string, respecting string literals and escapes. Returns null if none is
+ * found. Used to recover JSON from a model response that appends commentary.
+ */
+function extractFirstJsonValue(text: string): string | null {
+  const startObj = text.indexOf("{");
+  const startArr = text.indexOf("[");
+  let start = -1;
+  let open = "";
+  let close = "";
+  if (startObj === -1 && startArr === -1) return null;
+  if (startObj !== -1 && (startArr === -1 || startObj < startArr)) {
+    start = startObj;
+    open = "{";
+    close = "}";
+  } else {
+    start = startArr;
+    open = "[";
+    close = "]";
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === open) {
+      depth++;
+    } else if (ch === close) {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
 }
 
 export function sanitizeError(message: string): string {

@@ -19,7 +19,7 @@ A modern, clean, professional single-page web application that delivers energy p
   - Two commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Water (USD/M^3)** and **Global Electricity (USD/MWh)**
   - Three scenarios per commodity: Average, Optimistic (Min), Pessimistic (Max)
   - Clean data table + interactive line chart (Chart.js)
-- **Real-time Feel** — Live-updating timestamp + “Refresh Data” button that perturbs values within realistic ranges.
+- **Real-time Feel** — Live-updating timestamp + “Refresh Data” button that perturbs values within realistic ranges. Each commodity card (oil, electricity, water) also has its own “Re-fetch Live … Price” button that re-fetches the live TinyFish source and displays the fetched source URL, the fetched timestamp, and the live/benchmark range — the same pattern previously only available for water.
 - **Key Factors & Drivers** — Dynamic grid of 8 major price influencers with:
   - Factor name + explanation
   - Impact direction & magnitude (↑/↓ High/Medium/Low)

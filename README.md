@@ -145,6 +145,12 @@ The `aiCurated` flag on each API response tells the UI whether factors are live 
 
 **Factor Curation Validation (lib/api/handlers/factor-analysis.ts):** Every explanation produced by the pipeline is validated to be **1–3 complete sentences ≤400 chars** and must open with `With <commodity> at $<price>/<unit>,` (e.g. `With oil at $104.86/bbl, OPEC+ members have agreed to extend voluntary production cuts…`) or `<Commodity> <verb> …` (e.g. `Brent crude rose …`). Raw page chrome / tweet tickers / mid-sentence fragments are rejected. Titles derive cleanly from explanations — `deriveFactorNameFromExplanation` strips the grounding preamble, takes the leading clause up to the first comma/semicolon, title-cases tokens while preserving acronyms (OPEC+, IEA) and units (mb/d, MWh), and truncates to ~80 chars — so units with spaces (e.g. "USD per barrel") render correctly. Client-side truncation in `src/components/{FactorsSection,RegionalEvaluation}.tsx` is sentence-boundary aware via `src/lib/truncate.ts` (`truncateAtSentence`), cutting at the last `.`, `!`, or `?` within the limit and never mid-word.
 
+**NEW: Invalid Factor Title Rejection** — Factor titles are now validated to ensure they describe a concrete price-driver reason, not an article header or metadata fragment. The new `isInvalidFactorTitle()` check rejects titles such as `"Breaking News"`, `"Historically"`, `"News"`, `"Update"`, `"Alert"`, single-word titles that aren't acronyms, and other single adverb/header-style fragments. When a factor's title fails this check:
+- The pipeline attempts to derive a valid title from the factor's explanation (the actual price-driver content).
+- If no valid title can be derived, the factor is **dropped entirely** rather than surfacing a non-reason title to the UI.
+
+This applies at all entry points: `normalizeFactor` (model-curated factors), `sanitizeFactorTitle` (shared title sanitization used by `validateAndRepairWindow`), and `buildFactorsFromCandidates` (deterministic URL-backed factors). The result is that factor cards in the "Key Factors & Drivers" (global) and "Regional Intelligence" (continental) sections always show a valid reason title like "OPEC+ Production Cuts" or "Drought-Driven Water Scarcity" — never "Breaking News" or "Historically".
+
 ---
 
 ## 💡 Solutions Generation Pipeline (Kilo Gateway + TinyFish)

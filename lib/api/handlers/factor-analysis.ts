@@ -863,8 +863,17 @@ export async function validateAndRepairWindow(
 
   return repaired.map((f) => {
     const safeName = sanitizeFactorTitle(f.name, f.explanation);
-    return safeName && safeName !== f.name ? { ...f, name: safeName } : f;
-  });
+    if (safeName && safeName !== f.name && !isInvalidFactorTitle(safeName)) {
+      return { ...f, name: safeName };
+    }
+    // If the current name is invalid and no safe replacement exists, drop the
+    // factor entirely rather than surfacing a non-reason title like
+    // "Breaking News" or "Historically".
+    if (isInvalidFactorTitle(f.name)) {
+      return null;
+    }
+    return f;
+  }).filter((f): f is Factor => f !== null);
 }
 
 const SYSTEM_PROMPT_GLOBAL =
@@ -1309,6 +1318,38 @@ const DANGLING_TITLE_TAIL = new Set<string>([
 const TITLE_LEADING_PREFIX =
   /^(?:investing\.com|reuters|bloomberg|cnbc|financial\s+times|ft\.com|the\s+economist|oilprice\.com|argus(?:\s+media)?|s&p\s+global|spglobal|platts|marketwatch|yahoo\s+finance|morningstar|trading\s+economics|economies\.com|business\s+standard|the\s+hindu)\s*(?:--|—|–|:|\||-)\s*/i;
 
+/** Titles that are article headers / metadata fragments rather than concrete price-driver reasons.
+ * These are single words or short phrases that describe an article's framing, not *why* a price moved.
+ * Examples: "Breaking News", "Historically", "News", "Update", "Alert", "Briefing".
+ */
+const INVALID_TITLE_PATTERNS: RegExp[] = [
+  /^breaking\s*news\b/i,
+  /^breaking\b/i,
+  /^historically\b/i,
+  /^(news|update|alert|briefing|headline|headlines)\b/i,
+  /^(today|yesterday|this\s+week|this\s+month)\b/i,
+  /^(in\s+this\s+article|by\s+[A-Z][a-z]+\s+[A-Z][a-z]+)\b/i,
+];
+
+/** Returns true when a factor title is not a valid reason title — e.g. it's an
+ * article header ("Breaking News"), a single adverb ("Historically"), or a bare
+ * publication/metadata fragment. A valid title should describe a concrete price
+ * driver (e.g. "OPEC+ Output Restraint", "Middle East Supply Risk"). */
+export function isInvalidFactorTitle(title: string): boolean {
+  if (!title || typeof title !== "string") return true;
+  const trimmed = title.trim();
+  if (trimmed.length < 6) return true;
+  const lower = trimmed.toLowerCase();
+  for (const pattern of INVALID_TITLE_PATTERNS) {
+    if (pattern.test(lower)) return true;
+  }
+  // A single-word title that is not an acronym or proper noun phrase is not a
+  // reason title. Valid reason titles are typically 2+ words describing a driver.
+  const words = trimmed.split(/\s+/);
+  if (words.length === 1 && !/^[A-Z][A-Z0-9+/]{1,}$/.test(trimmed)) return true;
+  return false;
+}
+
 /** Removes grounding preamble, leading publication prefixes and page chrome. */
 function stripTitleNoise(text: string): string {
   if (!text || typeof text !== "string") return "";
@@ -1400,14 +1441,22 @@ function deriveFactorNameFromExplanation(explanation: string): string {
  * Produces a clean, complete factor title from a raw model-provided name (or,
  * failing that, from the explanation). Never returns a title with the grounding
  * preamble, page chrome / @ticker tags, a leading publication prefix, a
- * mid-word cut, or a dangling article/preposition/verb tail.
+ * mid-word cut, or a dangling article/preposition/verb tail. Never returns an
+ * invalid title such as "Breaking News" or "Historically" that is not a
+ * concrete price-driver reason.
  */
 function sanitizeFactorTitle(rawName: string, explanation: string): string {
+  // Prefer the raw model-provided name when it is a valid reason title.
   const fromRaw = toConciseTitle(stripTitleNoise(rawName));
-  if (fromRaw.length >= 6) return fromRaw;
+  if (fromRaw.length >= 6 && !isInvalidFactorTitle(fromRaw)) return fromRaw;
+
+  // Fall back to deriving a title from the explanation content.
   const derived = deriveFactorNameFromExplanation(explanation);
-  if (derived.length >= 6) return derived;
-  return fromRaw || stripTitleNoise(explanation).slice(0, TITLE_MAX_CHARS).trim();
+  if (derived.length >= 6 && !isInvalidFactorTitle(derived)) return derived;
+
+  // Last resort: use the raw name if it is at least valid, otherwise return "".
+  if (fromRaw.length >= 6 && !isInvalidFactorTitle(fromRaw)) return fromRaw;
+  return "";
 }
 
 /**
@@ -1779,10 +1828,16 @@ function clauseQualityCheck(clause: string): boolean {
       }
       seenExplanations.add(dedupKey);
 
-      const name =
-        sanitizeFactorTitle("", explanation)
-        || truncateAtWordBoundary(explanation, 160, { minPrefix: 1, ellipsis: "" })
-        || `Market update: ${candidate.url}`;
+      // Derive a factor title that is a valid reason title — never an article
+      // header ("Breaking News") or a bare adverb ("Historically").
+      const rawDerivedName = sanitizeFactorTitle("", explanation);
+      let name = rawDerivedName && !isInvalidFactorTitle(rawDerivedName)
+        ? rawDerivedName
+        : "";
+      if (!name) {
+        const truncated = truncateAtWordBoundary(explanation, 160, { minPrefix: 1, ellipsis: "" });
+        name = truncated && !isInvalidFactorTitle(truncated) ? truncated : `Market update: ${candidate.url}`;
+      }
 
       const haystack = `${title} ${snippet} ${text}`.toLowerCase();
 
@@ -1854,9 +1909,18 @@ export function normalizeFactor(
   // Replace publication-like names (report/outlook titles, agency names) with a
   // concise name derived from the explanation, so the UI never shows a bare
   // publication name such as "World Oil Outlook" or "Monthly Oil Market Report".
+  // Also reject invalid titles that are not concrete price-driver reasons
+  // (e.g. "Breaking News", "Historically").
   let finalName = sanitizeFactorTitle(name, explanation);
-  if (!finalName || PUBLICATION_NAME_PATTERNS.some((p) => p.test(finalName))) {
-    finalName = deriveFactorNameFromExplanation(explanation) || finalName || name;
+  if (!finalName || PUBLICATION_NAME_PATTERNS.some((p) => p.test(finalName)) || isInvalidFactorTitle(finalName)) {
+    const derived = deriveFactorNameFromExplanation(explanation);
+    if (derived && !isInvalidFactorTitle(derived)) {
+      finalName = derived;
+    } else if (!isInvalidFactorTitle(name)) {
+      finalName = name;
+    } else {
+      finalName = "";
+    }
   }
   const id =
     typeof f.id === "string" && f.id.trim()

@@ -74,15 +74,24 @@ export function useLiveMarket(): UseLiveMarketReturn {
       });
       prevPricesRef.current = newPrices;
       setPrices(newPrices);
-      const quotes: Partial<Record<CommodityId, LiveCommodityQuote>> = {};
+      const quotes: Partial<Record<CommodityId, LiveCommodityQuote | null>> = {};
       for (const c of COMMODITIES) {
         const d = data[c.id];
-        quotes[c.id] = {
-          price: d.price,
-          asOf: new Date(data.asOf).toLocaleTimeString("en-GB", { hour12: false }),
-          source: d.source || data.dataSource,
-          range: d.isLive ? "Live feed" : "Static benchmark",
-        };
+        // Only surface a live quote when the pipeline actually resolved a live
+        // price for this commodity. A static benchmark / "insufficient data"
+        // result (price 0 or isLive false) must not masquerade as a live quote,
+        // otherwise the card shows a bogus "Live" badge instead of the
+        // "Fetch Live … Price" action.
+        if (d.isLive && d.price > 0) {
+          quotes[c.id] = {
+            price: d.price,
+            asOf: new Date(data.asOf).toLocaleTimeString("en-GB", { hour12: false }),
+            source: d.source || data.dataSource,
+            range: "Live feed",
+          };
+        } else {
+          quotes[c.id] = null;
+        }
       }
       setLiveQuotes(quotes);
       setIsLive(data.isLive);

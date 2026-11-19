@@ -19,7 +19,7 @@ A commodity price forecasting dashboard for **oil**, **electricity**, and **wate
   - Three commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Water (USD/M³)**, and **Global Electricity (USD/MWh)**
   - Three scenarios per commodity: Average, Optimistic (Min), Pessimistic (Max)
   - Interactive line chart (Chart.js) + clean data table
-- **Real-time Feel** — Live-updating timestamp + "Refresh Data" button. Each commodity card in the **Interactive price forecasts** has its own "Re-fetch Live … Price" button that re-fetches the live TinyFish source and displays the live price next to its source URL and search timestamp (alongside the live/benchmark range). The Hero "Market Snapshot" / "Live global feed" rows show only the live number — no raw URL or timestamp.
+- **Real-time Feel** — Live-updating timestamp + "Refresh Data" button. Each commodity card in the **Interactive price forecasts** has its own "Re-fetch Live … Price" button that re-fetches the live TinyFish source and displays the live price next to its source URL and search timestamp (alongside the live/benchmark range). A refetch bypasses both the search and scrape caches so the source URL and price are genuinely re-pulled. The Hero "Market Snapshot" / "Live global feed" rows show only the live number — no raw URL or timestamp.
 - **Key Factors & Drivers** — Dynamic grid of 8 major price influencers with:
   - Factor name + explanation (reasons summarized from TinyFish-fetched source URLs, not hard-coded)
   - **Factor names derived from explanations** (price drivers), not publication titles — the pipeline auto-replaces report/outlook titles and agency names with concise names extracted from the curated explanation
@@ -198,19 +198,27 @@ Maximum candidates per scope reduced from 15 to 10, cutting TinyFish scrape call
 
 **Flow:**
 
-1. 3 parallel TinyFish searches (oil, electricity, water) with price-targeted queries and a `purpose` statement.
-2. For each commodity, collect up to 5 candidate URLs from search results (reputable hosts first via `isReputableSource`, then any other), de-duplicated.
-3. If search returns no usable URLs, fall back to `KNOWN_PRICE_URLS` (known stable price pages): oil → tradingeconomics.com, economies.com, fueldataportal.com, worldoilmonitor.com; electricity → electricity-spot.com, euroenergy.live, euenergy.live; water → globalwaterintel.com (Global Water Tariff Survey 2026), World Bank data360.
-4. `tinyfishRouter.tinyfishScrapeBatch(urls, signal, { purpose })` batch-scrapes up to 10 URLs per request via `api.fetch.tinyfish.ai` (per-URL isolation; one failure doesn't fail the batch). The 3 commodity batches run in parallel.
-5. Kilo Gateway (`kiloRouter.kiloInfer`) extracts the price from the scraped page text + search snippets and returns strict JSON with price/unit/source/confidence (confidence ≥ 50, price > 0). EUR prices are converted to USD (1 EUR = 1.08 USD) and the original currency noted in the unit string.
-6. If Kilo fails/incomplete: deterministic `extractPriceFromText` regex runs on scraped page text first, then on snippets; the URL where the price was found becomes the `source`.
-7. If still incomplete: existing static benchmark defaults (`getScopePriceDefaults`) are served with `isLive: false` (unchanged behaviour).
+1. 3 parallel TinyFish searches (oil, electricity, water) with **broader, per-unit queries** plus an **`alternateQuery` retry** (broad, no domain restriction) when the primary search returns nothing. Primary searches use `include_domains` to target reputable sources.
+2. For each commodity, candidate URLs are **always merged**: reputable search hits first, then other search hits, then `KNOWN_PRICE_URLS` (stable price pages). The merged list is deduped and **capped at 8** (under TinyFish's 10-URL batch limit), so a thin or irrelevant search never strands the pipeline on news URLs.
+3. `tinyfishRouter.tinyfishScrapeBatch(urls, signal, { purpose, bypassCache })` batch-scrapes the candidate URLs via `api.fetch.tinyfish.ai` (per-URL isolation; one failure doesn't fail the batch). The 3 commodity batches run in parallel. On a forced refetch (`?force=true`), `bypassCache: true` skips **both** the 60s search cache and the 10-minute per-URL scrape cache.
+4. If a commodity's batch scrape yields no usable page text, a **bounded single-URL retry** scrapes the first known price pages from `KNOWN_PRICE_URLS`.
+5. Scrape errors from the batch are surfaced via `console.warn` instead of being silently dropped.
+6. Kilo Gateway (`kiloRouter.kiloInfer`) extracts the price from the scraped page text + search snippets and returns strict JSON with price/unit/source/confidence (confidence ≥ 50, price > 0). EUR prices are converted to USD (1 EUR = 1.08 USD) and the original currency noted in the unit string.
+7. If Kilo fails/incomplete: deterministic `extractPriceFromText` regex runs on scraped page text first, then on snippets; the URL where the price was found becomes the `source`.
+8. If still incomplete: existing static benchmark defaults (`getScopePriceDefaults`) are served with `isLive: false` (unchanged behaviour).
 
-**`tinyfishScrapeBatch`** (new method in `lib/api/_shared/tinyfishRouter.ts`): batch of up to 10 URLs/request, per-URL isolation, 15s fetch timeout, cache-aware (`tinyfish:scrape:{url}`, `SCRAPE_CACHE_MS` TTL), reuses key rotation/3-retry/backoff. The single-URL `tinyfishScrape` used by factor analysis stays at 10s.
+**`KNOWN_PRICE_URLS` (refreshed with currently-live sources):**
+- **Oil** → tradingeconomics.com, economies.com, fueldataportal.com, worldoilmonitor.com
+- **Electricity** → euenergy.live, electricity-spot.com, energymix.uk, progrunners.com, gridstatus.io
+- **Water** → GWI Global Water Tariff Survey 2026 press pages (globenewswire Oct 29 + Nov 6, markets.businessinsider.com, finance.yahoo.com, globalwaterintel doc)
 
-**Timeouts:** internal abort in `resolvePrices` increased 25s → 55s. Vercel `maxDuration` for `app/api/prices/route.ts` increased 60s → 120s.
+**`tinyfishScrapeBatch`** (in `lib/api/_shared/tinyfishRouter.ts`): batch of up to 10 URLs/request, per-URL isolation, uses `AbortSignal.timeout(90000)` default with the route's **100s** internal abort governing the overall budget. Now accepts a `bypassCache` option and returns **per-URL errors on failure** instead of an empty array. Cache-aware (`tinyfish:scrape:{url}`, `SCRAPE_CACHE_MS` TTL), reuses key rotation/3-retry/backoff. The single-URL `tinyfishScrape` used by factor analysis stays at 10s.
+
+**Timeouts:** internal abort in `resolvePrices` increased **55s → 100s**. Vercel `maxDuration` for `app/api/prices/route.ts` is **120s**.
 
 **Three-tier degradation:** Kilo extraction → deterministic regex (scraped text then snippets) → static benchmark defaults.
+
+**Files modified in this change:** `lib/api/handlers/prices.ts`, `lib/api/_shared/tinyfishRouter.ts`, `src/hook/useLiveMarket.ts`
 
 ---
 

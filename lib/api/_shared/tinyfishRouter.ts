@@ -213,7 +213,7 @@ export class TinyFishRouter {
 
   async tinyfishSearch(
     query: string,
-    options: { limit?: number; region?: Region; purpose?: string; recencyMinutes?: number; includeDomains?: string[] } = {},
+    options: { limit?: number; region?: Region; purpose?: string; recencyMinutes?: number; includeDomains?: string[]; bypassCache?: boolean } = {},
     abortSignal?: AbortSignal
   ): Promise<TinyFishSearchResponse> {
     if (!this.initialized) {
@@ -225,8 +225,10 @@ export class TinyFishRouter {
       "Find recent articles about oil, electricity, or water price movements and their underlying causes.";
     const recencyMinutes = options.recencyMinutes ?? 10080; // Default: last 7 days
     const cacheKey = `tinyfish:search:${query}:${options.region ?? "global"}:${recencyMinutes}:${options.includeDomains?.join(",") ?? ""}`;
-    const cached = await getCache<TinyFishSearchResponse>(cacheKey, SEARCH_CACHE_MS);
-    if (cached) return cached;
+    if (!options.bypassCache) {
+      const cached = await getCache<TinyFishSearchResponse>(cacheKey, SEARCH_CACHE_MS);
+      if (cached) return cached;
+    }
 
     let keyState = this.selectKey();
     let lastError: Error | null = null;
@@ -437,7 +439,7 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
   async tinyfishScrapeBatch(
     urls: string[],
     abortSignal?: AbortSignal,
-    options: { purpose?: string } = {},
+    options: { purpose?: string; bypassCache?: boolean } = {},
   ): Promise<TinyFishScrapeBatchResponse> {
     if (!this.initialized) {
       await this.refreshTinyfishStatus(true, abortSignal);
@@ -462,7 +464,9 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
     const toFetch: string[] = [];
     for (const url of batchUrls) {
       const cacheKey = `tinyfish:scrape:${url}`;
-      const cached = await getCache<ScrapedContent>(cacheKey, SCRAPE_CACHE_MS);
+      const cached = options.bypassCache
+        ? null
+        : await getCache<ScrapedContent>(cacheKey, SCRAPE_CACHE_MS);
       if (cached) {
         cachedResults.push(cached);
       } else {
@@ -578,7 +582,11 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
     }
 
     console.error("TinyFish scrape batch failed:", lastError?.message);
-    return { results: cachedResults, errors: [] };
+    const failureMessage = lastError?.message ?? "tinyfish scrape batch failed";
+    return {
+      results: cachedResults,
+      errors: toFetch.map((url) => ({ url, error: failureMessage })),
+    };
   }
 
   async getTinyfishStatus(abortSignal?: AbortSignal, quick: boolean = false): Promise<{

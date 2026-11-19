@@ -12,9 +12,24 @@ import type { RegionId } from "../_shared/types";
 import { safeParseJson } from "../_shared/validation";
 
 const COMMODITY_QUERIES = [
-  { commodity: "oil", queryTemplate: "Brent crude oil price today USD per barrel live" },
-  { commodity: "electricity", queryTemplate: "wholesale electricity price today EUR per MWh live" },
-  { commodity: "water", queryTemplate: "global water prices rose 2026 tariff survey per cubic metre USD" },
+  {
+    commodity: "oil",
+    queryTemplate: "Brent crude oil price today USD per barrel",
+    alternateQuery: "Brent crude oil price per barrel",
+    domains: ["tradingeconomics.com", "oilprice.com", "worldoilmonitor.com", "investing.com", "markets.businessinsider.com"],
+  },
+  {
+    commodity: "electricity",
+    queryTemplate: "wholesale electricity price today EUR per MWh day ahead",
+    alternateQuery: "electricity day ahead spot price per MWh",
+    domains: ["euenergy.live", "electricity-spot.com", "energymix.uk", "progrunners.com", "gridstatus.io"],
+  },
+  {
+    commodity: "water",
+    queryTemplate: "global water price per cubic metre 2026 tariff survey",
+    alternateQuery: "water tariff average price per m3",
+    domains: ["globalwaterintel.com", "globenewswire.com", "markets.businessinsider.com", "finance.yahoo.com"],
+  },
 ];
 
 /**
@@ -30,15 +45,18 @@ const KNOWN_PRICE_URLS: Record<string, string[]> = {
     "https://worldoilmonitor.com/brent",
   ],
   electricity: [
-    "https://electricity-spot.com/",
-    "https://euroenergy.live/en/prices",
     "https://euenergy.live/",
+    "https://electricity-spot.com/",
+    "https://energymix.uk/",
+    "https://progrunners.com/european-electricity-prices/",
+    "https://www.gridstatus.io/live",
   ],
   water: [
     "https://www.globenewswire.com/news-release/2026/10/29/3391565/0/en/global-water-prices-rose-5-6-in-2026-as-the-regional-gap-continues-to-widen-finds-global-water-intelligence-s-global-water-tariff-survey.html",
     "https://markets.businessinsider.com/news/stocks/global-water-prices-rose-5-6-in-2026-as-the-regional-gap-continues-to-widen-finds-global-water-intelligence-s-global-water-tariff-survey-1036685856",
-    "https://www.globenewswire.com/news-release/2026/11/10/3399997/0/en/us-water-bills-more-than-double-since-2011-as-north-american-prices-rise-6-8-in-2026-finds-global-water-intelligence.html",
+    "https://finance.yahoo.com/economy/articles/global-water-prices-rose-5-152200588.html",
     "https://www.globalwaterintel.com/documents/the-global-water-tariff-survey-2026",
+    "https://www.globenewswire.com/news-release/2026/11/06/3397420/0/en/asia-s-water-prices-trail-the-5-6-global-rise-but-bishkek-s-jump-44-7-finds-global-water-intelligence-s-global-water-tariff-survey-2026.html",
   ],
 };
 
@@ -136,11 +154,13 @@ async function resolvePrices(req: Request): Promise<Response> {
 
   // Bounded live-price attempt: TinyFish search + scrape + Kilo extraction.
   // Scraping adds latency, so the budget is larger than the old search-only path.
+  // The Vercel function maxDuration for this route is 120s, so the scrape+extract
+  // budget is set to 100s to leave headroom for the fallback tier.
   const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), 55000);
+  const timeoutId = setTimeout(() => abortController.abort(), 100000);
 
   try {
-    const searchResults = await getLivePricesFromTinyFish(scope, abortController.signal);
+    const searchResults = await getLivePricesFromTinyFish(scope, abortController.signal, force);
 
     if (searchResults.isLive) {
       await setCache(cacheKey, searchResults, SEARCH_CACHE_MS);

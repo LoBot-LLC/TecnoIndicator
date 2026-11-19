@@ -61,7 +61,7 @@ Return strict JSON only with this schema:
   ]
 }
 
-Use only the supplied analytics, factors, and fresh web evidence with source URLs. Cite sources by including the URL in the summary when referencing specific data points. Do not invent sources or facts.`;
+Generate solutions DIRECTLY from the supplied factors (their name, explanation, commodities, direction, magnitude) and analytics, citing specific factor reasons. Each solution must reference at least one factor by its name or explanation. Do not output generic templates unrelated to the supplied factors. Use only the supplied analytics, factors, and fresh web evidence with source URLs. Cite sources by including the URL in the summary when referencing specific data points. Do not invent sources or facts.`;
 
 const VALID_REGIONS: RegionId[] = ["global", "asia", "europe", "africa", "americas", "oceania"];
 
@@ -122,76 +122,172 @@ function buildSolution(s: unknown, scope: RegionId, validRegions: RegionId[]): S
   };
 }
 
-function buildFallbackSolutions(
+function buildReasonDerivedSolutions(
   scope: RegionId,
-  analytics: Record<string, unknown>,
   factors: Factor[],
 ): Solution[] {
-  const now = new Date().toISOString();
-  const regionName = scope;
-  const fuelLevy = (analytics.fuelLevy as number) ?? 0;
-  const elecIdx = (analytics.electricityTariffAdjustmentIndex as number) ?? 0;
-  const waterIdx = (analytics.waterScarcityAdjustedPriceIndex as number) ?? 0;
+  if (factors.length === 0) return [];
 
-  return [
-    {
-      id: `solution-fallback-${Date.now()}-0`,
-      title: fuelLevy > 0 ? "Lock in fuel costs via fixed-price hedging" : "Optimize fuel procurement with dynamic sourcing",
-      summary: `Based on ${regionName} market analytics (fuelLevy ${fuelLevy >= 0 ? "+" : ""}${fuelLevy}, electricity index ${elecIdx >= 0 ? "+" : ""}${elecIdx}), hedge exposure to ${fuelLevy > 0 ? "rising" : "volatile"} fuel costs using fixed-price contracts or financial swaps. Source from diversified suppliers to mitigate regional supply disruptions. Current analytics: ${analytics.dataSource ?? "benchmark data"}.`,
-      actions: [
-        "Secure fixed-price fuel contracts for 60-80% of Q4 2026 volume",
-        "Establish secondary supplier agreements outside primary delivery corridors",
-        "Monitor regional inventory levels weekly to adjust procurement timing",
-        "Use futures or swaps to hedge remaining variable exposure",
-      ],
-      commodities: ["oil"],
-      regions: [scope],
+  const now = new Date().toISOString();
+  const solutions: Solution[] = [];
+
+  // Helper: derive title from factor
+  const deriveTitle = (f: Factor): string => {
+    const commodity = f.commodities[0] ?? "commodity";
+    const directionVerb = f.direction === "up" ? "Hedge" : f.direction === "down" ? "Capitalize" : "Manage";
+    const term = f.name.split(" ").find(w => w.length > 2) ?? f.category;
+    const title = `${directionVerb} ${commodity} ${term}`.slice(0, 120);
+    return title;
+  };
+
+  // Helper: derive summary from factor
+  const deriveSummary = (f: Factor): string => {
+    const directionText = f.direction === "up" ? "rising" : f.direction === "down" ? "falling" : "mixed";
+    const magnitudeText = f.magnitude.charAt(0).toLowerCase() + f.magnitude.slice(1).toLowerCase();
+    return `With ${f.commodities.join("/")} ${directionText} ${magnitudeText} trends (${f.name}), address impacts through ${f.explanation.toLowerCase()}`;
+  };
+
+  // Helper: derive actions from factor context
+  const deriveActions = (f: Factor): string[] => {
+    const actions: string[] = [];
+    const commodity = f.commodities[0] ?? "commodity";
+    const directionText = f.direction === "up" ? "increasing" : f.direction === "down" ? "decreasing" : "volatile";
+    
+    // Generate concrete actions based on factor category and direction
+    if (f.category === "Market") {
+      if (f.direction === "up") {
+        actions.push(`Secure forward contracts for ${commodity} to lock in prices before further increases`);
+        actions.push(`Diversify suppliers to reduce exposure to single-source price volatility`);
+        actions.push(`Implement price monitoring systems with automated alerts for ${directionText} trends`);
+        if (f.importanceScore > 70) {
+          actions.push(`Negotiate volume discounts with key suppliers to offset price pressure`);
+        }
+      } else if (f.direction === "down") {
+        actions.push(`Increase procurement volumes to benefit from favorable market pricing`);
+        actions.push(`Consolidate purchasing with fewer strategic suppliers for better terms`);
+        actions.push(`Invest in hedging instruments to protect against future price increases`);
+        if (f.magnitude === "High") {
+          actions.push(`Consider strategic storage to capitalize on current market conditions`);
+        }
+      }
+    } else if (f.category === "Policy") {
+      actions.push(`Monitor policy developments and adjust procurement strategies accordingly`);
+      actions.push(`Engage with local authorities to influence favorable policy outcomes`);
+      actions.push(`Develop contingency plans for policy changes affecting ${commodity} availability`);
+    } else {
+      actions.push(`Invest in efficiency improvements to reduce ${commodity} dependency`);
+      actions.push(`Explore alternative sources or substitute materials for ${commodity}`);
+      actions.push(`Implement predictive analytics to anticipate ${directionText} ${commodity} availability`);
+      if (f.drift?.[commodity]) {
+        actions.push(`Adjust procurement timing based on seasonal price patterns for ${commodity}`);
+      }
+    }
+
+    if (actions.length < 3) {
+      actions.push(`Maintain regular supplier relationships to ensure ${commodity} availability`);
+      actions.push(`Track market indicators to inform strategic decisions`);
+    }
+
+    return actions.slice(0, 5);
+  };
+
+  // Primary solutions from each factor
+  for (const factor of factors) {
+    if (solutions.length >= MAX_SOLUTIONS) break;
+    
+    const title = deriveTitle(factor);
+    const summary = deriveSummary(factor);
+    const actions = deriveActions(factor);
+    
+    solutions.push({
+      id: `solution-${Date.now()}-${solutions.length}`, // Ensure unique IDs
+      title,
+      summary,
+      actions,
+      commodities: factor.commodities,
+      regions: scope === "global" ? ["global"] : [scope],
       scope,
-      relatedFactors: factors.slice(0, 4).map((f) => f.id),
-      confidence: 65,
+      relatedFactors: [factor.id],
+      confidence: factor.importanceScore,
       createdAt: now,
       updatedAt: now,
-    },
-    {
-      id: `solution-fallback-${Date.now()}-1`,
-      title: elecIdx > 0 ? "Reduce electricity demand during peak pricing windows" : "Stabilize electricity procurement with flexible contracts",
-      summary: `Electricity tariff adjustment index is ${elecIdx >= 0 ? "+" : ""}${elecIdx} for ${regionName}. ${elecIdx > 0 ? "Shift energy-intensive operations to off-peak hours and invest in demand response." : "Lock in flexible contracts that track real-time pricing to benefit from low-demand periods."}`,
-      actions: [
-        "Install smart energy management systems to optimize load scheduling",
-        "Negotiate time-of-use electricity contracts with tiered pricing",
-        "Deploy on-site power generation (solar/diesel backup) for peak shaving",
-        "Join regional demand response programs for additional revenue",
-      ],
-      commodities: ["electricity"],
-      regions: [scope],
-      scope,
-      relatedFactors: factors.slice(4, 8).map((f) => f.id),
-      confidence: 65,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: `solution-fallback-${Date.now()}-2`,
-      title:
-        waterIdx > 0.5
-          ? "Secure alternative water sources before scarcity impacts operations"
-          : "Implement water recycling to reduce long-term supply risk",
-      summary: `Water scarcity adjusted price index is ${waterIdx >= 0 ? "+" : ""}${waterIdx} for ${regionName}. ${waterIdx > 0.5 ? "Drought conditions and rising costs indicate need for immediate alternative sourcing." : "Modest water cost changes allow proactive investment in efficiency."} ${factors.length > 0 ? `Key factors: ${factors.map((f) => f.name).join(", ")}.` : ""}`,
-      actions: [
-        "Conduct water audit to identify recycling and efficiency opportunities",
-        "Negotiate long-term water supply contracts with volume discounts",
-        "Invest in on-site water treatment or rainwater harvesting systems",
-        "Explore regulatory incentives for water conservation programs",
-      ],
-      commodities: ["water"],
-      regions: [scope],
-      scope,
-      relatedFactors: factors.slice(0, 4).map((f) => f.id),
-      confidence: 65,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
+    });
+  }
+
+  // Pad solutions when fewer than 3, using factor explanations for each strategic angle
+  if (solutions.length < MAX_SOLUTIONS && factors.length > 0) {
+    const padded: Solution[] = [];
+    
+    // Operational resilience angle
+    if (solutions.length < MAX_SOLUTIONS) {
+      const f = factors[0];
+      padded.push({
+        id: `solution-${Date.now()}-pad-op-res`,
+        title: `Strengthen ${f.commodities[0] ?? "commodity"} operational resilience`,
+        summary: `Based on ${f.name}, build operational resilience by ${f.explanation.toLowerCase()}. This addresses supply chain continuity and business continuity needs.`,
+        actions: [
+          `Develop backup supply contracts for ${f.commodities[0] ?? "commodity"}`, 
+          `Implement inventory buffers for ${f.commodities[0] ?? "commodity"} shortages`,
+          `Create emergency response protocols for ${f.commodities[0] ?? "commodity"} disruptions`,
+        ],
+        commodities: f.commodities,
+        regions: scope === "global" ? ["global"] : [scope],
+        scope,
+        relatedFactors: [f.id],
+        confidence: Math.max(50, f.importanceScore - 20),
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Cost optimization angle  
+    if (solutions.length < MAX_SOLUTIONS) {
+      const f = factors[1] ?? factors[0];
+      padded.push({
+        id: `solution-${Date.now()}-pad-cost-opt`,
+        title: `Optimize ${f.commodities[0] ?? "commodity"} cost structure`,
+        summary: `From ${f.name}, optimize costs by ${f.explanation.toLowerCase()}. This focuses on reducing total cost of ownership and improving margin efficiency.`,
+        actions: [
+          `Analyze ${f.commodities[0] ?? "commodity"} usage patterns for waste reduction`,
+          `Negotiate better terms with existing suppliers based on ${f.name.toLowerCase()}`,
+          `Implement performance metrics to track ${f.commodities[0] ?? "commodity"} cost efficiency`,
+        ],
+        commodities: f.commodities,
+        regions: scope === "global" ? ["global"] : [scope],
+        scope,
+        relatedFactors: [f.id],
+        confidence: Math.max(50, f.importanceScore - 20),
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Strategic positioning angle
+    if (solutions.length < MAX_SOLUTIONS) {
+      const f = factors[factors.length - 1];
+      padded.push({
+        id: `solution-${Date.now()}-pad-strat-pos`,
+        title: `Position strategically for ${f.commodities[0] ?? "commodity"} opportunities`,
+        summary: `Leveraging ${f.name}, create strategic positioning advantages by ${f.explanation.toLowerCase()}. This enables competitive differentiation and market leadership.`,
+        actions: [
+          `Invest in capabilities to capitalize on ${f.name.toLowerCase()}`,
+          `Build partnerships to enhance ${f.commodities[0] ?? "commodity"} market presence`,
+          `Develop specialized expertise in ${f.commodities[0] ?? "commodity"} markets`,
+        ],
+        commodities: f.commodities,
+        regions: scope === "global" ? ["global"] : [scope],
+        scope,
+        relatedFactors: [f.id],
+        confidence: Math.max(50, f.importanceScore - 20),
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    solutions.push(...padded);
+  }
+
+  return solutions.slice(0, MAX_SOLUTIONS);
 }
 
 async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Promise<unknown[]> {
@@ -312,8 +408,15 @@ export async function handleSolutions(req: Request): Promise<Response> {
     }
 
     const aiCurated = aiSolutions.length > 0;
-    const fallback = buildFallbackSolutions(scope, analytics, factors);
-    const solutions = [...aiSolutions, ...fallback].slice(0, MAX_SOLUTIONS);
+    let reasonDerivedSolutions: Solution[] = [];
+
+    // When AI fails to return any solutions but factors exist, return reason-derived solutions
+    if (!aiCurated && factors.length > 0) {
+      reasonDerivedSolutions = buildReasonDerivedSolutions(scope, factors);
+    }
+    
+    // Build final solutions array: if AI solutions exist, return only those (no padding); otherwise use reason-derived or empty
+    const solutions = aiCurated ? aiSolutions.slice(0, MAX_SOLUTIONS) : reasonDerivedSolutions;
 
     await setCache(cacheKey, { solutions, aiCurated } satisfies CachedSolutions, SOLUTIONS_CACHE_MS);
 
@@ -333,16 +436,16 @@ export async function handleSolutions(req: Request): Promise<Response> {
     );
   } catch (error) {
     console.error("Solutions error:", error);
-    const fallback = buildFallbackSolutions(scope, analytics, factors);
+    const reasonDerived = buildReasonDerivedSolutions(scope, factors);
     return Response.json(
       {
-        solutions: fallback,
+        solutions: reasonDerived,
         scope,
-        count: fallback.length,
+        count: reasonDerived.length,
         aiCurated: false,
         cacheKey: "solutions:error",
         updatedAt: new Date().toISOString(),
-        error: "Solutions temporarily unavailable; static fallbacks returned",
+        error: "Solutions temporarily unavailable; reason-derived fallbacks returned",
       },
       { status: 200 },
     );

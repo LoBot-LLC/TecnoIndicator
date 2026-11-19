@@ -40,7 +40,8 @@ A commodity price forecasting dashboard for **oil**, **electricity**, and **wate
 - **AI Model Integration**
   - Search and fetch current prices
   - Search, analyze and display 8 dynamic factors affecting prices, each linked to its TinyFish-fetched source URL
-  - Up to 3 dynamic AI-powered solutions based on the updating factors
+  - Up to 3 dynamic AI-powered solutions grounded in the analyzed factor reasons (each solution must reference at least one curated factor by name/explanation; no generic templates)
+- **AI Solutions Grounding** — the "3 actionable strategies" are either Kilo-Gateway-curated from the live factor window (labeled "AI-generated") or, when inference is unavailable, reason-derived directly from the factor explanations (labeled "Reason-derived"); they are never hard-coded templates. Empty factor windows produce an empty solutions list, not fabricated cards.
   - Executed via Kilo Gateway (OpenAI-compatible inference) and TinyFish API (search + scraping)
 
 ---
@@ -101,7 +102,7 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/regional-analytics?region=` | The same indices for one region |
 | `/api/dynamic-factors` | The 8 curated global price factors (includes `aiCurated` flag; falls back to deterministic URL-backed factors when TinyFish/Kilo curation is unavailable) |
 | `/api/regional-factors?region=` | The 8 curated factors for one region (includes `aiCurated` flag) |
-| `/api/solutions?region=` | Up to 3 AI-curated strategy recommendations |
+| `/api/solutions?region=` | Up to 3 strategy recommendations grounded in the curated factor reasons (Kilo-Gateway-curated when available; otherwise reason-derived from factor explanations — never hard-coded templates) |
 | `/api/health` | Gateway/key availability plus real cache status |
 | `/api/ai-forecast` | 11-year global forecast band |
 | `/api/regional-forecast?region=` | 11-year region-specific forecast band |
@@ -403,7 +404,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   ├── regional-analytics/route.ts  # Regional fuel/electricity/water indices
 │   │   ├── regional-factors/route.ts    # 8 curated factors for a region
 │   │   ├── regional-forecast/route.ts   # 11-year region-specific forecast
-│   │   ├── solutions/route.ts           # Up to 3 AI-curated strategy recommendations
+│   │   ├── solutions/route.ts         # Up to 3 strategy recommendations grounded in the curated factor reasons (AI-curated or reason-derived)
 │   │   └── telemetry/route.ts           # Client-side analytics ingestion
 │   ├── globals.css                      # Global styles + Tailwind CSS 4 imports
 │   ├── layout.tsx                       # Root layout (providers, fonts, metadata)
@@ -424,7 +425,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │       │   ├── regional-analytics.ts    # Regional indices computation
 │       │   ├── regional-factors.ts      # Regional factor curation
 │       │   ├── regional-forecast.ts     # Regional forecast generation
-│       │   └── solutions.ts             # AI solution generation
+│       │   └── solutions.ts             # AI-curated solutions; reason-derived fallback grounded in factor explanations (no hard-coded templates)
 │       └── _shared/                     # Cross-cutting utilities
 │           ├── cache.ts                 # In-memory + optional Redis cache with TTLs
 │           ├── deterministicAnalytics.ts# Fuel/grid/water math + getScopePriceDefaults

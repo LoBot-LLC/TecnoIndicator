@@ -62,6 +62,7 @@ export default function HomePage() {
   const [regionalFactorsAiCurated, setRegionalFactorsAiCurated] = useState<Record<string, boolean>>({});
   const [regionalFactorsLoaded, setRegionalFactorsLoaded] = useState<Record<string, boolean>>({});
   const [solutions, setSolutions] = useState<Solution[]>([]);
+  const [solutionsAiCurated, setSolutionsAiCurated] = useState(false);
   const [analytics, setAnalytics] = useState<Record<string, AnalyticsSnapshot>>({});
 
   const points = useMemo(
@@ -220,9 +221,10 @@ export default function HomePage() {
           signal: controller.signal,
         });
         if (!res.ok) return;
-        const data = (await res.json()) as { solutions?: Solution[] };
+        const data = (await res.json()) as { solutions?: Solution[]; aiCurated?: boolean };
         if (controller.signal.aborted || !Array.isArray(data.solutions)) return;
         setSolutions(data.solutions);
+        setSolutionsAiCurated(!!data.aiCurated);
       } catch {
         /* keep the last good set of solutions */
       } finally {
@@ -340,8 +342,8 @@ export default function HomePage() {
           />
           <SolutionsSection
             fallbackFactors={scopeFactors}
-            healthStatus={healthStatus}
             solutions={solutions}
+            aiCurated={solutionsAiCurated}
           />
           <FactorsSection
             horizon={horizon}

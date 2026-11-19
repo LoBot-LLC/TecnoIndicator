@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { ArrowUpRight, Shield, Truck, Zap } from "lucide-react";
 import Reveal from "./Reveal";
 import type { Factor, Solution } from "../lib/model";
@@ -16,12 +15,19 @@ function StrategyIcon({ strategy }: { strategy: string }) {
   return <Icon className="h-4 w-4" />;
 }
 
+function factorName(id: string, factors: Factor[]): string {
+  const found = factors.find((f) => f.id === id);
+  return found ? found.name : id;
+}
+
 function SolutionCard({
   solution,
   index,
+  fallbackFactors,
 }: {
   solution: Solution;
   index: number;
+  fallbackFactors: Factor[];
 }) {
   const strategy = index === 0 ? "resilience" : index === 1 ? "cost" : "strategy";
 
@@ -70,7 +76,7 @@ function SolutionCard({
             Linked factors
           </p>
           <p className="mt-1 text-[10px] text-slate-700 dark:text-slate-500 line-clamp-2">
-            {solution.relatedFactors.join(", ")}
+            {solution.relatedFactors.map((id) => factorName(id, fallbackFactors)).join(", ")}
           </p>
         </div>
       )}
@@ -79,34 +85,19 @@ function SolutionCard({
 }
 
 interface SolutionsSectionProps {
-  /** Reasons for the active scope — used to derive strategies when the API has none. */
+  /** Factors for the active scope — used to look up human-readable factor names for linked factors. */
   fallbackFactors: Factor[];
-  healthStatus: "Initializing AI" | "Online Model Connected" | "Offline Model";
   /** Solutions returned by /api/solutions for the active scope. */
   solutions: Solution[];
+  /** Whether the API curated these solutions with AI (vs. a reason-derived, non-AI path). */
+  aiCurated: boolean;
 }
 
 export default function SolutionsSection({
   fallbackFactors,
-  healthStatus,
   solutions,
+  aiCurated,
 }: SolutionsSectionProps) {
-  const allSolutions = useMemo(() => {
-    if (solutions.length > 0) return solutions;
-    return fallbackFactors.slice(0, MAX_SOLUTIONS).map((f) => ({
-      id: `solution-${f.id}`,
-      title: f.name,
-      summary: f.explanation,
-      actions: [`Monitor ${f.name} impact on supply chain costs`, `Evaluate ${f.direction} trend for ${f.commodities.join(", ")} markets`],
-      commodities: f.commodities,
-      relatedFactors: [f.id],
-      confidence: f.importanceScore,
-      createdAt: f.createdAt,
-      updatedAt: f.updatedAt,
-      scope: f.scope,
-    }));
-  }, [solutions, fallbackFactors]);
-
   return (
     <section id="solutions" className="relative scroll-mt-20 border-t border-line py-16 sm:py-20">
       <div className="pointer-events-none absolute inset-0 bg-grid opacity-40 mask-fade-y" />
@@ -120,29 +111,27 @@ export default function SolutionsSection({
               <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
                 3 actionable strategies
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-                AI-generated solutions adapted from current dynamic reasons to help
-                business owners and executives make better logistical and business
-                decisions. Solutions update automatically as market factors change.
-              </p>
+               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-500">
+                 AI-curated solutions derived from analyzed dynamic reasons to help
+                 business owners and executives make better logistical and business
+                 decisions. Solutions update automatically as market factors change.
+               </p>
             </div>
-            <span className="text-[11px] text-slate-600 dark:text-slate-500">
-              {healthStatus === "Online Model Connected"
-                ? "AI-generated"
-                : "Static fallback"}
-            </span>
+             <span className="text-[11px] text-slate-600 dark:text-slate-500">
+               {aiCurated ? "AI-generated" : "Reason-derived"}
+             </span>
           </div>
         </Reveal>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {allSolutions.slice(0, MAX_SOLUTIONS).map((solution, i) => (
+          {solutions.slice(0, MAX_SOLUTIONS).map((solution, i) => (
             <Reveal key={solution.id} delay={60 + i * 80}>
-              <SolutionCard solution={solution} index={i} />
+              <SolutionCard solution={solution} index={i} fallbackFactors={fallbackFactors} />
             </Reveal>
           ))}
-          {allSolutions.length === 0 && (
+          {solutions.length === 0 && (
             <div className="col-span-full rounded-2xl border border-line bg-panel/60 p-8 text-center text-sm text-slate-700 dark:text-slate-500">
-              No solutions available yet. AI curation in progress.
+              No solutions available.
             </div>
           )}
         </div>

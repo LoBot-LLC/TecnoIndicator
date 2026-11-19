@@ -148,10 +148,10 @@ export function sanitizeExplanation(text: string): string {
     // Strip markdown emphasis that may have wrapped URLs
     .replace(/\*+/g, "")
     .replace(/_+/g, "")
-    // Strip markdown headers (###, ####, etc.)
-    .replace(/#+/g, " ")
-    // Strip bullet/list markers from the start of every line ("- ", "• ", "* ", "– ", "— ")
+    // Strip markdown headers (###, ####, etc.) at line starts only —
+    // so inline '#' characters (e.g. "C#") are preserved.
     .split("\n")
+    .map((line) => line.replace(/^\s*#{1,6}\s*/, ""))
     .map((line) => line.replace(/^\s*[-•*–—]+\s+/, ""))
     // Collapse multiple spaces
     .join(" ")
@@ -224,9 +224,14 @@ function extractSummaryFromArticle(text: string): string {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/https?:\/\/[^\s)]+/g, "")
     .replace(/\*+/g, "")
-    .replace(/_+/g, "")
-    // Strip markdown headers (###, ####, etc.)
-    .replace(/#+/g, "");
+    .replace(/_+/g, "");
+
+  // Strip markdown headers (###, ####, etc.) — only at line starts so
+  // inline '#' characters (e.g. "C#") are preserved.
+  cleaned = cleaned
+    .split("\n")
+    .map((line) => line.replace(/^\s*#{1,6}\s*/, ""))
+    .join("\n");
 
   // Strip bullet markers from each line (handle multiple bullet types and spacing)
   cleaned = cleaned
@@ -514,7 +519,7 @@ export function validateExplanationQuality(explanation: string): { ok: boolean; 
   //   2.7 mb/d in 2026 ..." (contains "IEA forecasts", not "forecast to grow")
   // - "With water at $2.15/M³, drought-driven supply disruptions ..." (no
   //   generic markers)
-  const body = trimmed.replace(/^with\s+.+?\s+at\s+\$[^,]+,\s*/i, "").trim().toLowerCase();
+  const body = trimmed.replace(/^with\s+.+?\s+at\s+\$[\d,.]+\s*(?:\/\s*[^,]+)?,\s*/i, "").trim().toLowerCase();
   const genericBodyPatterns = [
     /forecast\s+to\s+(?:grow|fall|rise|decline|increase|decrease)/i,
     /on\s+track\s+to/i,
@@ -1316,8 +1321,10 @@ function stripTitleNoise(text: string): string {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/https?:\/\/[^\s)]+/g, "")
     .replace(/\*+/g, "")
-    .replace(/#+/g, " ")
-    .replace(/^\s*[-•*–—]+\s+/, "")
+    .split("\n")
+    .map((line) => line.replace(/^\s*#{1,6}\s*/, ""))
+    .map((line) => line.replace(/^\s*[-•*–—]+\s+/, ""))
+    .join(" ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -1645,7 +1652,7 @@ function clauseQualityCheck(clause: string): boolean {
       // an explanation, returning the raw clause (the part after the comma).
       const stripGroundingPrefix = (text: string): string => {
         if (!text) return "";
-        return text.replace(/^with\s+.+?\s+at\s+\$[^,]+,\s*/i, "").trim();
+        return text.replace(/^with\s+.+?\s+at\s+\$[\d,.]+\s*(?:\/\s*[^,]+)?,\s*/i, "").trim();
       };
 
       // Explanation: extract a meaningful summary from the best available source.
@@ -2324,7 +2331,7 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
 
       const quality = validateExplanationQuality(f.explanation);
       // Bug 2: also run clauseQualityCheck on the body after the grounding prefix
-      const clause = f.explanation.replace(/^with\s+.+?\s+at\s+\$[^,]+,\s*/i, "").trim();
+      const clause = f.explanation.replace(/^with\s+.+?\s+at\s+\$[\d,.]+\s*(?:\/\s*[^,]+)?,\s*/i, "").trim();
       const clauseOk = clauseQualityCheck(clause);
       const combinedQuality = quality.ok && clauseOk ? quality : { ok: false, reason: clauseOk ? (quality.reason ?? "quality failed") : "clause quality failed" };
       normalizedCandidates.push({ f, quality: combinedQuality });

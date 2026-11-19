@@ -1,6 +1,6 @@
 # TinyFish + Kilo Gateway: Prices Pipeline vs Factor-Curation Pipeline
 
-> **⚠️ Update (current implementation):** The analysis below documents the *pre-fix* state. \`lib/api/handlers/prices.ts\` now resolves live prices via TinyFish search **plus** \`tinyfishRouter.tinyfishScrapeBatch(...)\` batch scraping (up to 10 URLs per request), with a \`KNOWN_PRICE_URLS\` fallback when search returns no usable URLs, Kilo extraction over scraped page text + snippets, and a deterministic scrape-text fallback before the static defaults. Statements later in this report claiming prices.ts "never scrapes" are historical and no longer accurate.
+> **⚠️ Update (current implementation):** The analysis below documents the *pre-fix* state. `lib/api/handlers/prices.ts` now resolves live prices via TinyFish search **plus** `tinyfishRouter.tinyfishScrapeBatch(...)` batch scraping (up to 10 URLs per request), with a `KNOWN_PRICE_URLS` fallback when search returns no usable URLs, Kilo extraction over scraped page text + snippets, and a deterministic scrape-text fallback before the static defaults. Statements later in this report claiming prices.ts "never scrapes" are historical and no longer accurate.
 ## Technical Comparison Report (READ-ONLY ANALYSIS)
 
 ---
@@ -47,7 +47,7 @@ GET /api/prices (route.ts:7-8)
 | 167-179 | `Promise.all(COMMODITY_QUERIES.map(... → tinyfishRouter.tinyfishSearch(...)))` |
 | 170-173 | Calls `tinyfishSearch(queryTemplate, {limit: 10, region: scope})` |
 | 181-189 | Builds `searchResultsText` from **snippets only** (title, snippet, URL, publishedAt) |
-| **Scrape** | Calls \`tinyfishRouter.tinyfishScrapeBatch()\` after search (up to 10 URLs/request), plus \`KNOWN_PRICE_URLS\` fallback (see Update note above) |
+| **Scrape** | Calls `tinyfishRouter.tinyfishScrapeBatch()` after search (up to 10 URLs/request), plus `KNOWN_PRICE_URLS` fallback (see Update note above) |
 
 **Queries executed (3 total, parallel):**
 ```typescript
@@ -74,7 +74,7 @@ COMMODITY_QUERIES = [
 | Parameter | Value | Line |
 |-----------|-------|------|
 | **Model** | Uses `kiloRouter.kiloInfer()` → auto-selects from available models (prefers `zeroCostVerified`, defaults to `kilo-auto/free`) | 204, kiloRouter.ts:486-504 |
-| **Prompt Shape** | `messages: [{role: "system", content: PRICE_EXTRACTION_PROMPT}, {role: "user", content: \`Scope: ${scope}\n\n${searchResultsText}\`}]` | 192-198 |
+| **Prompt Shape** | `messages: [{role: "system", content: PRICE_EXTRACTION_PROMPT}, {role: "user", content: `Scope: ${scope}`}]` | 192-198 |
 | **max_tokens** | `2048` | 199 |
 | **temperature** | `0.1` | 200 |
 | **response_format** | **Not specified** (undefined) | 199-200 |

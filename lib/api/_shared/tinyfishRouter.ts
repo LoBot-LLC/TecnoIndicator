@@ -354,6 +354,8 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
 
         const body: Record<string, unknown> = {
           urls: [safeUrl],
+          ttl: 0,
+          format: "markdown",
         };
         // A short purpose statement gives TinyFish additional signal to tailor
         // extraction to the intent (e.g. "find the price-relevant reason on this
@@ -369,7 +371,7 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
-          signal: abortSignal ?? AbortSignal.timeout(10000),
+          signal: abortSignal ?? AbortSignal.timeout(90000),
         });
 
         const status = response.status;
@@ -488,6 +490,8 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
 
         const body: Record<string, unknown> = {
           urls: toFetch,
+          ttl: 0,
+          format: "markdown",
         };
         if (options.purpose && options.purpose.trim().length > 0) {
           body.purpose = options.purpose.trim().slice(0, 2000);
@@ -500,7 +504,7 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
-          signal: abortSignal ?? AbortSignal.timeout(15000),
+          signal: abortSignal ?? AbortSignal.timeout(90000),
         });
 
         const status = response.status;

@@ -318,7 +318,8 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js** — Runtime environment (via Next.js on Vercel)
 - **Kilo AI Gateway** — OpenAI-compatible inference API at `api.kilo.ai/api/gateway` (price extraction, factor curation, solutions, forecasting)
-- **TinyFish API** — Live web research via \`api.search.tinyfish.ai\` (search) and \`api.fetch.tinyfish.ai\` (single + batch URL scraping, up to 10 URLs per request via \`tinyfishScrapeBatch\` for the live-prices pipeline); each scrape carries a \`purpose\` statement to tailor extraction to price-relevance.
+- **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search) and `api.fetch.tinyfish.ai` (single + batch URL scraping, up to 10 URLs per request via `tinyfishScrapeBatch` for the live-prices pipeline); each scrape carries a `purpose` statement to tailor extraction to price-relevance.
+- **TinyFish API (updated)** — Batch scraping via `tinyfishScrapeBatch` (up to 10 URLs per request, per-URL isolation), `ttl: 0` on live fetches to bypass cache and always return fresh prices, and markdown-format responses for clean downstream parsing by Kilo extraction and deterministic fallbacks.
 - **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis for cross-instance sharing
 - **Text utilities** (`lib/api/_shared/textUtils.ts`) — Shared `truncateAtWordBoundary` and `truncateAtSentenceBoundary` for word-safe truncation of factor explanations.
 
@@ -363,7 +364,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   │   └── curate-factors/route.ts  # Nightly AI factor re-curation (Vercel cron)
 │   │   ├── dynamic-factors/route.ts     # 8 curated global price factors
 │   │   ├── health/route.ts              # Gateway/key/cache status
-│   │   ├── prices/route.ts              # Live commodity spot prices (maxDuration 120s)
+│   │   ├── prices/route.ts              # Live commodity spot prices via TinyFish search + batch scrape (ttl:0 for live fetches, maxDuration 120s)
 │   │   ├── rates/route.ts               # Exchange rates for currency conversion
 │   │   ├── regional-analytics/route.ts  # Regional fuel/electricity/water indices
 │   │   ├── regional-factors/route.ts    # 8 curated factors for a region
@@ -385,7 +386,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │       │   ├── dynamic-factors.ts       # Global factor curation
 │       │   ├── factor-analysis.ts       # Factor curation pipeline (TinyFish → Kilo → grounding → cache)
 │       │   ├── health.ts                # Health check implementation
-│       │   ├── prices.ts                # Live prices: TinyFish search + batch scrape + Kilo extraction + fallbacks
+│       │   ├── prices.ts                # Live prices: TinyFish search + batch scrape (ttl:0, markdown format) + Kilo extraction + fallbacks
 │       │   ├── regional-analytics.ts    # Regional indices computation
 │       │   ├── regional-factors.ts      # Regional factor curation
 │       │   ├── regional-forecast.ts     # Regional forecast generation

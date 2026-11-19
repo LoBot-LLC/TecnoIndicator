@@ -219,6 +219,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
             limit: 10,
             region: scope === "global" ? undefined : scope,
             purpose: "Find live price pages showing the current price in USD with a dated figure.",
+            recencyMinutes: 1440,
           },
           abortSignal,
         );
@@ -317,7 +318,7 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
             confidence: typeof item.confidence === "number" ? item.confidence : 0,
           };
         })
-        .filter((p) => p.commodity && p.price !== null && p.price > 0 && p.confidence >= 50);
+        .filter((p) => p.commodity && p.price !== null && p.price > 0 && p.confidence >= 30);
 
       const prices: Record<string, { price: number; unit: string; source: string }> = {};
       for (const item of extracted) {
@@ -326,11 +327,18 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
         }
       }
 
-      if (prices.oil && prices.electricity && prices.water) {
+      const liveCount = [prices.oil, prices.electricity, prices.water].filter(Boolean).length;
+      if (liveCount >= 1) {
         return {
-          oil: { ...prices.oil, isLive: true },
-          electricity: { ...prices.electricity, isLive: true },
-          water: { ...prices.water, isLive: true },
+          oil: prices.oil
+            ? { ...prices.oil, isLive: true }
+            : { price: 0, unit: getCommodityUnit("oil"), source: "insufficient data", isLive: false },
+          electricity: prices.electricity
+            ? { ...prices.electricity, isLive: true }
+            : { price: 0, unit: getCommodityUnit("electricity"), source: "insufficient data", isLive: false },
+          water: prices.water
+            ? { ...prices.water, isLive: true }
+            : { price: 0, unit: getCommodityUnit("water"), source: "insufficient data", isLive: false },
           asOf: new Date().toISOString(),
           dataSource: "Kilo AI analysis of TinyFish search + scraped pages",
           isLive: true,
@@ -373,17 +381,24 @@ async function getLivePricesFromTinyFish(scope: RegionId, abortSignal: AbortSign
   }
 
   if (
-    deterministic.oil.price !== null &&
-    deterministic.electricity.price !== null &&
+    deterministic.oil.price !== null ||
+    deterministic.electricity.price !== null ||
     deterministic.water.price !== null
   ) {
+    const liveCount = [deterministic.oil, deterministic.electricity, deterministic.water].filter((d) => d.price !== null).length;
     return {
-      oil: { price: deterministic.oil.price, unit: getCommodityUnit("oil"), source: deterministic.oil.source, isLive: true },
-      electricity: { price: deterministic.electricity.price, unit: getCommodityUnit("electricity"), source: deterministic.electricity.source, isLive: true },
-      water: { price: deterministic.water.price, unit: getCommodityUnit("water"), source: deterministic.water.source, isLive: true },
+      oil: deterministic.oil.price !== null
+        ? { price: deterministic.oil.price, unit: getCommodityUnit("oil"), source: deterministic.oil.source, isLive: true }
+        : { price: 0, unit: getCommodityUnit("oil"), source: "insufficient data", isLive: false },
+      electricity: deterministic.electricity.price !== null
+        ? { price: deterministic.electricity.price, unit: getCommodityUnit("electricity"), source: deterministic.electricity.source, isLive: true }
+        : { price: 0, unit: getCommodityUnit("electricity"), source: "insufficient data", isLive: false },
+      water: deterministic.water.price !== null
+        ? { price: deterministic.water.price, unit: getCommodityUnit("water"), source: deterministic.water.source, isLive: true }
+        : { price: 0, unit: getCommodityUnit("water"), source: "insufficient data", isLive: false },
       asOf: new Date().toISOString(),
       dataSource: "TinyFish scrape (deterministic fallback)",
-      isLive: true,
+      isLive: liveCount >= 1,
     };
   }
 

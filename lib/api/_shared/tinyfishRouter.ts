@@ -375,7 +375,7 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
-          signal: abortSignal ?? AbortSignal.timeout(90000),
+          signal: abortSignal ?? AbortSignal.timeout(55000),
         });
 
         const status = response.status;

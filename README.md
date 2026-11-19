@@ -300,6 +300,11 @@ Maximum candidates per scope reduced from 15 to 10, cutting TinyFish scrape call
 
 **Prompt updates:** The Kilo curation system prompts (global + regional) now also instruct the model to return a concise 2–8 word `name` (never a full sentence, no preamble/URLs/`@ticker` tags/page chrome).
 
+**Follow-up fixes (2026-11-19):**
+
+- **`sanitizeExplanation` JSDoc corrected.** The old doc claimed it "Enforces ONE sentence", but the implementation truncates via sentence/word-boundary-aware logic within a ~400 char budget and does not enforce a sentence count; the sentence-count cap lives in `validateExplanationQuality`. The doc now states this accurately, and the inline comment was updated accordingly.
+- **`filterStaticFallbacks` JSDoc corrected.** It previously (incorrectly) described `validateAndRepairWindow`; it now correctly describes itself as the filter for deterministic static fallback factors. `validateAndRepairWindow` received its own JSDoc.
+
 ---
 
 ## 📊 Key Factors & Drivers UI

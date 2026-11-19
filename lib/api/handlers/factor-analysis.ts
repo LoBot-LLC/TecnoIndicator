@@ -67,10 +67,12 @@ export function toFactorsPayload(
 
 /**
  * Strips embedded URLs and markdown links from a model-generated explanation,
- * strips bullet/list markers from every line, and truncates to a concise
- * summary length (~400 chars). Defense-in-depth: even if the model ignores the
- * "no URLs / no bullets / summarize" instruction, the server never renders a
- * bare URL, a bullet, or a raw article fragment inside the reason prose.
+ * strips bullet/list markers from every line, strips leading page chrome /
+ * metadata (report titles, "Release Date:" fields, navigation banners), and
+ * truncates to a concise summary length (~400 chars) at a sentence/word
+ * boundary (never mid-sentence). Defense-in-depth: even if the model ignores
+ * the "no URLs / no bullets / summarize" instruction, the server never
+ * renders a bare URL, a bullet, or a raw article fragment inside the reason prose.
  *
  * - Removes markdown links `[text](url)` → keeps only `text`
  * - Removes bare `https?://...` URLs entirely
@@ -78,14 +80,10 @@ export function toFactorsPayload(
  * - Strips markdown emphasis that may have wrapped URLs
  * - Strips markdown headers (###, ####, etc.)
  * - Collapses spaces/newlines
- * - Strips leading page chrome / metadata (report titles, "Release Date:"
- *   fields, "Full Report | Text Only" navigation, "Cite report ... Licence:
- *   CC BY 4.0" banners) before sentence enforcement
- * - Enforces ONE sentence: cuts at the first sentence boundary (., !, ?)
- *   if the cut point is at least 30 chars from the start (avoids cutting at
- *   abbreviations like "U.S.").
- * - If no sentence boundary found, truncates to 400 chars at word boundary.
- * - Truncates to 400 chars at a sentence/word boundary (never mid-sentence)
+ * - Strips leading page chrome / metadata before truncation
+ * - Truncates to ~400 chars at a sentence boundary if possible, otherwise word boundary
+ * - Does NOT enforce a sentence count limit (that is applied downstream in
+ *   `validateExplanationQuality`)
  */
 
 /**
@@ -181,11 +179,7 @@ export function sanitizeExplanation(text: string): string {
   // is real article content rather than report chrome.
   cleaned = stripLeadingPageChrome(cleaned);
 
-  // Allow up to 3 meaningful sentences. Cut at the 3rd sentence boundary
-  // (., !, ?) followed by whitespace or end-of-string, but only if at least 30 chars from
-  // the start (avoids cutting at abbreviations like "U.S."). Also avoid common
-  // month abbreviations (Jan., Feb., Mar., Apr., Jun., Jul., Aug., Sep., Oct.,
-  // Nov., Dec.) which frequently appear in scraped date strings.
+  // Truncate to ~400 chars at the last complete sentence boundary within the limit.
 
   const FACTOR_MAX_EXPLANATION_CHARS = 400;
   const FACTOR_ELLIPSIS = "…";
@@ -773,18 +767,12 @@ function truncateToSentenceBoundary(text: string, maxLen: number = 400): string 
 }
 
 /**
- * Final validation+repair pass that runs on ALL factors before they reach the UI,
- * regardless of source (cache, fresh curation, deterministic fallback, error fallback).
- * No factor with a bad explanation is ever returned unrepaired.
- *
- * For each factor:
-  * - If re-summarization succeeds and passes quality → uses re-summarized text
-  * - If re-summarization fails → last-resort: sanitize + truncate to 400 chars, never drop
-  * - If even sanitized text is empty → uses a safe generic placeholder
-  *
- * Never drops a factor — better to have a clean short explanation than no factor at all.
-   */
- export function filterStaticFallbacks(factors: Factor[]): Factor[] {
+ * Filters out deterministic static fallback factors from a factor array.
+ * These are generated when the model cannot produce valid output and are
+ * marked with a distinctive prefix ("static fallback factor maintained...").
+ * Returns a new array containing only non-fallback factors.
+ */
+export function filterStaticFallbacks(factors: Factor[]): Factor[] {
   return factors.filter((f) => {
     const trimmed = (f?.explanation ?? "").trim();
     if (/^static\s+/i.test(trimmed) && /fallback factor maintained/i.test(trimmed)) return false;
@@ -792,6 +780,18 @@ function truncateToSentenceBoundary(text: string, maxLen: number = 400): string 
   });
 }
 
+/**
+ * Final validation+repair pass that runs on ALL factors before they reach the UI,
+ * regardless of source (cache, fresh curation, deterministic fallback, error fallback).
+ * No factor with a bad explanation is ever returned unrepaired.
+ *
+ * For each factor:
+ *   - If re-summarization succeeds and passes quality → uses re-summarized text
+ *   - If re-summarization fails → last-resort: sanitize + truncate to 400 chars, never drop
+ *   - If even sanitized text is empty → uses a safe generic placeholder
+ *
+ * Never drops a factor — better to have a clean short explanation than no factor at all.
+ */
 export async function validateAndRepairWindow(
   factors: Factor[],
   currentPrices: {

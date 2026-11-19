@@ -64,10 +64,13 @@ export function useLiveMarket(): UseLiveMarketReturn {
         electricity: data.electricity.price,
         water: data.water.price,
       };
+      const computeDelta = (newPrice: number, prevPrice: number) => 
+        prevPrice === 0 ? 0 : (newPrice - prevPrice) / prevPrice;
+
       setDeltas({
-        oil: (newPrices.oil - prevPricesRef.current.oil) / prevPricesRef.current.oil,
-        electricity: (newPrices.electricity - prevPricesRef.current.electricity) / prevPricesRef.current.electricity,
-        water: (newPrices.water - prevPricesRef.current.water) / prevPricesRef.current.water,
+        oil: computeDelta(newPrices.oil, prevPricesRef.current.oil),
+        electricity: computeDelta(newPrices.electricity, prevPricesRef.current.electricity),
+        water: computeDelta(newPrices.water, prevPricesRef.current.water),
       });
       prevPricesRef.current = newPrices;
       setPrices(newPrices);

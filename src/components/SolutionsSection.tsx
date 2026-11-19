@@ -46,6 +46,20 @@ function SolutionCard({
       <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-500 line-clamp-3">
         {solution.summary}
       </p>
+      {solution.aiCurated && (
+        <div className="mt-3 border-t border-teal-200/30 pt-2 bg-teal-50 dark:bg-teal-800/30">
+          <p className="text-[8px] font-semibold text-teal-400 dark:text-teal-300">
+            AI-generated from live factor window + TinyFish evidence
+          </p>
+        </div>
+      )}
+      {solution.sources && solution.sources.length > 0 && (
+        <div className="mt-3 border-t border-teal-200/30 pt-2 bg-teal-50 dark:bg-teal-800/30">
+          <p className="text-[8px] font-semibold text-teal-400 dark:text-teal-300">
+            Sources: {solution.sources.slice(0, 3).map((s, i) => `${i + 1}. ${s.slice(0, 40)}...`).join(" ")}
+          </p>
+        </div>
+      )}
       <div className="mt-3 space-y-1.5">
         {solution.actions.map((action, i) => (
           <div key={i} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-500">
@@ -93,18 +107,77 @@ export default function SolutionsSection({
 }: SolutionsSectionProps) {
   const allSolutions = useMemo(() => {
     if (solutions.length > 0) return solutions;
-    return fallbackFactors.slice(0, MAX_SOLUTIONS).map((f) => ({
-      id: `solution-${f.id}`,
-      title: f.name,
-      summary: f.explanation,
-      actions: [`Monitor ${f.name} impact on supply chain costs`, `Evaluate ${f.direction} trend for ${f.commodities.join(", ")} markets`],
-      commodities: f.commodities,
-      relatedFactors: [f.id],
-      confidence: f.importanceScore,
-      createdAt: f.createdAt,
-      updatedAt: f.updatedAt,
-      scope: f.scope,
-    }));
+    
+    // If no AI solutions are available, create intelligent fallback solutions
+    // that are more meaningful than just mapping factors directly
+    if (fallbackFactors.length === 0) return [];
+    
+    // Select the 3 most strategically relevant factors as fallback solutions
+    const strategicFactors = [...fallbackFactors]
+      .sort((a, b) => {
+        // Prioritize by importance score and strategic relevance
+        const aScore = a.importanceScore * (a.magnitude === "High" ? 1.2 : 1.0);
+        const bScore = b.importanceScore * (b.magnitude === "High" ? 1.2 : 1.0);
+        return bScore - aScore;
+      })
+      .slice(0, MAX_SOLUTIONS);
+    
+    return strategicFactors.map((factor, index) => {
+      // Generate different strategic focus based on the factor
+      let strategyTitle: string;
+      let strategyActions: string[];
+      
+      if (index === 0) {
+        // Strategic focus: Operational resilience
+        strategyTitle = factor.direction === "up" 
+          ? `Secure supply against ${factor.name.toLowerCase()}` 
+          : `Optimize efficiency for ${factor.name.toLowerCase()}`;
+        strategyActions = [
+          `Diversify ${factor.commodities[0]} sources to mitigate supply risk`,
+          `Build ${factor.magnitude === "High" ? "30-60 days" : "15-30 days"} inventory buffers`,
+          `Monitor ${factor.name.toLowerCase()} trends weekly`,
+          `Negotiate flexible contracts with ${factor.magnitude === "High" ? "price protection" : "tiered pricing"}`,
+        ];
+      } else if (index === 1) {
+        // Strategic focus: Cost optimization
+        strategyTitle = factor.direction === "down"
+          ? `Capture savings through ${factor.name.toLowerCase()}`
+          : `Manage ${factor.name.toLowerCase()} costs strategically`;
+        strategyActions = [
+          `Implement demand ${factor.direction === "down" ? "shifting" : "optimization"} for ${factor.commodities.join(", ")}`,
+          `Explore alternative sources for ${factor.commodities.join(", ")}`,
+          `Track ${factor.name.toLowerCase()} pricing and adjust purchasing accordingly`,
+          `Utilize ${factor.magnitude === "High" ? "financial hedging" : "spot market timing"}`,
+        ];
+      } else {
+        // Strategic focus: Long-term positioning
+        strategyTitle = `Position for long-term ${factor.name.toLowerCase()} trends`;
+        strategyActions = [
+          `Invest in ${factor.commodities.join(", ")} efficiency technologies`,
+          `Monitor regulatory changes affecting ${factor.name.toLowerCase()}`,
+          `Develop scenario plans for ${factor.bias || "mid"}-term ${factor.name.toLowerCase()} outlook`,
+          `Engage with ${factor.category.toLowerCase()} stakeholders for early insights`,
+        ];
+      }
+      
+      // Extract a concise, impactful explanation
+      const conciseExplanation = factor.explanation.length > 200
+        ? `${factor.explanation.slice(0, 200)}...`
+        : factor.explanation;
+      
+      return {
+        id: `solution-fallback-${factor.id}-${index}`, // Better ID
+        title: strategyTitle,
+        summary: conciseExplanation,
+        actions: strategyActions,
+        commodities: factor.commodities,
+        relatedFactors: [factor.id],
+        confidence: Math.min(85, factor.importanceScore + (index * 5)),
+        createdAt: factor.createdAt,
+        updatedAt: factor.updatedAt,
+        scope: factor.scope,
+      };
+    });
   }, [solutions, fallbackFactors]);
 
   return (

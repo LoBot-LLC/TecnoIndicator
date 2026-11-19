@@ -14,7 +14,7 @@ import { safeParseJson } from "../_shared/validation";
 const COMMODITY_QUERIES = [
   { commodity: "oil", queryTemplate: "Brent crude oil price today USD per barrel live" },
   { commodity: "electricity", queryTemplate: "wholesale electricity price today EUR per MWh live" },
-  { commodity: "water", queryTemplate: "global water price per cubic meter USD 2026 tariff" },
+  { commodity: "water", queryTemplate: "global water prices rose 2026 tariff survey per cubic metre USD" },
 ];
 
 /**
@@ -35,8 +35,10 @@ const KNOWN_PRICE_URLS: Record<string, string[]> = {
     "https://euenergy.live/",
   ],
   water: [
+    "https://www.globenewswire.com/news-release/2026/10/29/3391565/0/en/global-water-prices-rose-5-6-in-2026-as-the-regional-gap-continues-to-widen-finds-global-water-intelligence-s-global-water-tariff-survey.html",
+    "https://markets.businessinsider.com/news/stocks/global-water-prices-rose-5-6-in-2026-as-the-regional-gap-continues-to-widen-finds-global-water-intelligence-s-global-water-tariff-survey-1036685856",
+    "https://www.globenewswire.com/news-release/2026/11/10/3399997/0/en/us-water-bills-more-than-double-since-2011-as-north-american-prices-rise-6-8-in-2026-finds-global-water-intelligence.html",
     "https://www.globalwaterintel.com/documents/the-global-water-tariff-survey-2026",
-    "https://data360.worldbank.org/en/indicator/WB_CLEAR_AVWB",
   ],
 };
 
@@ -170,6 +172,13 @@ async function resolvePrices(req: Request): Promise<Response> {
 }
 
 function extractPriceFromText(text: string): number | null {
+  // Prefer "from $X to $Y" → Y (the current/updated figure), e.g. GWI's
+  // "lifts the average price from $2.97 to $3.47 per cubic metre".
+  const rangeMatch = text.match(/from\s+\$(\d+(?:\.\d+)?)\s*(?:to|→|-|–)\s*\$(\d+(?:\.\d+)?)/i);
+  if (rangeMatch) {
+    const rangePrice = parseFloat(rangeMatch[2]);
+    if (rangePrice >= 0.01 && rangePrice <= 10000) return rangePrice;
+  }
   const pricePatterns = [
     /\$(\d+(?:\.\d+)?)/g,
     /(\d+(?:\.\d+)?)\s*USD/g,

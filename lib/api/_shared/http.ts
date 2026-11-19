@@ -283,6 +283,22 @@ export const REPUTABLE_HOSTS = [
   "bbc.com",
   "edie.net",
   "businessgreen.com",
+  // Live price/news sources surfaced by TinyFish for commodity, energy and
+  // water price queries. Added so the factor-curation reputable filter does
+  // not drop every candidate when search returns these hosts.
+  "globenewswire.com",
+  "tradingeconomics.com",
+  "markets.businessinsider.com",
+  "businessinsider.com",
+  "fueldataportal.com",
+  "worldoilmonitor.com",
+  "electricity-spot.com",
+  "euroenergy.live",
+  "euenergy.live",
+  "economies.com",
+  "prnewswire.com",
+  "nasdaq.com",
+  "investing.com",
 ];
 
 export function isReputableSource(url: string): boolean {

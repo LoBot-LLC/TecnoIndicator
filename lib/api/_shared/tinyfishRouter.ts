@@ -67,7 +67,8 @@ function buildSearchUrl(
   query: string,
   limit: number,
   purpose?: string,
-  recencyMinutes?: number
+  recencyMinutes?: number,
+  includeDomains?: string[]
 ): string {
   const params = new URLSearchParams({ query, limit: String(limit) });
   if (purpose && purpose.trim().length > 0) {
@@ -75,6 +76,9 @@ function buildSearchUrl(
   }
   if (recencyMinutes && recencyMinutes > 0) {
     params.set("recency_minutes", String(recencyMinutes));
+  }
+  if (includeDomains && includeDomains.length > 0) {
+    params.set("include_domains", includeDomains.join(","));
   }
   return `${SEARCH_URL}?${params.toString()}`;
 }
@@ -209,7 +213,7 @@ export class TinyFishRouter {
 
   async tinyfishSearch(
     query: string,
-    options: { limit?: number; region?: Region; purpose?: string; recencyMinutes?: number } = {},
+    options: { limit?: number; region?: Region; purpose?: string; recencyMinutes?: number; includeDomains?: string[] } = {},
     abortSignal?: AbortSignal
   ): Promise<TinyFishSearchResponse> {
     if (!this.initialized) {
@@ -220,7 +224,7 @@ export class TinyFishRouter {
       options.purpose ??
       "Find recent articles about oil, electricity, or water price movements and their underlying causes.";
     const recencyMinutes = options.recencyMinutes ?? 10080; // Default: last 7 days
-    const cacheKey = `tinyfish:search:${query}:${options.region ?? "global"}:${recencyMinutes}`;
+    const cacheKey = `tinyfish:search:${query}:${options.region ?? "global"}:${recencyMinutes}:${options.includeDomains?.join(",") ?? ""}`;
     const cached = await getCache<TinyFishSearchResponse>(cacheKey, SEARCH_CACHE_MS);
     if (cached) return cached;
 
@@ -244,7 +248,7 @@ export class TinyFishRouter {
         const region = options.region ?? "global";
         const regionPrefix = region !== "global" ? `[${region}] ` : "";
 
-const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.limit ?? 10, purpose, recencyMinutes), {
+const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.limit ?? 10, purpose, recencyMinutes, options.includeDomains), {
             headers: {
               "X-API-Key": testKey,
             },

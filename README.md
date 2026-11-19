@@ -318,7 +318,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js** — Runtime environment (via Next.js on Vercel)
 - **Kilo AI Gateway** — OpenAI-compatible inference API at `api.kilo.ai/api/gateway` (price extraction, factor curation, solutions, forecasting)
-- **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search) and `api.fetch.tinyfish.ai` (single + batch URL scraping, up to 10 URLs per request via `tinyfishScrapeBatch` for the live-prices pipeline); each scrape carries a `purpose` statement to tailor extraction to price-relevance.
+- **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search, with optional `include_domains` restriction for factor curation) and `api.fetch.tinyfish.ai` (single + batch URL scraping, up to 10 URLs per request via `tinyfishScrapeBatch` for the live-prices pipeline); each scrape uses `ttl: 0` for live (non-cached) fetches and carries a `purpose` statement to tailor extraction to price-relevance.
 - **TinyFish API (updated)** — Batch scraping via `tinyfishScrapeBatch` (up to 10 URLs per request, per-URL isolation), `ttl: 0` on live fetches to bypass cache and always return fresh prices, and markdown-format responses for clean downstream parsing by Kilo extraction and deterministic fallbacks.
 - **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis for cross-instance sharing
 - **Text utilities** (`lib/api/_shared/textUtils.ts`) — Shared `truncateAtWordBoundary` and `truncateAtSentenceBoundary` for word-safe truncation of factor explanations.
@@ -399,7 +399,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │           ├── redis.ts                 # Upstash Redis client (optional)
 │           ├── regions.ts               # Region definitions & metadata
 │           ├── textUtils.ts             # Word/sentence-boundary truncation utilities
-│           ├── tinyfishRouter.ts        # TinyFish search + single/batch scrape routing
+│           ├── tinyfishRouter.ts        # TinyFish search (+ include_domains) + single/batch scrape routing
 │           ├── types.ts                 # Shared TypeScript interfaces
 │           └── validation.ts            # Request validation helpers
 │

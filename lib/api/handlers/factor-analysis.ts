@@ -1037,47 +1037,73 @@ Return strict JSON only. Do not return markdown or commentary outside JSON.
 
 The response must contain up to eight validated ${regionName} factors matching the required schema. If a new legitimate trend is identified for ${regionName}, include its new factor details. The deterministic server-side application logic will handle duplicate detection, importance thresholds, timestamps, and removal of the oldest factor.`;
 
- const GLOBAL_QUERIES = [
-   "global oil market prices OPEC supply demand 2026",
-   "global electricity power prices renewable energy grid 2026",
-   "global water prices scarcity drought utilities 2026",
- ];
+const GLOBAL_QUERIES = [
+  "Brent crude oil price today why moving OPEC supply news November 2026",
+  "electricity price today why moving gas supply renewables news November 2026",
+  "water tariff price increase today why drought utilities news 2026",
+];
 
 const REGION_QUERIES: Record<Region, string[]> = {
   asia: [
-    "Asia oil market prices China India demand OPEC 2026",
-    "Asia electricity power prices renewables grid China India 2026",
-    "Asia water prices scarcity drought urbanization 2026",
+    "Asia oil price today why moving China India demand OPEC November 2026",
+    "Asia electricity price today why moving renewables grid China India November 2026",
+    "Asia water tariff price today why scarcity drought urbanization 2026",
   ],
   europe: [
-    "Europe oil market prices Brent Russian supply sanctions 2026",
-    "Europe electricity power prices carbon ETS renewables gas 2026",
-    "Europe water prices drought scarcity Alpine hydropower 2026",
+    "Europe oil price today why moving Brent Russian supply sanctions November 2026",
+    "Europe electricity price today why moving carbon ETS renewables gas November 2026",
+    "Europe water tariff price today why drought scarcity Alpine hydropower 2026",
   ],
   africa: [
-    "Africa oil market prices Nigeria Angola production exports 2026",
-    "Africa electricity power prices diesel gensets grid reliability 2026",
-    "Africa water prices drought scarcity Sahel utilities 2026",
+    "Africa oil price today why moving Nigeria Angola production exports November 2026",
+    "Africa electricity price today why moving diesel gensets grid reliability 2026",
+    "Africa water tariff price today why drought scarcity Sahel utilities 2026",
   ],
   americas: [
-    "Americas oil market prices WTI shale LNG exports 2026",
-    "Americas electricity power prices hydro drought Henry Hub 2026",
-    "Americas water prices drought California Southwest utilities 2026",
+    "Americas oil price today why moving WTI shale LNG exports November 2026",
+    "Americas electricity price today why moving hydro drought Henry Hub 2026",
+    "Americas water tariff price today why drought California Southwest utilities 2026",
   ],
   oceania: [
-    "Oceania oil market prices LNG import parity Australia 2026",
-    "Oceania electricity power prices NEM NZ wholesale drought 2026",
-    "Oceania water prices drought Sydney Melbourne utilities 2026",
+    "Oceania oil price today why moving LNG import parity Australia November 2026",
+    "Oceania electricity price today why moving NEM NZ wholesale drought 2026",
+    "Oceania water tariff price today why drought Sydney Melbourne utilities 2026",
   ],
 };
 
 const KNOWN_REPUTABLE_URLS = [
+  "https://oilprice.com/Latest-Energy-News/World-Energy-News",
+  "https://www.reuters.com/markets/commodities/",
+  "https://tradingeconomics.com/commodity/brent-crude-oil",
+  "https://www.globenewswire.com/news-room",
   "https://www.iea.org/reports/world-energy-outlook",
   "https://www.opec.org/opec_web/en/",
   "https://www.eia.gov/petroleum/",
   "https://www.unwater.org/",
   "https://www.wri.org/",
   "https://www.irena.org/",
+];
+
+/**
+ * Domains TinyFish search is restricted to for factor curation. Restricting to
+ * these reputable news/data hosts guarantees returned candidates carry concrete
+ * price-moving reasons (not generic landing pages), so the reputable-host
+ * filter never starves the model of fetched URLs.
+ */
+const FACTOR_SEARCH_DOMAINS = [
+  "reuters.com",
+  "oilprice.com",
+  "tradingeconomics.com",
+  "globenewswire.com",
+  "spglobal.com",
+  "argusmedia.com",
+  "platts.com",
+  "bloomberg.com",
+  "cnbc.com",
+  "marketwatch.com",
+  "prnewswire.com",
+  "nasdaq.com",
+  "investing.com",
 ];
 
 const FALLBACK_NAMES: Record<RegionId, string[]> = {
@@ -1995,14 +2021,26 @@ export async function runFactorAnalysis(
     const queries = scope === "global" ? GLOBAL_QUERIES : REGION_QUERIES[scope as Region];
     const searches = await Promise.all(
       queries.map((q) =>
-        tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 8, region: region ?? undefined, recencyMinutes: 10080 }, signal),
+        tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 8, region: region ?? undefined, recencyMinutes: 10080, includeDomains: FACTOR_SEARCH_DOMAINS }, signal),
       ),
     );
 
     const flatten = <T extends { snippet?: string }>(results: T[] | undefined) =>
       (results ?? []).map((r) => ({ ...r, snippet: typeof r.snippet === "string" ? r.snippet : "" }));
 
-    const allResults = searches.flatMap((r) => flatten(r.results));
+    let allResults = searches.flatMap((r) => flatten(r.results));
+
+    // If domain-restricted search returned nothing (possible when TinyFish has
+    // no indexed results from those domains for a given query), retry without
+    // the domain restriction so we never starve the model of fetched URLs.
+    if (allResults.length === 0 && !signal?.aborted) {
+      const unrestricted = await Promise.all(
+        queries.map((q) =>
+          tinyfishRouter.tinyfishSearch(`${q} ${RECENT_MONTH()}`, { limit: 8, region: region ?? undefined, recencyMinutes: 10080 }, signal),
+        ),
+      );
+      allResults = unrestricted.flatMap((r) => flatten(r.results));
+    }
 
     // Prefer results from reputable hosts, but never let the whitelist starve the
     // model of real fetched URLs. If the reputable filter removes every result we

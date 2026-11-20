@@ -11,8 +11,8 @@ import {
   computeCorrelationMatrix,
   computeFactorRegionCorrelation,
   hexToRgba,
-} from "/tmp/kilo2/src/lib/correlation.js";
-import { COMMODITIES, FACTORS } from "/tmp/kilo2/src/lib/model.js";
+} from "../correlation.ts";
+import { COMMODITIES, FACTORS } from "../model.ts";
 
 const TINYFISH_LIKE = {
   id: "news-1",

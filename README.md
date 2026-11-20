@@ -107,10 +107,96 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/regional-forecast?region=` | 11-year region-specific forecast band |
 | `/api/cron/curate-factors` | Nightly factor re-curation (Vercel cron, `0 2 * * *` UTC) |
 | `/api/telemetry` | Client-side analytics ingestion |
+| `/api/forecast` | Public, dashboard/BI-friendly forecast envelope (`version`, `bands`, `factors`, `sources`, `meta`) — see [Forecast API](#forecast-api-get-apiforecast) |
 
 All factor producers and consumers share a single canonical cache key,
 `dynamic-factors:{global|region}`, so the reasons shown in the UI are exactly
 the reasons the solutions were generated from.
+
+---
+
+## 💱 Forecast API (`GET /api/forecast`)
+
+Public, read-only endpoint for external dashboards, BI tools, and scripts. It wraps the
+same forecast engine as the UI (`src/lib/model.ts` + live prices/factors) in a stable
+envelope; implemented in `app/api/forecast/route.ts` with logic in
+`lib/api/handlers/forecast.ts`.
+
+### Query parameters
+
+| Param | Values | Default | Notes |
+| --- | --- | --- | --- |
+| `region` | `global` \| `asia` \| `europe` \| `africa` \| `americas` \| `oceania` | `global` | Scope for regionalized bands/factors |
+| `commodities` | comma-separated subset of `oil,electricity,water` | all three | e.g. `commodities=oil,water` |
+| `horizon` | integer `1`–`10` | `10` | Forecast horizon in years |
+| `format` | `json` \| `csv` | `json` | `csv` returns a flat band table (one row per commodity × year) |
+| `fresh` | `1` \| `true` | cached | Bypass the short forecast cache and recompute |
+
+Unknown/invalid values are rejected (see errors) rather than silently coerced, except
+that an unrecognized `region` falls back to `global` for dashboard compatibility.
+
+### Response envelope (JSON)
+
+```jsonc
+{
+  "version": 1,                       // envelope version, also X-API-Version
+  "region": "global",
+  "horizon": 10,
+  "generatedAt": "2026-11-20T00:00:00.000Z",
+  "bands": {                          // per-commodity yearly bands
+    "oil": { "unit": "USD/barrel", "points": [
+      { "year": 2026, "avg": 104.86, "min": 82.1, "max": 131.4 }, /* … */ ] },
+    "electricity": { "unit": "USD/MWh", "points": [ /* … */ ] },
+    "water": { "unit": "USD/m³", "points": [ /* … */ ] }
+  },
+  "factors": [                        // curated drivers for the scope (may be [])
+    { "id": "…", "name": "OPEC+ Production Cuts", "direction": "up",
+      "magnitude": "high", "explanation": "With oil at $104.86/bbl, …",
+      "source": "https://…" }
+  ],
+  "sources": [                        // distinct source URLs backing factors
+    { "url": "https://…", "commodity": "oil" }
+  ],
+  "meta": { "cached": true, "aiCurated": true, "live": true }
+}
+```
+
+`format=csv` returns the same bands as `text/csv` instead of JSON.
+
+### Headers
+
+| Header | Value |
+| --- | --- |
+| `Access-Control-Allow-Origin` | `*` (CORS enabled for dashboards/BI) |
+| `Cache-Control` | `public, s-maxage=60, stale-while-revalidate=300` (short-lived; `fresh=1` bypasses) |
+| `ETag` | quoted hash of the envelope body — send `If-None-Match` for `304 Not Modified` |
+| `X-API-Version` | `1` |
+
+### Errors & status codes
+
+Errors use a consistent shape: `{ "error": { "code": "…", "message": "…" } }`.
+
+| Status | `code` | Meaning |
+| --- | --- | --- |
+| `200` | — | Success (or `304` on matching `If-None-Match`) |
+| `400` | `invalid_parameter` | Bad `commodities`, `horizon` out of 1–10, or unknown `format` |
+
+### Examples
+
+```bash
+# Default global 10-year forecast (JSON)
+curl 'https://lobotllc.vercel.app/api/forecast'
+
+# One region, subset of commodities, fresh recompute
+curl 'https://lobotllc.vercel.app/api/forecast?region=asia&commodities=oil,water&horizon=5&fresh=1'
+
+# CSV for BI import
+curl 'https://lobotllc.vercel.app/api/forecast?format=csv' -o forecast.csv
+
+# Conditional request (ETag)
+curl -H 'If-None-Match: <etag-from-previous-response>' -i \
+  'https://lobotllc.vercel.app/api/forecast'
+```
 
 ---
 
@@ -369,22 +455,23 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 
 ### Frontend
 - **Next.js 16.4.3** (App Router) — React framework with server components
-- **React 19.2.6** — UI library (concurrent features)
-- **TypeScript 5.9.3** — Static type checking across the entire codebase
-- **Tailwind CSS 4.1.17** — Utility-first styling via `@tailwindcss/postcss`
+- **React / React DOM 19.2.6** — UI library (concurrent features)
+- **TypeScript 5.9.3** (`@types/node` 22.19.17, `@types/react` 19.2.7, `@types/react-dom` 19.2.3) — Static type checking across the entire codebase
+- **Tailwind CSS 4.1.17** (`tailwindcss` + `@tailwindcss/postcss`) — Utility-first styling
 - **Chart.js 4.5.1** — Interactive data visualization (used directly, no React wrapper)
 - **lucide-react 1.45.0** — Clean, consistent icon system
 - **clsx 2.1.1** + **tailwind-merge 3.4.0** — Conditional className utilities
 - **flags 4.3.1** — Feature flag / feature gating support
+- **@vercel/analytics 1.5.0 + @vercel/speed-insights 2.0.0** — Production analytics & performance
 
 ### Backend / API Layer
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
-- **Node.js** — Runtime environment (via Next.js on Vercel)
+- **Node.js 22** (`@types/node` 22.19.17) — Runtime environment (via Next.js on Vercel); strict `tsconfig.json` (`strict`, `noUnusedLocals`, bundler module resolution, `@/*` → `src/*`)
 - **Kilo AI Gateway** — OpenAI-compatible inference API at `api.kilo.ai/api/gateway` (price extraction, factor curation, solutions, forecasting)
 - **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search with `include_domains` restriction and `recency_minutes` for both factor curation and the live-prices pipeline) and `api.fetch.tinyfish.ai` (single + batch URL scraping, up to 10 URLs per request via `tinyfishScrapeBatch`); each scrape uses `ttl: 0` for live (non-cached) fetches, returns markdown-format responses for clean downstream parsing, and carries a `purpose` statement to tailor extraction to price-relevance.
 - **Live Prices Pipeline** (`lib/api/handlers/prices.ts`) — Per-commodity TinyFish search (`include_domains`, `recency_minutes`) → batch Fetch/Scrape (`ttl: 0`, markdown) → Kilo extraction → deterministic regex fallback, with per-commodity plausibility ranges (oil 40–200 USD/bbl, electricity 30–300 USD/MWh, water 0.5–15 USD/m³), comma-aware number parsing, per-unit qualifier preference, annual-bill rejection, and USD/kWh → USD/MWh normalization. Three-tier degradation: Kilo → deterministic regex → static benchmark defaults.
 - **Single-Source-of-Truth Live Flow** — `src/hook/useLiveMarket.ts` refreshes `liveQuotes` (price + source + asOf) on every fetch/poll, and the Hero "Market Snapshot" / live global feed renders those URL-sourced numbers (matching the Interactive price forecast cards) with no ad-hoc unit conversion.
-- **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis for cross-instance sharing
+- **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis REST (`lib/api/_shared/redis.ts`, no SDK dependency) for cross-instance sharing
 - **Text utilities** (`lib/api/_shared/textUtils.ts`) — Shared `truncateAtWordBoundary` and `truncateAtSentenceBoundary` for word-safe truncation of factor explanations.
 
 ### Data & Models (`src/lib/`)
@@ -402,10 +489,9 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 ### Development & Build Tooling
 - **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run typecheck` / `npm run build`)
 - **PostCSS** — Tailwind CSS 4 processing pipeline
-- **Playwright** — End-to-end testing (`playwright` dev dependency)
-- **@vercel/analytics**, **@vercel/speed-insights** — Production analytics
-- **dotenv** — Local environment loading
-- **@vercel/sandbox** — Used in the standalone `sandbox-quickstart/` dev environment
+- **Playwright 1.64.0** — End-to-end testing (`playwright` dev dependency)
+- **dotenv 18.0.7** — Local environment loading
+- **@vercel/sandbox 3.7.0** — Used in the standalone `sandbox-quickstart/` dev environment
 
 ### Deployment & Infrastructure
 - **Vercel** — Native Next.js hosting, edge functions, cron jobs
@@ -427,6 +513,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   ├── cron/
 │   │   │   └── curate-factors/route.ts  # Nightly AI factor re-curation (Vercel cron)
 │   │   ├── dynamic-factors/route.ts     # 8 curated global price factors
+│   │   ├── forecast/route.ts            # Public dashboard/BI forecast envelope (CORS/ETag/cache)
 │   │   ├── health/route.ts              # Gateway/key/cache status
 │   │   ├── prices/route.ts              # Live commodity spot prices via TinyFish search + batch scrape (ttl:0 for live fetches, maxDuration 120s)
 │   │   ├── rates/route.ts               # Exchange rates for currency conversion
@@ -449,6 +536,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │       │   ├── cron-curate-factors.ts   # Nightly curation job
 │       │   ├── dynamic-factors.ts       # Global factor curation
 │       │   ├── factor-analysis.ts       # Factor curation pipeline (TinyFish → Kilo → grounding → cache), including `sanitizeExplanation`, `sanitizeFactorTitle`, `deriveFactorNameFromExplanation`, `validateExplanationQuality`, `validateAndRepairWindow`, and deterministic fallback builders (`buildFactorsFromCandidates`, `clauseQualityCheck`)
+│       │   ├── forecast.ts                # Public /api/forecast envelope (bands/factors/sources/meta, CSV, ETag)
 │       │   ├── health.ts                # Health check implementation
 │       │   ├── prices.ts                # Live prices: TinyFish search + batch scrape (ttl:0, markdown format) + Kilo extraction + fallbacks
 │       │   ├── regional-analytics.ts    # Regional indices computation

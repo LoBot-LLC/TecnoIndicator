@@ -38,6 +38,32 @@ function regionWeight(factor: Factor, regionId: RegionId): number {
   return 0.35;
 }
 
+/**
+ * Drift magnitude anchors (10-yr cumulative) used by the static model factors.
+ * TinyFish-curated factors frequently ship `drift: {}` (see
+ * `lib/api/handlers/factor-analysis.ts:1278,1885`), which previously produced a
+ * constant-zero contribution series → zero variance → Pearson `r` undefined →
+ * "n/a" for every commodity and region. Derive a comparable drift from the
+ * factor's own signal when the explicit drift is missing.
+ */
+const DRIFT_MAGNITUDE: Record<Factor["magnitude"], number> = {
+  High: 0.02,
+  Medium: 0.012,
+  Low: 0.006,
+};
+
+/** Resolve a factor's drift for a commodity, deriving it from factor signals when absent. */
+export function derivedDrift(factor: Factor, commodity: CommodityId): number {
+  const existing = factor.drift[commodity];
+  if (typeof existing === "number" && Number.isFinite(existing)) return existing;
+  if (!factor.commodities.includes(commodity)) return 0;
+  const sign = factor.direction === "up" ? 1 : factor.direction === "down" ? -1 : 0;
+  if (sign === 0) return 0; // mixed direction → no consistent signed drift
+  const mag = DRIFT_MAGNITUDE[factor.magnitude] ?? DRIFT_MAGNITUDE.Medium;
+  const imp = (factor.importanceScore ?? 60) / 100;
+  return sign * mag * imp;
+}
+
 /** Contribution of a factor to a commodity price over t=0..horizon. */
 export function factorContributionSeries(
   factor: Factor,
@@ -46,7 +72,7 @@ export function factorContributionSeries(
   horizon: number,
 ): number[] {
   const out: number[] = [];
-  const drift = factor.drift[commodity] ?? 0;
+  const drift = derivedDrift(factor, commodity);
   const w = regionWeight(factor, regionId);
   for (let t = 0; t <= horizon; t++) {
     out.push(drift * (t / 10) * w);
@@ -71,6 +97,7 @@ export function pearson(xs: number[], ys: number[]): number | null {
   if (n < 2) return null;
   const xa = xs.slice(0, n);
   const ya = ys.slice(0, n);
+  if (xa.some((v) => !Number.isFinite(v)) || ya.some((v) => !Number.isFinite(v))) return null;
   const mx = xa.reduce((a, b) => a + b, 0) / n;
   const my = ya.reduce((a, b) => a + b, 0) / n;
   let num = 0;
@@ -83,7 +110,9 @@ export function pearson(xs: number[], ys: number[]): number | null {
     dx += a * a;
     dy += b * b;
   }
-  if (dx === 0 || dy === 0) return null;
+  if (!Number.isFinite(num) || dx === 0 || dy === 0 || !Number.isFinite(dx) || !Number.isFinite(dy)) {
+    return null;
+  }
   const r = num / Math.sqrt(dx * dy);
   return Math.min(1, Math.max(-1, r));
 }

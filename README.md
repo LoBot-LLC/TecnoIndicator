@@ -470,6 +470,17 @@ server route could precompute the matrix, but none exists yet):
 - `src/lib/correlation.ts` — pure correlation math (Pearson *r*, series builders, `null`-on-no-exposure/zero-variance rules).
 - `src/components/CorrelationSection.tsx` — heatmap grid + per-region breakdown + region click-through.
 
+**Bug fix — TinyFish factors showed `n/a` everywhere.** TinyFish-curated factors ship
+with `drift: {}` (see `lib/api/handlers/factor-analysis.ts`), so the contribution
+series was constant zero, variance was zero, and Pearson *r* was `null` — every
+factor × commodity cell rendered `n/a`. `derivedDrift()` in
+`src/lib/correlation.ts` now derives a comparable drift from the factor's own
+signal when explicit drift is missing: `direction` (`up`/`down` → sign),
+`magnitude` (`High`/`Medium`/`Low` → `0.02`/`0.012`/`0.006`), and
+`importanceScore` (scaled into `0…1`). Factors with `mixed` direction or no
+exposure to the commodity still report `null`. `pearson()` also rejects
+non-finite inputs instead of returning `NaN`.
+
 ---
 
 ## 🔄 Static Fallback Behavior

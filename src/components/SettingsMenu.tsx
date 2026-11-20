@@ -15,7 +15,7 @@ export default function SettingsMenu() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const { theme, setTheme } = useTheme();
+  const { mode, setMode } = useTheme();
   const { selectedCurrency, setSelectedCurrency, currencies, rates, isLoading } = useCurrency();
   const { lengthUnit, setLengthUnit, energyUnit, setEnergyUnit } = useUnit();
   const { fontKey, setFontKey, fonts, current } = useFont();
@@ -82,8 +82,8 @@ export default function SettingsMenu() {
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">Color theme</span>
                   <select
-                    value={theme}
-                    onChange={(e) => setTheme(e.target.value as "light" | "dark")}
+                    value={mode}
+                    onChange={(e) => setMode(e.target.value as "light" | "dark" | "system")}
                     className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100 dark:[color-scheme:dark]"
                   >
                     <option value="light" className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">
@@ -91,6 +91,9 @@ export default function SettingsMenu() {
                     </option>
                     <option value="dark" className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">
                       Dark
+                    </option>
+                    <option value="system" className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">
+                      System
                     </option>
                   </select>
                 </label>

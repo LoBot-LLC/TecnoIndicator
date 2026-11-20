@@ -477,8 +477,15 @@ factor × commodity cell rendered `n/a`. `derivedDrift()` in
 `src/lib/correlation.ts` now derives a comparable drift from the factor's own
 signal when explicit drift is missing: `direction` (`up`/`down` → sign),
 `magnitude` (`High`/`Medium`/`Low` → `0.02`/`0.012`/`0.006`), and
-`importanceScore` (scaled into `0…1`). Factors with `mixed` direction or no
-exposure to the commodity still report `null`. `pearson()` also rejects
+`importanceScore` (scaled into `0…1`).
+
+**Energy–water nexus transmission** — TinyFish factors frequently declare only
+one commodity (e.g. oil-only factors show strong oil correlations but `n/a`
+for electricity and water). Because oil shocks flow into electricity via
+gas-fired dispatch and into water via energy-intensive desalination/conveyance,
+`derivedDrift()` now transmits the factor's signal to undeclared commodities at
+reduced nexus strength instead of returning 0. Factors with `mixed` direction or
+no declared commodity still report `null`. `pearson()` also rejects
 non-finite inputs instead of returning `NaN`.
 
 ---
@@ -634,7 +641,9 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   └── useLiveMarket.ts             # Live market data polling
 │   ├── lib/                             # Frontend business logic
 │   │   ├── currencies.ts                # Currency codes, symbols, formatting
-│   │   ├── correlation.ts               # NEW Pearson-r series builders + matrix computation
+│   │   ├── correlation.ts               # Pearson-r series builders + matrix computation (derivedDrift fix for TinyFish factors)
+│   │   ├── __tests__/                   # Correlation matrix pure-logic tests (15 tests, 6 suites; run via `npx tsx`)
+│   │   │   └── correlation.test.mjs
 │   │   ├── events.ts                    # Event bus for cross-component comms
 │   │   ├── fonts.ts                     # Font definitions & loading
 │   │   ├── markdown.ts                  # Markdown report generation

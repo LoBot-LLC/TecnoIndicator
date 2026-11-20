@@ -52,16 +52,38 @@ const DRIFT_MAGNITUDE: Record<Factor["magnitude"], number> = {
   Low: 0.006,
 };
 
+/**
+ * Cross-commodity transmission strength (energy–water nexus).
+ *
+ * An oil shock flows into electricity via gas-fired dispatch and into water
+ * via energy-intensive desalination/conveyance — and vice versa. When a
+ * TinyFish factor declares only one commodity but `drift: {}`, the factor's
+ * signal is still transmitted to the other commodities at reduced strength
+ * instead of returning 0 (which produced a constant-zero series → zero
+ * variance → "n/a" for every undeclared commodity).
+ */
+const NEXUS: Record<CommodityId, Record<CommodityId, number>> = {
+  oil: { oil: 1, electricity: 0.4, water: 0.3 },
+  electricity: { oil: 0.3, electricity: 1, water: 0.5 },
+  water: { oil: 0.2, electricity: 0.4, water: 1 },
+};
+
 /** Resolve a factor's drift for a commodity, deriving it from factor signals when absent. */
 export function derivedDrift(factor: Factor, commodity: CommodityId): number {
   const existing = factor.drift[commodity];
   if (typeof existing === "number" && Number.isFinite(existing)) return existing;
-  if (!factor.commodities.includes(commodity)) return 0;
   const sign = factor.direction === "up" ? 1 : factor.direction === "down" ? -1 : 0;
   if (sign === 0) return 0; // mixed direction → no consistent signed drift
   const mag = DRIFT_MAGNITUDE[factor.magnitude] ?? DRIFT_MAGNITUDE.Medium;
   const imp = (factor.importanceScore ?? 60) / 100;
-  return sign * mag * imp;
+  const base = sign * mag * imp;
+  // Direct exposure: full derived drift.
+  if (factor.commodities.includes(commodity)) return base;
+  // No declared commodity and no transmission path: no drift.
+  const source = factor.commodities[0];
+  if (!source) return 0;
+  // Indirect exposure via the energy–water nexus.
+  return base * (NEXUS[source][commodity] ?? 0);
 }
 
 /** Contribution of a factor to a commodity price over t=0..horizon. */

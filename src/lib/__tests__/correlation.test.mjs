@@ -59,9 +59,16 @@ describe("derivedDrift", () => {
     assert.ok(d !== 0, "derived drift must be non-zero for exposed commodity");
     assert.ok(Number.isFinite(d));
   });
-  it("returns 0 for unexposed commodity", () => {
-    assert.strictEqual(derivedDrift(TINYFISH_LIKE, "electricity"), 0);
-    assert.strictEqual(derivedDrift(TINYFISH_LIKE, "water"), 0);
+  it("derives nexus-scaled drift for undeclared commodities (energy–water nexus)", () => {
+    const oilDrift = derivedDrift(TINYFISH_LIKE, "oil");
+    const elecDrift = derivedDrift(TINYFISH_LIKE, "electricity");
+    const waterDrift = derivedDrift(TINYFISH_LIKE, "water");
+    assert.ok(oilDrift !== 0, "oil drift must be non-zero for exposed commodity");
+    assert.ok(elecDrift !== 0, "electricity drift must be non-zero via nexus");
+    assert.ok(waterDrift !== 0, "water drift must be non-zero via nexus");
+    assert.ok(Math.abs(elecDrift) < Math.abs(oilDrift), "electricity drift must be reduced vs oil");
+    assert.ok(Math.abs(waterDrift) < Math.abs(oilDrift), "water drift must be reduced vs oil");
+    assert.ok(Number.isFinite(elecDrift) && Number.isFinite(waterDrift));
   });
   it("returns 0 for mixed direction", () => {
     const mixed = { ...TINYFISH_LIKE, direction: "mixed" };
@@ -76,33 +83,29 @@ describe("factorContributionSeries", () => {
     assert.ok(uniq.size > 1, "contribution series must vary with t");
     assert.ok(xs.some((v) => v > 0), "series must be positive for up direction");
   });
-  it("is constant zero for unexposed commodity", () => {
-    const xs = factorContributionSeries(TINYFISH_LIKE, "electricity", "global", 10);
-    assert.ok(xs.every((v) => v === 0));
+  it("is non-constant for undeclared commodities via nexus", () => {
+    for (const c of ["electricity", "water"]) {
+      const xs = factorContributionSeries(TINYFISH_LIKE, c, "global", 10);
+      const uniq = new Set(xs);
+      assert.ok(uniq.size > 1, `contribution series for ${c} must vary with t`);
+      assert.ok(!xs.every((v) => v === 0), `${c} series must not be constant zero`);
+    }
   });
 });
 
 describe("computeCorrelationMatrix", () => {
-  it("no longer reports n/a for TinyFish-like factors on exposed commodity", () => {
+  it("no longer reports n/a for TinyFish-like factors on any commodity", () => {
     const out = computeCorrelationMatrix({
       prices: { oil: 104.86, electricity: 166, water: 2.5 },
       horizon: 10,
       region: "global",
       factors: [TINYFISH_LIKE],
     });
-    const cell = out.rows.find((c) => c.factorId === "news-1" && c.commodity === "oil");
-    assert.ok(cell != null, "cell present");
-    assert.ok(cell.r != null && Number.isFinite(cell.r), `expected non-null oil correlation, got ${cell.r}`);
-  });
-  it("reports n/a for unexposed commodity", () => {
-    const out = computeCorrelationMatrix({
-      prices: { oil: 104.86, electricity: 166, water: 2.5 },
-      horizon: 10,
-      region: "global",
-      factors: [TINYFISH_LIKE],
-    });
-    const cell = out.rows.find((c) => c.factorId === "news-1" && c.commodity === "electricity");
-    assert.strictEqual(cell.r, null);
+    for (const c of COMMODITIES) {
+      const cell = out.rows.find((x) => x.factorId === "news-1" && x.commodity === c.id);
+      assert.ok(cell != null, `cell present for ${c.id}`);
+      assert.ok(cell.r != null && Number.isFinite(cell.r), `expected non-null ${c.id} correlation, got ${cell.r}`);
+    }
   });
 });
 

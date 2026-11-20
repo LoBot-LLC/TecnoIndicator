@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
+import CorrelationSection from "@/components/CorrelationSection";
 import Hero from "@/components/Hero";
 import MarketIndexStrip, { type AnalyticsSnapshot } from "@/components/MarketIndexStrip";
 import ForecastTool from "@/components/ForecastTool";
@@ -349,6 +350,14 @@ export default function HomePage() {
             healthStatus={healthStatus}
             aiCurated={globalFactorsAiCurated}
             factorsLoaded={globalFactorsLoaded}
+          />
+          <CorrelationSection
+            horizon={horizon}
+            region={region}
+            onRegion={setRegion}
+            globalFactors={globalFactors}
+            regionalFactors={regionalFactors}
+            prices={prices}
           />
           <RegionalEvaluation
             prices={prices}

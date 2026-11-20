@@ -28,6 +28,7 @@ A commodity price forecasting dashboard for **oil**, **electricity**, and **wate
   - Full clickable source URL linking to the exact TinyFish-fetched page the model analyzed (never a bare publication name)
   - Horizon-aware highlighting (longer forecasts emphasize structural drivers)
 - **Regional Intelligence** — The same 8-factor grid scoped to a region, with the same grounding prices and full clickable source URLs on every card.
+- **Correlation Matrix** — Pearson-r heatmap of factors × commodities (see [Correlation Matrix](#-correlation-matrix)). Click a factor for its per-region correlation breakdown with region click-through; `null` when a factor has no exposure or zero variance.
 - **Export Options** — Download the chart as PNG or the forecast table as CSV or Markdown (`.md`). In **Regional Intelligence**, select a region then open the **Export region** menu to download that region as a CSV table or a Markdown (`.md`) report.
 - **View all global continents** — One click to explore data for all continents: the Americas, Europe, Asia, Africa, Oceania.
 - **Technical Transparency** — Collapsible "Show underlying assumptions" section.
@@ -121,6 +122,7 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/cron/curate-factors` | Nightly factor re-curation (Vercel cron, `0 2 * * *` UTC) |
 | `/api/telemetry` | Client-side analytics ingestion |
 | `/api/forecast` | Public, dashboard/BI-friendly forecast envelope (`version`, `bands`, `factors`, `sources`, `meta`) — see [Forecast API](#forecast-api-get-apiforecast) |
+| `CorrelationSection` (client-side) | Pearson-r correlation matrix (factors × commodities + per-region breakdown) computed in-browser from the forecast engine — see [Correlation Matrix](#-correlation-matrix) |
 
 All factor producers and consumers share a single canonical cache key,
 `dynamic-factors:{global|region}`, so the reasons shown in the UI are exactly
@@ -449,6 +451,45 @@ The same pattern applies to the regional factors view: each regional card carrie
 
 ---
 
+## 📐 Correlation Matrix
+
+The **Correlation Matrix** quantifies how strongly each price factor drives each commodity — Pearson's *r* between two time series over the selected horizon (1–10 years):
+
+- **Price series** — the `avg` band from `generateForecast` (`src/lib/model.ts`) per commodity × year.
+- **Factor contribution series** — `drift × (t/10) × regionWeight` per factor × year, where `regionWeight` is `0.35` when the region is outside the factor's `regions` scope (matching the `generateForecast` drift dampening) and `1` otherwise.
+
+The UI renders a **heatmap grid (factors × commodities)**:
+
+- Click a factor cell/row to open its **per-region correlation breakdown**.
+- Each region row supports **region click-through** (jumps to that region's intelligence view).
+- A cell is **`null`** (shown as neutral/empty) when the factor has no exposure to the commodity (`drift` missing/zero) or either series has zero variance.
+
+**Implementation** (client-side only — no `/api/correlations` endpoint; a future
+server route could precompute the matrix, but none exists yet):
+
+- `src/lib/correlation.ts` — pure correlation math (Pearson *r*, series builders, `null`-on-no-exposure/zero-variance rules).
+- `src/components/CorrelationSection.tsx` — heatmap grid + per-region breakdown + region click-through.
+
+**Bug fix — TinyFish factors showed `n/a` everywhere.** TinyFish-curated factors ship
+with `drift: {}` (see `lib/api/handlers/factor-analysis.ts`), so the contribution
+series was constant zero, variance was zero, and Pearson *r* was `null` — every
+factor × commodity cell rendered `n/a`. `derivedDrift()` in
+`src/lib/correlation.ts` now derives a comparable drift from the factor's own
+signal when explicit drift is missing: `direction` (`up`/`down` → sign),
+`magnitude` (`High`/`Medium`/`Low` → `0.02`/`0.012`/`0.006`), and
+`importanceScore` (scaled into `0…1`).
+
+**Energy–water nexus transmission** — TinyFish factors frequently declare only
+one commodity (e.g. oil-only factors show strong oil correlations but `n/a`
+for electricity and water). Because oil shocks flow into electricity via
+gas-fired dispatch and into water via energy-intensive desalination/conveyance,
+`derivedDrift()` now transmits the factor's signal to undeclared commodities at
+reduced nexus strength instead of returning 0. Factors with `mixed` direction or
+no declared commodity still report `null`. `pearson()` also rejects
+non-finite inputs instead of returning `NaN`.
+
+---
+
 ## 🔄 Static Fallback Behavior
 
 When live curation is unavailable — TinyFish search/scrape fails, Kilo Gateway is down, or all retries are exhausted — the system **auto-removes** any static fallback factors (those with the generic "Static … fallback factor maintained when live AI curation is unavailable" explanation) in **all code paths**: during curation (`runFactorAnalysis`), during final validation (`validateAndRepairWindow`), and in API error handlers (`dynamic-factors.ts`, `regional-factors.ts`). The `validateAndRepairWindow` function removes static fallback factors entirely and does **not** substitute them with generic placeholders — factors whose explanations cannot be repaired into a valid commodity+price sentence are **dropped entirely** and not shown.
@@ -489,6 +530,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 
 ### Data & Models (`src/lib/`)
 - **Forecast Engine** (`model.ts`) — Client-side forecast computations, `FACTORS` / `REGIONAL_FACTORS` static fallbacks, commodity types, and scenario math
+- **Correlation Math** (`correlation.ts`) — **NEW** Pearson-r factor↔commodity series correlation (see [Correlation Matrix](#-correlation-matrix))
 - **Currency & Unit Conversion** (`currencies.ts`, `units.ts`) — Multi-currency support with real-time formatting
 - **Markdown Report Generator** (`markdown.ts`) — Export forecasts as `.md` reports
 
@@ -573,6 +615,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 ├── src/                                  # Frontend source code
 │   ├── components/                      # React UI components
 │   │   ├── AboutSection.tsx             # Project description & mission
+│   │   ├── CorrelationSection.tsx       # NEW factor×commodity correlation heatmap + per-region breakdown
 │   │   ├── CurrencySelector.tsx         # Multi-currency picker
 │   │   ├── FactorsSection.tsx           # 8 dynamic factors grid
 │   │   ├── Footer.tsx                   # Site footer
@@ -598,6 +641,9 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   └── useLiveMarket.ts             # Live market data polling
 │   ├── lib/                             # Frontend business logic
 │   │   ├── currencies.ts                # Currency codes, symbols, formatting
+│   │   ├── correlation.ts               # Pearson-r series builders + matrix computation (derivedDrift fix for TinyFish factors)
+│   │   ├── __tests__/                   # Correlation matrix pure-logic tests (15 tests, 6 suites; run via `npx tsx`)
+│   │   │   └── correlation.test.mjs
 │   │   ├── events.ts                    # Event bus for cross-component comms
 │   │   ├── fonts.ts                     # Font definitions & loading
 │   │   ├── markdown.ts                  # Markdown report generation

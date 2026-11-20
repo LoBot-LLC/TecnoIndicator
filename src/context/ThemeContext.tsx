@@ -4,63 +4,85 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 
 const STORAGE_KEY = "tecno.theme";
 
+export type ThemeMode = "light" | "dark" | "system";
+export type ResolvedTheme = "light" | "dark";
+
 export interface ThemeContextValue {
-  theme: "light" | "dark";
-  setTheme: (theme: "light" | "dark") => void;
+  /** Resolved theme ("light" | "dark") — backward compatible. */
+  theme: ResolvedTheme;
+  /** Raw user-selected mode, including "system". */
+  mode: ThemeMode;
+  setTheme: (theme: ThemeMode) => void;
+  setMode: (mode: ThemeMode) => void;
   toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Get initial theme from localStorage or system preference
-  const [theme, setThemeState] = useState<"light" | "dark">(() => {
-    if (typeof window !== "undefined") {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored === "light" || stored === "dark") {
-        return stored;
-      }
-      // Check system preference
-      if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-        return "dark";
-      }
-    }
-    return "dark"; // default to dark
-  });
+function readStoredMode(): ThemeMode {
+  if (typeof window === "undefined") return "system";
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored === "light" || stored === "dark" || stored === "system") return stored;
+  } catch {
+    // ignore storage errors
+  }
+  return "system";
+}
 
-  // Apply theme to html element and store preference
+function systemPrefersDark(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function resolve(mode: ThemeMode): ResolvedTheme {
+  if (mode === "system") return systemPrefersDark() ? "dark" : "light";
+  return mode;
+}
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [mode, setModeState] = useState<ThemeMode>(() => readStoredMode());
+  const [resolved, setResolved] = useState<ResolvedTheme>(() => resolve(readStoredMode()));
+
+  // Apply class + track system preference when in system mode
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // The .dark class on the html element triggers dark-mode CSS variable overrides
-    // and enables Tailwind's dark: variant utilities.
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    const apply = () => {
+      const next = resolve(mode);
+      setResolved(next);
+      document.documentElement.classList.toggle("dark", next === "dark");
+    };
+    apply();
 
-    // Store preference
     try {
-      window.localStorage.setItem(STORAGE_KEY, theme);
+      window.localStorage.setItem(STORAGE_KEY, mode);
     } catch {
-      // Ignore storage errors
+      // ignore storage errors
     }
-  }, [theme]);
 
-  const setTheme = useCallback((newTheme: "light" | "dark") => {
-    setThemeState(newTheme);
+    if (mode !== "system" || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => apply();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [mode]);
+
+  const setMode = useCallback((newMode: ThemeMode) => {
+    setModeState(newMode);
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setThemeState((prev) => (prev === "dark" ? "light" : "dark"));
+    setModeState((prev) => (resolve(prev) === "dark" ? "light" : "dark"));
   }, []);
 
   const value = useMemo<ThemeContextValue>(() => ({
-    theme,
-    setTheme,
+    theme: resolved,
+    mode,
+    setTheme: setMode,
+    setMode,
     toggleTheme,
-  }), [theme]);
+  }), [resolved, mode, setMode, toggleTheme]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

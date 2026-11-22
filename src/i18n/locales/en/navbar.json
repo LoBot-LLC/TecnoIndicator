@@ -1,0 +1,20 @@
+{
+  "links": {
+    "forecast": "Forecast",
+    "regions": "Regions",
+    "factors": "Factors",
+    "about": "About"
+  },
+  "primaryNav": "Primary",
+  "mobileNav": "Mobile",
+  "export": "Export",
+  "chartPng": "Chart as PNG",
+  "dataCsv": "Data as CSV",
+  "dataMd": "Data as MD",
+  "downloadPng": "Download chart as PNG",
+  "downloadCsv": "Download data as CSV",
+  "downloadMd": "Download data as Markdown",
+  "viewSource": "View source on GitHub",
+  "openMenu": "Open menu",
+  "closeMenu": "Close menu"
+}

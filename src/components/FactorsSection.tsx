@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -10,7 +10,9 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import Reveal from "./Reveal";
+import { useLanguage } from "../context/LanguageContext";
 import {
   COMMODITIES,
   factorRelevance,
@@ -20,12 +22,38 @@ import {
   type Magnitude,
 } from "../lib/model";
 import { truncateAtSentence } from "../lib/truncate";
+import { fetchTranslatedExplanations } from "../lib/translateFactors";
 
 const MAG_COLOR: Record<Magnitude, string> = {
   High: "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15",
   Medium: "text-amber-300 dark:text-amber-400 border-amber-400/30 dark:border-amber-400/40 bg-amber-400/10 dark:bg-amber-400/15",
   Low: "text-slate-600 dark:text-slate-500 border-line bg-panel/5",
 };
+
+const EMPTY_TRANSLATIONS = new Map<string, string>();
+
+function useTranslatedExplanations(factors: Factor[]): Map<string, string> {
+  const { language } = useLanguage();
+  const key = `${language}\u0003` + factors.map((f) => `${f.id}\u0001${f.explanation}`).join("\u0002");
+  const [result, setResult] = useState<{ key: string; map: Map<string, string> } | null>(null);
+
+  useEffect(() => {
+    if (language === "en" || factors.length === 0) return;
+    let cancelled = false;
+    const items = factors.map((f) => ({ id: f.id, explanation: f.explanation, commodities: f.commodities }));
+    fetchTranslatedExplanations(items, language).then((map) => {
+      if (!cancelled) setResult({ key, map });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `key` encodes the factor ids, explanations and language that `factors` derives from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  if (language === "en" || !result || result.key !== key) return EMPTY_TRANSLATIONS;
+  return result.map;
+}
 
 function isNewFactor(createdAt: string): boolean {
   const created = new Date(createdAt);
@@ -51,23 +79,26 @@ function DirectionIcon({ direction }: { direction: Direction }) {
 
 function FactorCard({
   factor,
+  explanation,
   horizon,
   index,
 }: {
   factor: Factor;
+  explanation: string;
   horizon: number;
   index: number;
 }) {
+  const { t } = useTranslation("factors");
   const relevance = factorRelevance(factor.bias, horizon);
   const trend = relevanceTrend(factor.bias, horizon);
   const width = Math.min(100, Math.round((relevance / 2.0) * 100));
   const isNew = isNewFactor(factor.createdAt);
   const [isExpanded, setIsExpanded] = useState(false);
   const MAX_CHARS = 400;
-  const shouldTruncate = factor.explanation.length > MAX_CHARS;
+  const shouldTruncate = explanation.length > MAX_CHARS;
   const displayText = isExpanded || !shouldTruncate
-    ? factor.explanation
-    : truncateAtSentence(factor.explanation, MAX_CHARS);
+    ? explanation
+    : truncateAtSentence(explanation, MAX_CHARS);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -81,14 +112,14 @@ function FactorCard({
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${MAG_COLOR[factor.magnitude]}`}
             >
               <DirectionIcon direction={factor.direction} />
-              {factor.magnitude}
+              {t(`magnitude.${factor.magnitude}`)}
             </span>
           </div>
           <h3 className="mt-3 font-display text-base font-semibold text-slate-900 dark:text-white">
             {factor.name}
             {isNew && (
               <span className="ml-2 inline-flex items-center rounded-full bg-teal-500 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900 dark:text-white">
-                New
+                {t("new")}
               </span>
             )}
           </h3>
@@ -99,13 +130,18 @@ function FactorCard({
           </span>
           {factor.importanceScore >= 0 && (
             <span className="text-[11px] font-semibold text-teal-400 dark:text-teal-300">
-              Impact: {factor.importanceScore}/100
+              {t("impact", { score: factor.importanceScore })}
             </span>
           )}
         </div>
       </div>
 
-      <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-600 dark:text-slate-500">{displayText}</p>
+      <p
+        id={`factor-explanation-${factor.id}`}
+        className="mt-3 flex-1 text-xs leading-relaxed text-slate-600 dark:text-slate-500"
+      >
+        {displayText}
+      </p>
       {shouldTruncate && (
         <button
           type="button"
@@ -117,12 +153,12 @@ function FactorCard({
           {isExpanded ? (
             <>
               <ChevronUp className="h-3.5 w-3.5" />
-              Show less
+              {t("showLess")}
             </>
           ) : (
             <>
               <ChevronDown className="h-3.5 w-3.5" />
-              Show more
+              {t("showMore")}
             </>
           )}
         </button>
@@ -157,7 +193,7 @@ function FactorCard({
       {factor.grounding && factor.commodities.some((id) => factor.grounding?.[id]) && (
         <div className="mt-5 rounded-lg border border-line bg-base/50 px-3 py-3">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
-            Grounded in live dashboard prices
+            {t("grounded")}
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1.5">
             {factor.commodities.map((id) => {
@@ -190,7 +226,7 @@ function FactorCard({
           </div>
           {factor.grounding?.asOf && (
             <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 italic">
-              Prices as of {factor.grounding.asOf}
+              {t("pricesAsOf", { date: factor.grounding.asOf })}
             </p>
           )}
         </div>
@@ -198,7 +234,7 @@ function FactorCard({
 
       <div className="mt-4">
         <div className="mb-1.5 flex items-center justify-between text-[11px]">
-          <span className="font-semibold text-slate-700 dark:text-slate-500">Relevance @ {horizon}y</span>
+          <span className="font-semibold text-slate-700 dark:text-slate-500">{t("relevanceAt", { horizon })}</span>
 <span
             className={`inline-flex items-center gap-1 font-semibold ${
               trend === "rising"
@@ -211,7 +247,7 @@ function FactorCard({
             {trend === "rising" && <TrendingUp className="h-3 w-3" />}
             {trend === "fading" && <TrendingDown className="h-3 w-3" />}
             {trend === "steady" && <GitBranch className="h-3 w-3" />}
-            {trend}
+            {t(`trend.${trend}`)}
           </span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-line">
@@ -224,7 +260,7 @@ function FactorCard({
 
       <div className="mt-3">
         <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-500 block mb-1">
-          Source URL
+          {t("sourceUrl")}
         </span>
         {isHttpUrl(factor.source) ? (
           <a
@@ -234,7 +270,7 @@ function FactorCard({
             className="block text-[10px] text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
           >
             {factor.source}
-            <ExternalLink className="ml-1 inline h-3 w-3 fill-current" aria-label="Open source" />
+            <ExternalLink className="ml-1 inline h-3 w-3 fill-current" aria-label={t("openSource")} />
           </a>
         ) : (
           <span className="block text-[10px] text-slate-600 dark:text-slate-500 break-all">{factor.source}</span>
@@ -301,6 +337,7 @@ export default function FactorsSection({
   healthStatus,
   factorsLoaded = false,
 }: FactorsSectionProps) {
+  const { t } = useTranslation("factors");
   const isOnline = healthStatus === "Online Model Connected";
   const isLoading = !factorsLoaded;
 
@@ -324,32 +361,34 @@ export default function FactorsSection({
     [activeFactors, horizon],
   );
 
+  const translations = useTranslatedExplanations(activeFactors);
+
   return (
     <section id="factors" className="relative scroll-mt-20 border-t border-line py-16 sm:py-20">
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
         <Reveal>
           <div className="mb-10 max-w-2xl">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
-              Key factors & drivers
+              {t("eyebrow")}
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              {isAiCurated ? "AI-Curated Factors" : "Key factors & drivers"}
+              {isAiCurated ? t("titleCurated") : t("titleDefault")}
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               {isAiCurated
-                ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."
+                ? t("descCurated")
                 : !isLoading && activeFactors.length === 0
-                ? "Factors appear only when they can be traced to a fetched source URL. None are available right now."
-                : "Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
+                ? t("descEmpty")
+                : t("descDefault")}
             </p>
             {isOnline && (
               <p className="mt-2 text-xs text-teal-400 dark:text-teal-300/80">
-                Status: {healthStatus}
+                {t("status", { status: healthStatus })}
               </p>
             )}
             {isLoading && (
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Loading factors…
+                {t("loading")}
               </p>
             )}
           </div>
@@ -359,7 +398,12 @@ export default function FactorsSection({
           {activeFactors.length > 0 ? (
             sorted.map((f, i) => (
               <Reveal key={f.id} delay={Math.min(i * 40, 280)}>
-                <FactorCard factor={f} horizon={horizon} index={i} />
+                <FactorCard
+                  factor={f}
+                  explanation={translations.get(f.id) ?? f.explanation}
+                  horizon={horizon}
+                  index={i}
+                />
               </Reveal>
             ))
           ) : isLoading ? (
@@ -370,8 +414,7 @@ export default function FactorsSection({
             ))
           ) : (
             <p className="col-span-full text-center text-sm text-slate-500 dark:text-slate-400 py-8">
-              No live price factors are available right now. Reasons are only shown when they can be
-              traced to a fetched source URL.
+              {t("emptyState")}
             </p>
           )}
         </div>

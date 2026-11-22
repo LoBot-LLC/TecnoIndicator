@@ -1,5 +1,9 @@
+"use client";
+
 import { BarChart3, FunctionSquare, Globe2, ShieldAlert, Workflow } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import Reveal from "./Reveal";
 import { useCurrency } from "../context/CurrencyContext";
 
@@ -9,8 +13,8 @@ type MoneyFormatter = (usd: number) => string;
 interface Method {
   icon: LucideIcon;
   color: string;
-  title: string;
-  text: (money: MoneyFormatter) => string;
+  key: "base" | "volatility" | "factors" | "regions";
+  text: (money: MoneyFormatter, t: TFunction) => string;
 }
 
 const SOURCES = [
@@ -30,34 +34,32 @@ const METHODS: Method[] = [
   {
     icon: BarChart3,
     color: "#f5b840",
-    title: "Base trend",
-    text: (money) =>
-      `Each series starts from a realistic market price — Brent around ${money(105)}/bbl, global power near ${money(166)}/MWh, and global water near ${money(2.5)}/m³ — then compounds at a structural CAGR of 3.8–5.0% depending on the commodity. Regional modes remap to WTI, Dubai/Oman, WAF and local retail tariffs.`,
+    key: "base",
+    text: (money, t) =>
+      t("methods.base.text", { brent: money(105), power: money(166), water: money(2.5) }),
   },
   {
     icon: Workflow,
     color: "#2dd4bf",
-    title: "Volatility bands",
-    text: () =>
-      "Low and high scenarios widen with the square root of time, reflecting how forecast uncertainty genuinely grows. At a 10-year horizon the bands span roughly ±22–34% around the average path, with Africa and Asia carrying higher regional vol adjustments.",
+    key: "volatility",
+    text: (_money, t) => t("methods.volatility.text"),
   },
   {
     icon: FunctionSquare,
     color: "#38bdf8",
-    title: "Factor adjustments",
-    text: () =>
-      "Twelve researched drivers — from OPEC+ policy to water scarcity — each contribute a small drift that ramps up over the horizon, so the model stays explainable rather than being a black box.",
+    key: "factors",
+    text: (_money, t) => t("methods.factors.text"),
   },
   {
     icon: Globe2,
     color: "#a78bfa",
-    title: "Five-region evaluation",
-    text: (money) =>
-      `Americas, Europe, Asia, Africa and Oceania are scored live using research-backed oil markers and 2026 retail electricity/water benchmarks (Europe & Oceania power ~${money(0.26)}/kWh, Asia ~${money(0.09)}/kWh, Americas mid-range).`,
+    key: "regions",
+    text: (money, t) => t("methods.regions.text", { europe: money(0.26), asia: money(0.09) }),
   },
 ];
 
 export default function AboutSection() {
+  const { t } = useTranslation("about");
   const { selectedCurrency, convertPrice, getCurrencyInfo } = useCurrency();
 
   /**
@@ -82,16 +84,13 @@ export default function AboutSection() {
         <Reveal>
           <div className="max-w-2xl">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
-              Transparency
+              {t("kicker")}
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              About the model
+              {t("title")}
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-              LoBot LLC is a demonstration of modern front-end data visualization: every number
-              is computed in your browser from publicly known drivers, with no backend and no API
-              keys. The goal is an honest, explorable illustration of how forecasters think about
-              uncertainty — not a crystal ball.
+              {t("intro")}
             </p>
           </div>
         </Reveal>
@@ -100,7 +99,7 @@ export default function AboutSection() {
           {METHODS.map((m, i) => {
             const Icon = m.icon;
             return (
-              <Reveal key={m.title} delay={i * 70}>
+              <Reveal key={m.key} delay={i * 70}>
                 <div className="h-full rounded-2xl border border-line bg-panel/60 p-5 sm:p-6">
                   <span
                     className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/5 dark:border-white/5"
@@ -108,8 +107,8 @@ export default function AboutSection() {
                   >
                     <Icon className="h-5 w-5" />
                   </span>
-                  <h3 className="mt-4 font-display text-lg font-semibold text-slate-900 dark:text-white">{m.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-500">{m.text(money)}</p>
+                  <h3 className="mt-4 font-display text-lg font-semibold text-slate-900 dark:text-white">{t(`methods.${m.key}.title`)}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-500">{m.text(money, t)}</p>
                 </div>
               </Reveal>
             );
@@ -121,12 +120,11 @@ export default function AboutSection() {
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 text-teal-400 dark:text-teal-300" />
               <h3 className="font-display text-base font-semibold text-slate-900 dark:text-white">
-                Public data & reasoning sources
+                {t("sourcesTitle")}
               </h3>
             </div>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-500">
-              Base prices, growth rates, regional differentials and driver narratives are grounded
-              in publicly available research.
+              {t("sourcesText")}
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               {SOURCES.map((s) => (
@@ -143,12 +141,11 @@ export default function AboutSection() {
 
         <Reveal delay={280}>
           <p className="mt-8 text-center text-sm text-slate-700 dark:text-slate-500">
-            Want to run your own scenarios? Press{" "}
+            {t("ctaBefore")}{" "}
             <kbd className="rounded border border-line bg-panel px-2 py-0.5 font-mono text-xs text-teal-400 dark:text-teal-300">
               /
             </kbd>{" "}
-            to jump to the horizon slider and watch the cards, chart, regions and factor grid respond
-            in real time.
+            {t("ctaAfter")}
           </p>
         </Reveal>
       </div>

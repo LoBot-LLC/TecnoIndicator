@@ -1,0 +1,14 @@
+{
+  "indexAria": "Chỉ số thị trường",
+  "indexLabel": "Chỉ số thị trường",
+  "loading": "Đang tải phân tích…",
+  "fuelLevy": "Phụ thu nhiên liệu",
+  "fuelLevyHint": "nhiên liệu bán lẻ so với mốc",
+  "powerTariff": "Giá điện",
+  "powerTariffHint": "điện điều chỉnh theo lưới",
+  "waterScarcity": "Khan hiếm nước",
+  "waterScarcityHint": "nước điều chỉnh theo khan hiếm",
+  "brent": "DẦU THÔ BRENT",
+  "power": "ĐIỆN TOÀN CẦU",
+  "water": "NƯỚC TOÀN CẦU"
+}

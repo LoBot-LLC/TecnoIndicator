@@ -1,0 +1,30 @@
+{
+  "eyebrow": "Các yếu tố & động lực chính",
+  "titleCurated": "Yếu tố do AI tuyển chọn",
+  "titleDefault": "Các yếu tố & động lực chính",
+  "descCurated": "AI tuyển chọn trực tiếp qua Kilo Gateway. Các yếu tố tự động cập nhật mỗi 2 phút.",
+  "descEmpty": "Yếu tố chỉ hiển thị khi có thể truy vết đến một URL nguồn đã tải về. Hiện chưa có yếu tố nào.",
+  "descDefault": "Mức độ liên quan tự động điều chỉnh khi bạn thay đổi thời hạn — thời hạn ngắn nhấn mạnh chính sách và tồn kho; thời hạn dài làm nổi bật chuyển dịch cấu trúc và khan hiếm.",
+  "status": "Trạng thái: {{status}}",
+  "loading": "Đang tải yếu tố…",
+  "emptyState": "Hiện chưa có yếu tố giá trực tiếp nào. Lý do chỉ được hiển thị khi có thể truy vết đến một URL nguồn đã tải về.",
+  "new": "Mới",
+  "impact": "Tác động: {{score}}/100",
+  "showMore": "Xem thêm",
+  "showLess": "Thu gọn",
+  "grounded": "Dựa trên giá trực tiếp của bảng điều khiển",
+  "pricesAsOf": "Giá tính đến {{date}}",
+  "relevanceAt": "Mức liên quan @ {{horizon}} năm",
+  "sourceUrl": "URL nguồn",
+  "openSource": "Mở nguồn",
+  "trend": {
+    "rising": "tăng",
+    "fading": "suy giảm",
+    "steady": "ổn định"
+  },
+  "magnitude": {
+    "High": "Cao",
+    "Medium": "Trung bình",
+    "Low": "Thấp"
+  }
+}

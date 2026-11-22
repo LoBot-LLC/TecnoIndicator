@@ -1,0 +1,20 @@
+{
+  "links": {
+    "forecast": "Pronóstico",
+    "regions": "Regiones",
+    "factors": "Factores",
+    "about": "Acerca de"
+  },
+  "primaryNav": "Principal",
+  "mobileNav": "Móvil",
+  "export": "Exportar",
+  "chartPng": "Gráfico como PNG",
+  "dataCsv": "Datos como CSV",
+  "dataMd": "Datos como MD",
+  "downloadPng": "Descargar gráfico como PNG",
+  "downloadCsv": "Descargar datos como CSV",
+  "downloadMd": "Descargar datos como Markdown",
+  "viewSource": "Ver código fuente en GitHub",
+  "openMenu": "Abrir menú",
+  "closeMenu": "Cerrar menú"
+}

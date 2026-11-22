@@ -1,0 +1,20 @@
+{
+  "links": {
+    "forecast": "Dự báo",
+    "regions": "Khu vực",
+    "factors": "Yếu tố",
+    "about": "Giới thiệu"
+  },
+  "primaryNav": "Chính",
+  "mobileNav": "Di động",
+  "export": "Xuất",
+  "chartPng": "Biểu đồ dạng PNG",
+  "dataCsv": "Dữ liệu dạng CSV",
+  "dataMd": "Dữ liệu dạng MD",
+  "downloadPng": "Tải biểu đồ dạng PNG",
+  "downloadCsv": "Tải dữ liệu dạng CSV",
+  "downloadMd": "Tải dữ liệu dạng Markdown",
+  "viewSource": "Xem mã nguồn trên GitHub",
+  "openMenu": "Mở menu",
+  "closeMenu": "Đóng menu"
+}

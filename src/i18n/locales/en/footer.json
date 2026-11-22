@@ -1,0 +1,20 @@
+{
+  "description": "LoBot LLC is a Vietnamese AI-native startup that creates business solutions enabling large enterprises to make future-ready strategic decisions.",
+  "githubAria": "LoBot LLC on GitHub",
+  "linkedinAria": "LoBot LLC on LinkedIn",
+  "companyAria": "Visit LoBot LLC company website",
+  "navAria": "Footer",
+  "navigate": "Navigate",
+  "resources": "Resources",
+  "forecast": "Forecast",
+  "regions": "Regions",
+  "factors": "Factors",
+  "about": "About",
+  "downloadPng": "Download chart (PNG)",
+  "downloadCsv": "Download data (CSV)",
+  "regionalEvaluation": "Regional evaluation",
+  "liveWater": "Live water price",
+  "copyright": "LoBot, LLC - All rights reserved",
+  "lastUpdated": "Last updated:",
+  "publicDrivers": "Model uses publicly available drivers."
+}

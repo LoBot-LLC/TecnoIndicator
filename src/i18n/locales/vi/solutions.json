@@ -1,0 +1,52 @@
+{
+  "eyebrow": "Giải pháp AI",
+  "title": "3 chiến lược có thể triển khai",
+  "description": "Giải pháp do AI tạo ra, điều chỉnh theo các lý do động hiện tại, giúp chủ doanh nghiệp và lãnh đạo đưa ra quyết định logistics và kinh doanh tốt hơn. Giải pháp tự động cập nhật khi các yếu tố thị trường thay đổi.",
+  "statusAi": "Do AI tạo",
+  "statusFallback": "Phương án dự phòng tĩnh",
+  "confidence": "Độ tin cậy {{value}}%",
+  "aiBadge": "Do AI tạo từ cửa sổ yếu tố trực tiếp + bằng chứng TinyFish",
+  "sources": "Nguồn: {{list}}",
+  "linkedFactors": "Yếu tố liên quan",
+  "empty": "Chưa có giải pháp nào. AI đang tuyển chọn.",
+  "strategy": {
+    "resilience": "khả năng chống chịu",
+    "cost": "chi phí",
+    "strategy": "chiến lược"
+  },
+  "fallback": {
+    "secureSupply": "Đảm bảo nguồn cung trước {{factor}}",
+    "optimizeEfficiency": "Tối ưu hiệu quả trước {{factor}}",
+    "diversify": "Đa dạng hóa nguồn {{commodity}} để giảm rủi ro cung ứng",
+    "inventory": "Xây dựng đệm tồn kho {{days}}",
+    "monitorWeekly": "Theo dõi xu hướng {{factor}} hằng tuần",
+    "negotiate": "Đàm phán hợp đồng linh hoạt với {{term}}",
+    "days": {
+      "high": "30-60 ngày",
+      "low": "15-30 ngày"
+    },
+    "terms": {
+      "high": "bảo vệ giá",
+      "low": "giá theo bậc"
+    },
+    "captureSavings": "Tiết kiệm nhờ {{factor}}",
+    "manageCosts": "Quản lý chi phí {{factor}} một cách chiến lược",
+    "demand": "Triển khai {{mode}} nhu cầu đối với {{commodities}}",
+    "modes": {
+      "down": "dịch chuyển",
+      "up": "tối ưu hóa"
+    },
+    "altSources": "Tìm kiếm nguồn thay thế cho {{commodities}}",
+    "trackPricing": "Theo dõi giá {{factor}} và điều chỉnh việc mua hàng tương ứng",
+    "utilize": "Sử dụng {{method}}",
+    "methods": {
+      "high": "phòng hộ tài chính",
+      "low": "tận dụng thời điểm trên thị trường giao ngay"
+    },
+    "longTerm": "Định vị cho xu hướng {{factor}} dài hạn",
+    "efficiencyTech": "Đầu tư vào công nghệ tiết kiệm {{commodities}}",
+    "regulatory": "Theo dõi thay đổi quy định ảnh hưởng đến {{factor}}",
+    "scenarios": "Xây dựng kịch bản cho triển vọng {{factor}} trung hạn ({{bias}})",
+    "stakeholders": "Làm việc với các bên liên quan trong lĩnh vực {{category}} để có thông tin sớm"
+  }
+}

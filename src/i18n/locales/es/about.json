@@ -1,0 +1,27 @@
+{
+  "kicker": "Transparencia",
+  "title": "Sobre el modelo",
+  "intro": "LoBot LLC es una demostración de visualización de datos front-end moderna: cada cifra se calcula en su navegador a partir de factores públicamente conocidos, sin backend ni claves de API. El objetivo es una ilustración honesta y explorable de cómo los analistas piensan sobre la incertidumbre, no una bola de cristal.",
+  "methods": {
+    "base": {
+      "title": "Tendencia base",
+      "text": "Cada serie parte de un precio de mercado realista (Brent en torno a {{brent}}/bbl, electricidad global cerca de {{power}}/MWh y agua global cerca de {{water}}/m³) y luego se compone con una TCAC estructural de 3,8–5,0 % según la materia prima. Los modos regionales reasignan a WTI, Dubái/Omán, WAF y tarifas minoristas locales."
+    },
+    "volatility": {
+      "title": "Bandas de volatilidad",
+      "text": "Los escenarios bajo y alto se amplían con la raíz cuadrada del tiempo, reflejando cómo crece de verdad la incertidumbre del pronóstico. A un horizonte de 10 años, las bandas abarcan aproximadamente ±22–34 % alrededor de la trayectoria media, con ajustes de volatilidad regional más altos en África y Asia."
+    },
+    "factors": {
+      "title": "Ajustes por factores",
+      "text": "Doce impulsores investigados, desde la política de la OPEP+ hasta la escasez de agua, aportan cada uno una pequeña deriva que aumenta a lo largo del horizonte, de modo que el modelo sigue siendo explicable y no una caja negra."
+    },
+    "regions": {
+      "title": "Evaluación de cinco regiones",
+      "text": "América, Europa, Asia, África y Oceanía se evalúan en vivo con marcadores petroleros respaldados por investigación y referencias minoristas de electricidad y agua de 2026 (electricidad en Europa y Oceanía ~{{europe}}/kWh, Asia ~{{asia}}/kWh, América en rango medio)."
+    }
+  },
+  "sourcesTitle": "Datos públicos y fuentes de razonamiento",
+  "sourcesText": "Los precios base, las tasas de crecimiento, los diferenciales regionales y las narrativas de factores se basan en investigación de acceso público.",
+  "ctaBefore": "¿Quiere ejecutar sus propios escenarios? Pulse",
+  "ctaAfter": "para ir al control deslizante de horizonte y ver cómo reaccionan en tiempo real las tarjetas, el gráfico, las regiones y la cuadrícula de factores."
+}

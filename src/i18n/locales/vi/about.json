@@ -1,0 +1,27 @@
+{
+  "kicker": "Minh bạch",
+  "title": "Về mô hình",
+  "intro": "LoBot LLC là bản trình diễn trực quan hóa dữ liệu front-end hiện đại: mọi con số đều được tính ngay trên trình duyệt của bạn từ các động lực được công bố công khai, không có backend và không cần khóa API. Mục tiêu là một minh họa trung thực, có thể khám phá về cách các nhà dự báo nhìn nhận bất định — không phải quả cầu pha lê.",
+  "methods": {
+    "base": {
+      "title": "Xu hướng cơ sở",
+      "text": "Mỗi chuỗi bắt đầu từ giá thị trường thực tế — Brent khoảng {{brent}}/thùng, điện toàn cầu khoảng {{power}}/MWh và nước toàn cầu khoảng {{water}}/m³ — sau đó tăng trưởng kép với CAGR cấu trúc 3,8–5,0% tùy hàng hóa. Các chế độ khu vực ánh xạ sang WTI, Dubai/Oman, WAF và biểu giá bán lẻ địa phương."
+    },
+    "volatility": {
+      "title": "Dải biến động",
+      "text": "Các kịch bản thấp và cao mở rộng theo căn bậc hai của thời gian, phản ánh đúng việc bất định dự báo tăng dần. Với kỳ hạn 10 năm, các dải dao động khoảng ±22–34% quanh đường giá trung bình, trong đó Châu Phi và Châu Á có điều chỉnh biến động khu vực cao hơn."
+    },
+    "factors": {
+      "title": "Điều chỉnh theo yếu tố",
+      "text": "Mười hai động lực đã được nghiên cứu — từ chính sách OPEC+ đến khan hiếm nước — mỗi động lực đóng góp một độ trôi nhỏ tăng dần theo kỳ hạn, nhờ vậy mô hình luôn giải thích được thay vì là hộp đen."
+    },
+    "regions": {
+      "title": "Đánh giá 5 khu vực",
+      "text": "Châu Mỹ, Châu Âu, Châu Á, Châu Phi và Châu Đại Dương được chấm điểm trực tiếp dựa trên các mốc giá dầu có nghiên cứu hỗ trợ và chuẩn giá điện/nước bán lẻ năm 2026 (điện Châu Âu & Châu Đại Dương ~{{europe}}/kWh, Châu Á ~{{asia}}/kWh, Châu Mỹ ở mức trung bình)."
+    }
+  },
+  "sourcesTitle": "Dữ liệu công khai & nguồn lập luận",
+  "sourcesText": "Giá cơ sở, tốc độ tăng trưởng, chênh lệch khu vực và các luận giải về động lực đều dựa trên nghiên cứu công khai.",
+  "ctaBefore": "Muốn chạy kịch bản của riêng bạn? Nhấn",
+  "ctaAfter": "để chuyển đến thanh trượt kỳ hạn và xem thẻ, biểu đồ, khu vực và lưới yếu tố phản hồi theo thời gian thực."
+}

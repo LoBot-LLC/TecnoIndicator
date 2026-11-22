@@ -1,0 +1,14 @@
+{
+  "kicker": "Tương quan yếu tố–giá",
+  "title": "Ma trận tương quan",
+  "description": "Tương quan Pearson giữa chuỗi đóng góp của mỗi yếu tố hàng đầu và đường giá dự báo, với kỳ hạn {{horizon}} năm tại {{region}}. Chọn một yếu tố để xem chi tiết theo khu vực.",
+  "increaseHorizon": "Tăng kỳ hạn lên ít nhất 2 năm để tính tương quan.",
+  "noFactors": "Hiện không có yếu tố nào để tính tương quan.",
+  "gridLabel": "Ma trận tương quan giá theo yếu tố",
+  "factor": "Yếu tố",
+  "cellLabel": "{{factor}} so với {{commodity}}: {{r}}",
+  "notAvailable": "n/a",
+  "detailTitle": "{{name}} — tương quan theo khu vực",
+  "vs": "so với",
+  "openRegion": "Mở {{region}} trong khu vực (tương quan {{r}})"
+}

@@ -1,0 +1,14 @@
+{
+  "indexAria": "Market index",
+  "indexLabel": "Market index",
+  "loading": "Loading analytics…",
+  "fuelLevy": "Fuel levy",
+  "fuelLevyHint": "retail fuel vs baseline",
+  "powerTariff": "Power tariff",
+  "powerTariffHint": "grid-adjusted electricity",
+  "waterScarcity": "Water scarcity",
+  "waterScarcityHint": "scarcity-adjusted water",
+  "brent": "BRENT CRUDE",
+  "power": "GLOBAL POWER",
+  "water": "GLOBAL WATER"
+}

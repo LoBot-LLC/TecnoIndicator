@@ -1,0 +1,24 @@
+{
+  "liveBadge": "Live · Global commodity intelligence",
+  "description": "Real-time 10-year forecasts for global <oil>oil</oil>, <electricity>electricity</electricity> & <water>water</water> prices — with scenario bands, five-region evaluation, driver analysis and exportable analytics.",
+  "allFigures": "All figures in {{currency}} · 5 regions",
+  "startForecast": "Start Forecast",
+  "evaluateRegions": "Evaluate Regions",
+  "exploreDrivers": "Explore Drivers",
+  "stats": {
+    "commodities": "Commodities",
+    "worldRegions": "World regions",
+    "yearHorizon": "Year horizon",
+    "keyDrivers": "Key drivers"
+  },
+  "marketSnapshot": "Market snapshot",
+  "liveFeed": "Live global feed",
+  "live": "Live",
+  "trajectory": "{{horizon}}-year trajectory",
+  "footerBadge": "Model runs 100% in-browser · Americas → Oceania",
+  "commodities": {
+    "oil": "Brent Crude",
+    "electricity": "Electricity",
+    "water": "Water"
+  }
+}

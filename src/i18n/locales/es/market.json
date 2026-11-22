@@ -1,0 +1,14 @@
+{
+  "indexAria": "Índice de mercado",
+  "indexLabel": "Índice de mercado",
+  "loading": "Cargando analítica…",
+  "fuelLevy": "Recargo de combustible",
+  "fuelLevyHint": "combustible minorista vs. base",
+  "powerTariff": "Tarifa eléctrica",
+  "powerTariffHint": "electricidad ajustada a la red",
+  "waterScarcity": "Escasez de agua",
+  "waterScarcityHint": "agua ajustada por escasez",
+  "brent": "CRUDO BRENT",
+  "power": "ENERGÍA GLOBAL",
+  "water": "AGUA GLOBAL"
+}

@@ -1,0 +1,30 @@
+{
+  "eyebrow": "Key factors & drivers",
+  "titleCurated": "AI-Curated Factors",
+  "titleDefault": "Key factors & drivers",
+  "descCurated": "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes.",
+  "descEmpty": "Factors appear only when they can be traced to a fetched source URL. None are available right now.",
+  "descDefault": "Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity.",
+  "status": "Status: {{status}}",
+  "loading": "Loading factors…",
+  "emptyState": "No live price factors are available right now. Reasons are only shown when they can be traced to a fetched source URL.",
+  "new": "New",
+  "impact": "Impact: {{score}}/100",
+  "showMore": "Show more",
+  "showLess": "Show less",
+  "grounded": "Grounded in live dashboard prices",
+  "pricesAsOf": "Prices as of {{date}}",
+  "relevanceAt": "Relevance @ {{horizon}}y",
+  "sourceUrl": "Source URL",
+  "openSource": "Open source",
+  "trend": {
+    "rising": "rising",
+    "fading": "fading",
+    "steady": "steady"
+  },
+  "magnitude": {
+    "High": "High",
+    "Medium": "Medium",
+    "Low": "Low"
+  }
+}

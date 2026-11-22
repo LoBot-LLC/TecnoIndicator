@@ -1,0 +1,77 @@
+{
+  "eyebrow": "Inteligencia regional",
+  "title": "Evaluar 5 regiones del mundo",
+  "intro": "Precios en vivo de petróleo, electricidad y agua asignados a América, Europa, Asia, África y Oceanía mediante marcadores regionales respaldados por investigación: WTI, Dated Brent, Dubái/Omán, crudo dulce de África Occidental y crudo de paridad de importación, además de tarifas minoristas de electricidad y tarifas municipales de agua. Las puntuaciones se actualizan automáticamente con el flujo en vivo.",
+  "export": {
+    "trigger": "Exportar región",
+    "csv": "Exportar como CSV",
+    "csvDesc": "Tabla de precios por región (.csv)",
+    "md": "Exportar como Markdown",
+    "mdDesc": "Informe de la región con factores (.md)"
+  },
+  "insights": {
+    "bestScore": "Mejor puntuación compuesta",
+    "lowestPower": "Tarifa de electricidad más baja",
+    "highestWater": "Tarifa de agua más alta"
+  },
+  "commodity": {
+    "oil": "Petróleo",
+    "electricity": "Electricidad",
+    "water": "Agua"
+  },
+  "outlook": {
+    "bullish": "alcista",
+    "bearish": "bajista",
+    "neutral": "neutral"
+  },
+  "outlookLabel": "Perspectiva {{outlook}}",
+  "vsGlobalPower": "vs. electricidad global",
+  "comparison": {
+    "title": "Comparación entre regiones",
+    "desc": "Precio spot frente al pronóstico promedio a {{horizon}} años por región",
+    "chartLabel": "Gráfico de comparación de precios regionales",
+    "spot": "Spot {{year}}",
+    "forecast": "Pronóstico {{year}}"
+  },
+  "deepDive": {
+    "eyebrow": "Análisis detallado",
+    "spot": "Spot",
+    "avg": "Promedio {{year}}",
+    "vsWorld": "vs. mundo",
+    "drivers": "Principales impulsores regionales"
+  },
+  "factors": {
+    "ai": "Factores de IA",
+    "regional": "Factores regionales",
+    "loading": "Cargando…",
+    "count": "{{n}} factores",
+    "empty": "No hay factores regionales en vivo disponibles en este momento para {{region}}. Los motivos solo aparecen cuando se pueden rastrear hasta una URL de fuente obtenida.",
+    "new": "Nuevo",
+    "impact": "Impacto: {{score}}/100",
+    "showMore": "Mostrar más",
+    "showLess": "Mostrar menos",
+    "grounded": "Respaldado por precios del panel en vivo",
+    "pricesAsOf": "Precios al {{date}}",
+    "sourceUrl": "URL de la fuente",
+    "openSource": "Abrir fuente"
+  },
+  "magnitude": {
+    "High": "Alta",
+    "Medium": "Media",
+    "Low": "Baja"
+  },
+  "openForecast": "Abrir {{region}} en el estudio de pronósticos",
+  "scoreboard": {
+    "title": "Tablero regional",
+    "desc": "Spots en vivo, promedios a {{horizon}} años y prima/descuento frente al global · ordenado por puntuación compuesta de asequibilidad",
+    "region": "Región",
+    "oilSpot": "Petróleo spot",
+    "oilYear": "Petróleo {{year}}",
+    "powerSpot": "Electricidad spot",
+    "powerYear": "Electricidad {{year}}",
+    "waterSpot": "Agua spot",
+    "waterYear": "Agua {{year}}",
+    "score": "Puntuación",
+    "outlook": "Perspectiva"
+  }
+}

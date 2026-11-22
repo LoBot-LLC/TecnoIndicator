@@ -1,0 +1,15 @@
+{
+  "title": "Settings",
+  "language": "Language",
+  "fontsAndThemes": "Fonts & themes",
+  "colorTheme": "Color theme",
+  "font": "Font",
+  "fontPreview": "Preview: The quick brown fox — 012345",
+  "unitConversion": "Unit conversion",
+  "currency": "Currency",
+  "searchCurrency": "Search currency…",
+  "searchCurrencies": "Search currencies",
+  "lengthVolume": "Length / volume",
+  "energy": "Energy",
+  "unitsNote": "Unit conversions update in real time. Currency selection reloads to apply across all data."
+}

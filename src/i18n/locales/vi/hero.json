@@ -1,0 +1,24 @@
+{
+  "liveBadge": "Trực tiếp · Thông tin hàng hóa toàn cầu",
+  "description": "Dự báo thời gian thực 10 năm cho giá <oil>dầu</oil>, <electricity>điện</electricity> & <water>nước</water> toàn cầu — với các dải kịch bản, đánh giá 5 khu vực, phân tích động lực và dữ liệu có thể xuất.",
+  "allFigures": "Tất cả số liệu tính theo {{currency}} · 5 khu vực",
+  "startForecast": "Bắt đầu dự báo",
+  "evaluateRegions": "Đánh giá khu vực",
+  "exploreDrivers": "Khám phá động lực",
+  "stats": {
+    "commodities": "Hàng hóa",
+    "worldRegions": "Khu vực toàn cầu",
+    "yearHorizon": "Kỳ hạn dự báo",
+    "keyDrivers": "Động lực chính"
+  },
+  "marketSnapshot": "Tổng quan thị trường",
+  "liveFeed": "Nguồn dữ liệu toàn cầu trực tiếp",
+  "live": "Trực tiếp",
+  "trajectory": "Lộ trình {{horizon}} năm",
+  "footerBadge": "Mô hình chạy 100% trên trình duyệt · Châu Mỹ → Châu Đại Dương",
+  "commodities": {
+    "oil": "Dầu Brent",
+    "electricity": "Điện",
+    "water": "Nước"
+  }
+}

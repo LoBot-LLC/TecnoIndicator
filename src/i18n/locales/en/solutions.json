@@ -1,0 +1,52 @@
+{
+  "eyebrow": "AI solutions",
+  "title": "3 actionable strategies",
+  "description": "AI-generated solutions adapted from current dynamic reasons to help business owners and executives make better logistical and business decisions. Solutions update automatically as market factors change.",
+  "statusAi": "AI-generated",
+  "statusFallback": "Static fallback",
+  "confidence": "{{value}}% confidence",
+  "aiBadge": "AI-generated from live factor window + TinyFish evidence",
+  "sources": "Sources: {{list}}",
+  "linkedFactors": "Linked factors",
+  "empty": "No solutions available yet. AI curation in progress.",
+  "strategy": {
+    "resilience": "resilience",
+    "cost": "cost",
+    "strategy": "strategy"
+  },
+  "fallback": {
+    "secureSupply": "Secure supply against {{factor}}",
+    "optimizeEfficiency": "Optimize efficiency for {{factor}}",
+    "diversify": "Diversify {{commodity}} sources to mitigate supply risk",
+    "inventory": "Build {{days}} inventory buffers",
+    "monitorWeekly": "Monitor {{factor}} trends weekly",
+    "negotiate": "Negotiate flexible contracts with {{term}}",
+    "days": {
+      "high": "30-60 days",
+      "low": "15-30 days"
+    },
+    "terms": {
+      "high": "price protection",
+      "low": "tiered pricing"
+    },
+    "captureSavings": "Capture savings through {{factor}}",
+    "manageCosts": "Manage {{factor}} costs strategically",
+    "demand": "Implement demand {{mode}} for {{commodities}}",
+    "modes": {
+      "down": "shifting",
+      "up": "optimization"
+    },
+    "altSources": "Explore alternative sources for {{commodities}}",
+    "trackPricing": "Track {{factor}} pricing and adjust purchasing accordingly",
+    "utilize": "Utilize {{method}}",
+    "methods": {
+      "high": "financial hedging",
+      "low": "spot market timing"
+    },
+    "longTerm": "Position for long-term {{factor}} trends",
+    "efficiencyTech": "Invest in {{commodities}} efficiency technologies",
+    "regulatory": "Monitor regulatory changes affecting {{factor}}",
+    "scenarios": "Develop scenario plans for {{bias}}-term {{factor}} outlook",
+    "stakeholders": "Engage with {{category}} stakeholders for early insights"
+  }
+}

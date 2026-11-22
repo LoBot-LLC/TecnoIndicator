@@ -1,0 +1,77 @@
+{
+  "eyebrow": "Regional intelligence",
+  "title": "Evaluate 5 world regions",
+  "intro": "Live oil, electricity and water prices mapped to Americas, Europe, Asia, Africa and Oceania using research-backed regional markers — WTI, Dated Brent, Dubai/Oman, West African sweet and import-parity crude, plus retail power and municipal water tariffs. Scores update automatically with the live feed.",
+  "export": {
+    "trigger": "Export region",
+    "csv": "Export as CSV",
+    "csvDesc": "Region price table (.csv)",
+    "md": "Export as Markdown",
+    "mdDesc": "Region report with factors (.md)"
+  },
+  "insights": {
+    "bestScore": "Best composite score",
+    "lowestPower": "Lowest power tariff",
+    "highestWater": "Highest water tariff"
+  },
+  "commodity": {
+    "oil": "Oil",
+    "electricity": "Power",
+    "water": "Water"
+  },
+  "outlook": {
+    "bullish": "bullish",
+    "bearish": "bearish",
+    "neutral": "neutral"
+  },
+  "outlookLabel": "{{outlook}} outlook",
+  "vsGlobalPower": "vs global power",
+  "comparison": {
+    "title": "Cross-region comparison",
+    "desc": "Spot vs {{horizon}}-year average forecast by region",
+    "chartLabel": "Regional price comparison chart",
+    "spot": "Spot {{year}}",
+    "forecast": "Forecast {{year}}"
+  },
+  "deepDive": {
+    "eyebrow": "Deep dive",
+    "spot": "Spot",
+    "avg": "{{year}} avg",
+    "vsWorld": "vs world",
+    "drivers": "Key regional drivers"
+  },
+  "factors": {
+    "ai": "AI Factors",
+    "regional": "Regional factors",
+    "loading": "Loading…",
+    "count": "{{n}} factors",
+    "empty": "No live regional factors are available right now for {{region}}. Reasons appear only when traceable to a fetched source URL.",
+    "new": "New",
+    "impact": "Impact: {{score}}/100",
+    "showMore": "Show more",
+    "showLess": "Show less",
+    "grounded": "Grounded in live dashboard prices",
+    "pricesAsOf": "Prices as of {{date}}",
+    "sourceUrl": "Source URL",
+    "openSource": "Open source"
+  },
+  "magnitude": {
+    "High": "High",
+    "Medium": "Medium",
+    "Low": "Low"
+  },
+  "openForecast": "Open {{region}} in forecast studio",
+  "scoreboard": {
+    "title": "Regional scoreboard",
+    "desc": "Live spots, {{horizon}}-year averages and premium/discount vs global · ranked by composite affordability score",
+    "region": "Region",
+    "oilSpot": "Oil spot",
+    "oilYear": "Oil {{year}}",
+    "powerSpot": "Power spot",
+    "powerYear": "Power {{year}}",
+    "waterSpot": "Water spot",
+    "waterYear": "Water {{year}}",
+    "score": "Score",
+    "outlook": "Outlook"
+  }
+}

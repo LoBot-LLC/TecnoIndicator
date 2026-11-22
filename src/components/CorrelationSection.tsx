@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import Reveal from "./Reveal";
 import {
   COMMODITIES,
@@ -46,12 +47,14 @@ function factorPool(props: CorrelationSectionProps): Factor[] {
   return [...FACTORS, ...Object.values(REGIONAL_FACTORS).flat()];
 }
 
-function formatR(r: number | null): string {
-  return r === null ? "n/a" : r.toFixed(2);
+function formatR(r: number | null, na: string): string {
+  return r === null ? na : r.toFixed(2);
 }
 
 export default function CorrelationSection(props: CorrelationSectionProps) {
   const { horizon, region, onRegion } = props;
+  const { t } = useTranslation("correlation");
+  const na = t("notAvailable");
   const prices = props.prices ?? DEFAULT_PRICES;
 
   const pool = useMemo(() => factorPool(props), [props.globalFactors, props.regionalFactors]);
@@ -102,24 +105,20 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
         <Reveal>
           <div className="mb-8 max-w-2xl">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
-              Factor–price correlation
+              {t("kicker")}
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              Correlation matrix
+              {t("title")}
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-              Pearson correlation between each top factor&apos;s contribution series and the
-              forecasted price path, for {horizon}-year horizon in {region}. Select a factor to
-              see per-region detail.
+              {t("description", { horizon, region })}
             </p>
           </div>
         </Reveal>
 
         {horizon < 2 || topFactors.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400" aria-live="polite">
-            {horizon < 2
-              ? "Increase the horizon to at least 2 years to compute correlations."
-              : "No factors available for correlation right now."}
+            {horizon < 2 ? t("increaseHorizon") : t("noFactors")}
           </p>
         ) : (
           <>
@@ -127,14 +126,14 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
               <div className="overflow-x-auto rounded-2xl border border-line bg-panel/60">
                 <div
                   role="grid"
-                  aria-label="Factor price correlation matrix"
+                  aria-label={t("gridLabel")}
                   aria-rowcount={topFactors.length + 1}
                   aria-colcount={COMMODITIES.length + 1}
                   className="min-w-[560px]"
                 >
                   <div role="row" className="grid grid-cols-[1.4fr_repeat(3,1fr)] border-b border-line bg-base/40">
                     <div role="columnheader" className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
-                      Factor
+                      {t("factor")}
                     </div>
                     {COMMODITIES.map((c) => (
                       <div
@@ -161,7 +160,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                             <button
                               type="button"
                               onClick={() => setSelectedId(f.id)}
-                              aria-label={`${f.name} vs ${c.short}: ${formatR(r)}`}
+                              aria-label={t("cellLabel", { factor: f.name, commodity: c.short, r: formatR(r, na) })}
                               aria-pressed={active}
                               className={`w-full rounded-lg px-2 py-1.5 font-display text-xs font-bold tabular-nums transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60 ${
                                 active ? "ring-2 ring-teal-400/60" : "hover:brightness-110"
@@ -171,7 +170,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                                 color: r === null ? undefined : Math.abs(r) > 0.5 ? "#0b1220" : undefined,
                               }}
                             >
-                              {formatR(r)}
+                              {formatR(r, na)}
                             </button>
                           </div>
                         );
@@ -185,9 +184,9 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
             {selectedFactor && (
               <div className="mt-6 rounded-2xl border border-line bg-panel/60 p-5 sm:p-6" aria-live="polite">
                 <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">
-                  {selectedFactor.name} — per-region correlation
+                  {t("detailTitle", { name: selectedFactor.name })}
                   <span className="ml-2 text-xs font-normal text-slate-500">
-                    vs {(selectedFactor.commodities[0] ?? "oil").toUpperCase()}
+                    {t("vs")} {(selectedFactor.commodities[0] ?? "oil").toUpperCase()}
                   </span>
                 </h3>
                 <div className="mt-4 space-y-2">
@@ -199,7 +198,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                         key={d.regionId}
                         type="button"
                         onClick={() => scrollToRegions(d.regionId)}
-                        aria-label={`Open ${meta?.name ?? d.regionId} in regions (correlation ${formatR(d.r)})`}
+                        aria-label={t("openRegion", { region: meta?.name ?? d.regionId, r: formatR(d.r, na) })}
                         className="group flex w-full items-center gap-3 rounded-xl border border-line bg-base/40 px-3 py-2 text-left transition-all hover:border-teal-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60"
                       >
                         <span className="w-28 shrink-0 text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -212,7 +211,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                           />
                         </span>
                         <span className="w-14 shrink-0 text-right font-display text-xs font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                          {formatR(d.r)}
+                          {formatR(d.r, na)}
                         </span>
                       </button>
                     );

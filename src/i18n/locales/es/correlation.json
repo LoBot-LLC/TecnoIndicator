@@ -1,0 +1,14 @@
+{
+  "kicker": "Correlación factor–precio",
+  "title": "Matriz de correlación",
+  "description": "Correlación de Pearson entre la serie de contribución de cada factor principal y la trayectoria de precio pronosticada, para un horizonte de {{horizon}} años en {{region}}. Seleccione un factor para ver el detalle por región.",
+  "increaseHorizon": "Aumente el horizonte a al menos 2 años para calcular las correlaciones.",
+  "noFactors": "No hay factores disponibles para la correlación en este momento.",
+  "gridLabel": "Matriz de correlación factor-precio",
+  "factor": "Factor",
+  "cellLabel": "{{factor}} vs {{commodity}}: {{r}}",
+  "notAvailable": "n/d",
+  "detailTitle": "{{name}} — correlación por región",
+  "vs": "vs",
+  "openRegion": "Abrir {{region}} en regiones (correlación {{r}})"
+}

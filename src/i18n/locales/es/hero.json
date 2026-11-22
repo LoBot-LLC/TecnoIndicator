@@ -1,0 +1,24 @@
+{
+  "liveBadge": "En vivo · Inteligencia global de materias primas",
+  "description": "Pronósticos en tiempo real a 10 años para los precios globales del <oil>petróleo</oil>, la <electricity>electricidad</electricity> y el <water>agua</water>, con bandas de escenarios, evaluación de cinco regiones, análisis de factores y analítica exportable.",
+  "allFigures": "Todas las cifras en {{currency}} · 5 regiones",
+  "startForecast": "Iniciar pronóstico",
+  "evaluateRegions": "Evaluar regiones",
+  "exploreDrivers": "Explorar factores",
+  "stats": {
+    "commodities": "Materias primas",
+    "worldRegions": "Regiones del mundo",
+    "yearHorizon": "Horizonte anual",
+    "keyDrivers": "Factores clave"
+  },
+  "marketSnapshot": "Resumen del mercado",
+  "liveFeed": "Fuente global en vivo",
+  "live": "En vivo",
+  "trajectory": "Trayectoria de {{horizon}} años",
+  "footerBadge": "El modelo funciona 100% en el navegador · América → Oceanía",
+  "commodities": {
+    "oil": "Crudo Brent",
+    "electricity": "Electricidad",
+    "water": "Agua"
+  }
+}

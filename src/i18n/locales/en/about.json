@@ -1,0 +1,27 @@
+{
+  "kicker": "Transparency",
+  "title": "About the model",
+  "intro": "LoBot LLC is a demonstration of modern front-end data visualization: every number is computed in your browser from publicly known drivers, with no backend and no API keys. The goal is an honest, explorable illustration of how forecasters think about uncertainty — not a crystal ball.",
+  "methods": {
+    "base": {
+      "title": "Base trend",
+      "text": "Each series starts from a realistic market price — Brent around {{brent}}/bbl, global power near {{power}}/MWh, and global water near {{water}}/m³ — then compounds at a structural CAGR of 3.8–5.0% depending on the commodity. Regional modes remap to WTI, Dubai/Oman, WAF and local retail tariffs."
+    },
+    "volatility": {
+      "title": "Volatility bands",
+      "text": "Low and high scenarios widen with the square root of time, reflecting how forecast uncertainty genuinely grows. At a 10-year horizon the bands span roughly ±22–34% around the average path, with Africa and Asia carrying higher regional vol adjustments."
+    },
+    "factors": {
+      "title": "Factor adjustments",
+      "text": "Twelve researched drivers — from OPEC+ policy to water scarcity — each contribute a small drift that ramps up over the horizon, so the model stays explainable rather than being a black box."
+    },
+    "regions": {
+      "title": "Five-region evaluation",
+      "text": "Americas, Europe, Asia, Africa and Oceania are scored live using research-backed oil markers and 2026 retail electricity/water benchmarks (Europe & Oceania power ~{{europe}}/kWh, Asia ~{{asia}}/kWh, Americas mid-range)."
+    }
+  },
+  "sourcesTitle": "Public data & reasoning sources",
+  "sourcesText": "Base prices, growth rates, regional differentials and driver narratives are grounded in publicly available research.",
+  "ctaBefore": "Want to run your own scenarios? Press",
+  "ctaAfter": "to jump to the horizon slider and watch the cards, chart, regions and factor grid respond in real time."
+}

@@ -1,0 +1,15 @@
+{
+  "title": "Configuración",
+  "language": "Idioma",
+  "fontsAndThemes": "Fuentes y temas",
+  "colorTheme": "Tema de color",
+  "font": "Fuente",
+  "fontPreview": "Vista previa: El veloz murciélago hindú comía feliz cardillo y kiwi — 012345",
+  "unitConversion": "Conversión de unidades",
+  "currency": "Moneda",
+  "searchCurrency": "Buscar moneda…",
+  "searchCurrencies": "Buscar monedas",
+  "lengthVolume": "Longitud / volumen",
+  "energy": "Energía",
+  "unitsNote": "Las conversiones de unidades se actualizan en tiempo real. Al cambiar la moneda, los datos se recargan para aplicarla a todo."
+}

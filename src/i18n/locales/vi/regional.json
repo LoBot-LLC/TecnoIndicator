@@ -1,0 +1,77 @@
+{
+  "eyebrow": "Phân tích khu vực",
+  "title": "Đánh giá 5 khu vực trên thế giới",
+  "intro": "Giá dầu, điện và nước trực tiếp được ánh xạ tới Châu Mỹ, Châu Âu, Châu Á, Châu Phi và Châu Đại Dương, dựa trên các mốc giá khu vực đã được nghiên cứu — WTI, Dated Brent, Dubai/Oman, dầu thô ngọt Tây Phi và dầu thô theo giá nhập khẩu, cùng biểu giá điện bán lẻ và nước đô thị. Điểm số tự động cập nhật theo nguồn dữ liệu trực tiếp.",
+  "export": {
+    "trigger": "Xuất khu vực",
+    "csv": "Xuất dạng CSV",
+    "csvDesc": "Bảng giá theo khu vực (.csv)",
+    "md": "Xuất dạng Markdown",
+    "mdDesc": "Báo cáo khu vực kèm các yếu tố (.md)"
+  },
+  "insights": {
+    "bestScore": "Điểm tổng hợp cao nhất",
+    "lowestPower": "Biểu giá điện thấp nhất",
+    "highestWater": "Biểu giá nước cao nhất"
+  },
+  "commodity": {
+    "oil": "Dầu",
+    "electricity": "Điện",
+    "water": "Nước"
+  },
+  "outlook": {
+    "bullish": "tăng giá",
+    "bearish": "giảm giá",
+    "neutral": "trung lập"
+  },
+  "outlookLabel": "Triển vọng {{outlook}}",
+  "vsGlobalPower": "so với điện toàn cầu",
+  "comparison": {
+    "title": "So sánh giữa các khu vực",
+    "desc": "Giá giao ngay so với dự báo trung bình {{horizon}} năm theo khu vực",
+    "chartLabel": "Biểu đồ so sánh giá theo khu vực",
+    "spot": "Giao ngay {{year}}",
+    "forecast": "Dự báo {{year}}"
+  },
+  "deepDive": {
+    "eyebrow": "Phân tích chuyên sâu",
+    "spot": "Giao ngay",
+    "avg": "TB {{year}}",
+    "vsWorld": "so với thế giới",
+    "drivers": "Động lực chính của khu vực"
+  },
+  "factors": {
+    "ai": "Yếu tố AI",
+    "regional": "Yếu tố khu vực",
+    "loading": "Đang tải…",
+    "count": "{{n}} yếu tố",
+    "empty": "Hiện chưa có yếu tố khu vực trực tiếp nào cho {{region}}. Lý do chỉ hiển thị khi có thể truy vết đến một URL nguồn đã tải về.",
+    "new": "Mới",
+    "impact": "Tác động: {{score}}/100",
+    "showMore": "Xem thêm",
+    "showLess": "Thu gọn",
+    "grounded": "Dựa trên giá trực tiếp của bảng điều khiển",
+    "pricesAsOf": "Giá tính đến {{date}}",
+    "sourceUrl": "URL nguồn",
+    "openSource": "Mở nguồn"
+  },
+  "magnitude": {
+    "High": "Cao",
+    "Medium": "Trung bình",
+    "Low": "Thấp"
+  },
+  "openForecast": "Mở {{region}} trong studio dự báo",
+  "scoreboard": {
+    "title": "Bảng xếp hạng khu vực",
+    "desc": "Giá giao ngay trực tiếp, trung bình {{horizon}} năm và chênh lệch so với toàn cầu · xếp hạng theo điểm khả năng chi trả tổng hợp",
+    "region": "Khu vực",
+    "oilSpot": "Dầu giao ngay",
+    "oilYear": "Dầu {{year}}",
+    "powerSpot": "Điện giao ngay",
+    "powerYear": "Điện {{year}}",
+    "waterSpot": "Nước giao ngay",
+    "waterYear": "Nước {{year}}",
+    "score": "Điểm",
+    "outlook": "Triển vọng"
+  }
+}

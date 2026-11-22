@@ -1,0 +1,14 @@
+{
+  "kicker": "Factor–price correlation",
+  "title": "Correlation matrix",
+  "description": "Pearson correlation between each top factor's contribution series and the forecasted price path, for {{horizon}}-year horizon in {{region}}. Select a factor to see per-region detail.",
+  "increaseHorizon": "Increase the horizon to at least 2 years to compute correlations.",
+  "noFactors": "No factors available for correlation right now.",
+  "gridLabel": "Factor price correlation matrix",
+  "factor": "Factor",
+  "cellLabel": "{{factor}} vs {{commodity}}: {{r}}",
+  "notAvailable": "n/a",
+  "detailTitle": "{{name}} — per-region correlation",
+  "vs": "vs",
+  "openRegion": "Open {{region}} in regions (correlation {{r}})"
+}

@@ -1,0 +1,30 @@
+{
+  "eyebrow": "Factores clave e impulsores",
+  "titleCurated": "Factores curados por IA",
+  "titleDefault": "Factores clave e impulsores",
+  "descCurated": "Curación en vivo por IA a través de Kilo Gateway. Los factores se actualizan automáticamente cada 2 minutos.",
+  "descEmpty": "Los factores solo aparecen cuando se pueden rastrear hasta una URL de fuente obtenida. Ahora mismo no hay ninguno disponible.",
+  "descDefault": "La relevancia se reajusta automáticamente al cambiar el horizonte: los horizontes cortos destacan la política y los inventarios; los largos, la transición estructural y la escasez.",
+  "status": "Estado: {{status}}",
+  "loading": "Cargando factores…",
+  "emptyState": "No hay factores de precios en vivo disponibles en este momento. Los motivos solo se muestran cuando se pueden rastrear hasta una URL de fuente obtenida.",
+  "new": "Nuevo",
+  "impact": "Impacto: {{score}}/100",
+  "showMore": "Mostrar más",
+  "showLess": "Mostrar menos",
+  "grounded": "Respaldado por precios del panel en vivo",
+  "pricesAsOf": "Precios al {{date}}",
+  "relevanceAt": "Relevancia @ {{horizon}}a",
+  "sourceUrl": "URL de la fuente",
+  "openSource": "Abrir fuente",
+  "trend": {
+    "rising": "al alza",
+    "fading": "en descenso",
+    "steady": "estable"
+  },
+  "magnitude": {
+    "High": "Alta",
+    "Medium": "Media",
+    "Low": "Baja"
+  }
+}

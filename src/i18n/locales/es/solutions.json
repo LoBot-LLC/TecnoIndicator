@@ -1,0 +1,52 @@
+{
+  "eyebrow": "Soluciones de IA",
+  "title": "3 estrategias accionables",
+  "description": "Soluciones generadas por IA, adaptadas a los motivos dinámicos actuales, para ayudar a dueños de negocios y directivos a tomar mejores decisiones logísticas y empresariales. Las soluciones se actualizan automáticamente a medida que cambian los factores del mercado.",
+  "statusAi": "Generado por IA",
+  "statusFallback": "Respaldo estático",
+  "confidence": "{{value}}% de confianza",
+  "aiBadge": "Generado por IA a partir de la ventana de factores en vivo + evidencia de TinyFish",
+  "sources": "Fuentes: {{list}}",
+  "linkedFactors": "Factores vinculados",
+  "empty": "Aún no hay soluciones disponibles. La curación por IA está en curso.",
+  "strategy": {
+    "resilience": "resiliencia",
+    "cost": "costo",
+    "strategy": "estrategia"
+  },
+  "fallback": {
+    "secureSupply": "Asegurar el suministro frente a {{factor}}",
+    "optimizeEfficiency": "Optimizar la eficiencia ante {{factor}}",
+    "diversify": "Diversificar las fuentes de {{commodity}} para mitigar el riesgo de suministro",
+    "inventory": "Crear colchones de inventario de {{days}}",
+    "monitorWeekly": "Vigilar semanalmente las tendencias de {{factor}}",
+    "negotiate": "Negociar contratos flexibles con {{term}}",
+    "days": {
+      "high": "30-60 días",
+      "low": "15-30 días"
+    },
+    "terms": {
+      "high": "protección de precio",
+      "low": "precios escalonados"
+    },
+    "captureSavings": "Capturar ahorros mediante {{factor}}",
+    "manageCosts": "Gestionar estratégicamente los costos de {{factor}}",
+    "demand": "Implementar {{mode}} de la demanda para {{commodities}}",
+    "modes": {
+      "down": "desplazamiento",
+      "up": "optimización"
+    },
+    "altSources": "Explorar fuentes alternativas para {{commodities}}",
+    "trackPricing": "Seguir los precios de {{factor}} y ajustar las compras en consecuencia",
+    "utilize": "Utilizar {{method}}",
+    "methods": {
+      "high": "coberturas financieras",
+      "low": "aprovechamiento del mercado spot"
+    },
+    "longTerm": "Posicionarse para las tendencias de {{factor}} a largo plazo",
+    "efficiencyTech": "Invertir en tecnologías de eficiencia para {{commodities}}",
+    "regulatory": "Vigilar los cambios regulatorios que afectan a {{factor}}",
+    "scenarios": "Elaborar planes de escenarios para la perspectiva de {{factor}} a plazo {{bias}}",
+    "stakeholders": "Interactuar con los actores de {{category}} para obtener información temprana"
+  }
+}

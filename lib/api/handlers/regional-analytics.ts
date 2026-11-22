@@ -1,9 +1,12 @@
+import { languageFromRequest } from "../_shared/language";
+import { translateStructured } from "../_shared/translate";
 import { ANALYTICS_CACHE_MS, analyticsCacheKey } from "../_shared/http";
 import { isRegion, type Region } from "../_shared/regions";
 import { getRegionalAnalytics, clearAnalyticsCache } from "../_shared/deterministicAnalytics";
 
 export async function handleRegionalAnalytics(req: Request): Promise<Response> {
   try {
+    const lang = languageFromRequest(req);
     const url = new URL(req.url, "http://localhost");
     const regionParam = url.searchParams.get("region");
     if (!regionParam || !isRegion(regionParam)) {
@@ -19,11 +22,11 @@ export async function handleRegionalAnalytics(req: Request): Promise<Response> {
     }
     const analytics = await getRegionalAnalytics(region);
     return Response.json(
-      {
+      await translateStructured({
         ...analytics,
         cacheKey: analyticsCacheKey(region),
         cacheExpiresAt: Date.now() + ANALYTICS_CACHE_MS,
-      },
+      }, lang, ["dataSource"]),
       { status: 200 },
     );
   } catch (error) {

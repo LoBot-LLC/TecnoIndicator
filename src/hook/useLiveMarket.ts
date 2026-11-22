@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLanguage } from "../i18n/LanguageContext";
+import { withLang } from "../i18n/withLang";
 import {
   COMMODITIES,
   type CommodityId,
@@ -34,6 +36,7 @@ export interface UseLiveMarketReturn {
 }
 
 export function useLiveMarket(): UseLiveMarketReturn {
+  const { language } = useLanguage();
   const [prices, setPrices] = useState<Record<CommodityId, number>>(getDefaultPrices);
   const [deltas, setDeltas] = useState<Record<CommodityId, number>>({ oil: 0, electricity: 0, water: 0 });
   const [jitter, setJitter] = useState(0);
@@ -55,7 +58,7 @@ export function useLiveMarket(): UseLiveMarketReturn {
 
   const fetchPrices = useCallback(async (force = false) => {
     try {
-      const url = force ? "/api/prices?force=true" : "/api/prices";
+      const url = withLang(force ? "/api/prices?force=true" : "/api/prices", language);
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as LivePricesResponse;
@@ -91,7 +94,7 @@ export function useLiveMarket(): UseLiveMarketReturn {
       setPrices(getDefaultPrices());
       setIsLive(false);
     }
-  }, []);
+  }, [language]);
 
   const refresh = useCallback(() => {
     void fetchPrices(true);

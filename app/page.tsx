@@ -12,6 +12,8 @@ import RegionalEvaluation from "@/components/RegionalEvaluation";
 import AboutSection from "@/components/AboutSection";
 import Footer from "@/components/Footer";
 import { useLiveMarket } from "@/hook/useLiveMarket";
+import { useLanguage } from "@/i18n/LanguageContext";
+import { withLang } from "@/i18n/withLang";
 import {
   EVAL_REGIONS,
   generateForecast,
@@ -32,6 +34,7 @@ const REGION_STAGGER_MS = 200;
 type HealthStatus = "Initializing AI" | "Online Model Connected" | "Offline Model";
 
 export default function HomePage() {
+  const { language } = useLanguage();
   const [horizon, setHorizon] = useState(7);
   const [region, setRegion] = useState<RegionId>("global");
 
@@ -131,7 +134,7 @@ export default function HomePage() {
     let active = true;
     const pollAnalytics = async () => {
       try {
-        const res = await fetch("/api/analytics");
+        const res = await fetch(withLang("/api/analytics", language));
         if (res.ok) {
           const data = (await res.json()) as AnalyticsSnapshot;
           if (active) setAnalytics((prev) => ({ ...prev, global: data }));
@@ -139,7 +142,7 @@ export default function HomePage() {
       } catch { /* ignore */ }
       for (const r of EVAL_REGIONS) {
         try {
-          const res = await fetch(`/api/regional-analytics?region=${r.id}`);
+          const res = await fetch(withLang(`/api/regional-analytics?region=${r.id}`, language));
           if (res.ok) {
             const data = (await res.json()) as AnalyticsSnapshot;
             if (active) setAnalytics((prev) => ({ ...prev, [r.id]: data }));
@@ -154,16 +157,16 @@ export default function HomePage() {
       active = false;
       clearInterval(id);
     };
-  }, []);
+  }, [language]);
 
   // Poll dynamic factors (global + regional) — parallel fetch for all scopes
   useEffect(() => {
     let active = true;
     const pollFactors = async () => {
       // Fire all requests simultaneously: global + all regions
-      const globalPromise = fetch("/api/dynamic-factors");
+      const globalPromise = fetch(withLang("/api/dynamic-factors", language));
       const regionalPromises = EVAL_REGIONS.map((r) =>
-        fetch(`/api/regional-factors?region=${r.id}`).then(async (res) => {
+        fetch(withLang(`/api/regional-factors?region=${r.id}`, language)).then(async (res) => {
           if (!res.ok) return { region: r.id, factors: null, aiCurated: false, error: "fetch failed" };
           const data = await res.json();
           return { region: r.id, factors: Array.isArray(data.factors) ? data.factors : null, aiCurated: !!data.aiCurated };
@@ -202,7 +205,7 @@ export default function HomePage() {
       active = false;
       clearInterval(id);
     };
-  }, []);
+  }, [language]);
 
   /**
    * Solutions fetch. A new request cancels the one still in flight so a burst
@@ -217,7 +220,7 @@ export default function HomePage() {
       solutionsAbortRef.current = controller;
       try {
         const qs = force ? "?force=true" : "";
-        const res = await fetch(`/api/solutions?region=${scope}${qs}`, {
+        const res = await fetch(withLang(`/api/solutions?region=${scope}${qs}`, language), {
           signal: controller.signal,
         });
         if (!res.ok) return;
@@ -230,7 +233,7 @@ export default function HomePage() {
         if (solutionsAbortRef.current === controller) solutionsAbortRef.current = null;
       }
     },
-    [scope],
+    [scope, language],
   );
 
   // Backstop poll for solutions (also covers the very first paint)

@@ -4,17 +4,20 @@ import Logo from "./Logo";
 import { GithubIcon } from "./icons";
 import { EVENTS, emit } from "../lib/events";
 import SettingsMenu from "./SettingsMenu";
+import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/dictionaries";
 
-const LINKS = [
-  { href: "#forecast", label: "Forecast" },
-  { href: "#regions", label: "Regions" },
-  { href: "#factors", label: "Factors" },
-  { href: "#about", label: "About" },
+const LINKS: ReadonlyArray<{ href: string; labelKey: TranslationKey }> = [
+  { href: "#forecast", labelKey: "nav.forecast" },
+  { href: "#regions", labelKey: "nav.regions" },
+  { href: "#factors", labelKey: "nav.factors" },
+  { href: "#about", labelKey: "nav.about" },
 ];
 
 const REPO_URL = "https://github.com/LoBot-LLC/TecnoIndicator";
 
 export default function Navbar() {
+  const { t } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -72,14 +75,14 @@ export default function Navbar() {
         <Logo onClick={() => setMobileOpen(false)} />
 
         {/* Desktop nav */}
-        <nav className="hidden items-center gap-1 md:flex" aria-label="Primary">
+        <nav className="hidden items-center gap-1 md:flex" aria-label={t("nav.primary")}>
           {LINKS.map((l) => (
             <a
               key={l.href}
               href={l.href}
               className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100/50 hover:text-teal-600 dark:text-slate-100 dark:hover:bg-panel/10 dark:hover:text-teal-200"
             >
-              {l.label}
+              {t(l.labelKey)}
             </a>
           ))}
         </nav>
@@ -98,7 +101,7 @@ export default function Navbar() {
               className="flex items-center gap-2 rounded-lg border border-line bg-panel/5 px-4 py-2 text-sm font-medium text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
             >
               <Download className="h-4 w-4 text-teal-600 dark:text-teal-300" />
-              Export
+              {t("nav.export")}
               <ChevronDown
                 className={`h-3.5 w-3.5 text-slate-700 dark:text-slate-200 transition-transform ${exportOpen ? "rotate-180" : ""}`}
               />
@@ -111,7 +114,7 @@ export default function Navbar() {
                   className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-800 transition-colors hover:bg-teal-400/10 hover:text-teal-600 dark:text-slate-100 dark:hover:bg-teal-400/10 dark:hover:text-teal-200"
                 >
                   <FileImage className="h-4 w-4 text-oil" />
-                  Chart as PNG
+                  {t("nav.export.png")}
                 </button>
                 <button
                   type="button"
@@ -119,7 +122,7 @@ export default function Navbar() {
                   className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-800 transition-colors hover:bg-teal-400/10 hover:text-teal-600 dark:text-slate-100 dark:hover:bg-teal-400/10 dark:hover:text-teal-200"
                 >
                   <FileText className="h-4 w-4 text-water" />
-                  Data as CSV
+                  {t("nav.export.csv")}
                 </button>
                 <button
                   type="button"
@@ -127,7 +130,7 @@ export default function Navbar() {
                   className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-800 transition-colors hover:bg-teal-400/10 hover:text-teal-600 dark:text-slate-100 dark:hover:bg-teal-400/10 dark:hover:text-teal-200"
                 >
                   <FileCode2 className="h-4 w-4 text-teal-400 dark:text-teal-300" />
-                  Data as MD
+                  {t("nav.export.md")}
                 </button>
               </div>
             )}
@@ -138,7 +141,7 @@ export default function Navbar() {
           href={REPO_URL}
           target="_blank"
           rel="noreferrer"
-          aria-label="View source on GitHub"
+          aria-label={t("nav.github")}
           className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-panel/5 text-slate-700 dark:text-slate-600 transition-all hover:border-line-strong hover:text-teal-600 dark:hover:text-teal-200"
         >
           <GithubIcon className="h-4.5 w-4.5" />
@@ -151,7 +154,7 @@ export default function Navbar() {
           className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-panel/5 text-slate-800 dark:text-slate-100 md:hidden"
           onClick={() => setMobileOpen((v) => !v)}
           aria-expanded={mobileOpen}
-          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-label={mobileOpen ? t("nav.menu.close") : t("nav.menu.open")}
         >
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
@@ -160,7 +163,7 @@ export default function Navbar() {
       {/* Mobile panel */}
       {mobileOpen && (
         <div className="border-t border-line bg-panel/95 px-5 py-4 backdrop-blur-xl md:hidden">
-          <nav className="flex flex-col gap-1" aria-label="Mobile">
+          <nav className="flex flex-col gap-1" aria-label={t("nav.mobile")}>
             {LINKS.map((l) => (
               <a
                 key={l.href}
@@ -168,7 +171,7 @@ export default function Navbar() {
                 onClick={() => setMobileOpen(false)}
                 className="rounded-lg px-3 py-2.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100/50 hover:text-teal-600 dark:text-slate-100 dark:hover:bg-panel/10 dark:hover:text-teal-200"
               >
-                {l.label}
+                {t(l.labelKey)}
               </a>
             ))}
           </nav>
@@ -179,7 +182,7 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => doExport("png")}
-              aria-label="Download chart as PNG"
+              aria-label={t("nav.download.png")}
               className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
             >
               <FileImage className="h-4 w-4" /> PNG
@@ -187,7 +190,7 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => doExport("csv")}
-              aria-label="Download data as CSV"
+              aria-label={t("nav.download.csv")}
               className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
             >
               <FileText className="h-4 w-4" /> CSV
@@ -195,7 +198,7 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => doExport("md")}
-              aria-label="Download data as Markdown"
+              aria-label={t("nav.download.md")}
               className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
             >
               <FileCode2 className="h-4 w-4" /> MD

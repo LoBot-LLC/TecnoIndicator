@@ -1,3 +1,5 @@
+import { languageFromRequest, type ApiLanguage } from "../_shared/language";
+import { translateStructured } from "../_shared/translate";
 import {
   buildFallbackFactors,
   filterStaticFallbacks,
@@ -35,7 +37,12 @@ function resolveScope(url: URL): { ok: true; scope: RegionId } | { ok: false; re
  * `dynamic-factors:{scope}` window and re-curates when the stored window is
  * older than {@link FACTORS_CACHE_MS}.
  */
+async function factorsResponse<T>(lang: ApiLanguage, payload: T, init: ResponseInit): Promise<Response> {
+  return Response.json(await translateStructured(payload, lang, ["explanation", "error"]), init);
+}
+
 export async function handleDynamicFactors(req: Request): Promise<Response> {
+  const lang = languageFromRequest(req);
   const url = new URL(req.url, "http://localhost");
   const scopeResult = resolveScope(url);
   if (!scopeResult.ok) return scopeResult.response;
@@ -47,7 +54,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
       const stored = await readFactorWindow(scope);
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
         // runFactorAnalysis already validates/repairs; trust the cached window
-        return Response.json(
+        return factorsResponse(lang,
           toFactorsPayload(stored.factors, scope, stored.aiCurated, { updatedAt: stored.updatedAt }),
           { status: 200 },
         );
@@ -59,7 +66,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     try {
       const result = await runFactorAnalysis(scope, { abortSignal: abortController.signal });
       const stored = await writeFactorWindow(scope, result.factors, result.aiCurated);
-      return Response.json(
+      return factorsResponse(lang,
         toFactorsPayload(result.factors, scope, result.aiCurated, { updatedAt: stored.updatedAt }),
         { status: 200 },
       );
@@ -72,7 +79,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     // than failing the request outright.
     const stored = await readFactorWindow(scope).catch(() => null);
     const factors = filterStaticFallbacks(stored?.factors.length ? stored.factors : buildFallbackFactors(scope));
-    return Response.json(
+    return factorsResponse(lang,
       toFactorsPayload(factors, scope, stored?.aiCurated ?? false, {
         updatedAt: stored?.updatedAt ?? new Date().toISOString(),
         error: "Dynamic factors temporarily unavailable; static fallbacks returned",

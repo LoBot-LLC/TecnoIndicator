@@ -1,8 +1,11 @@
+import { languageFromRequest } from "../_shared/language";
+import { translateStructured } from "../_shared/translate";
 import { getGlobalAnalytics, clearAnalyticsCache } from "../_shared/deterministicAnalytics";
 import { ANALYTICS_CACHE_MS, analyticsCacheKey } from "../_shared/http";
 
 export async function handleAnalytics(req: Request): Promise<Response> {
   try {
+    const lang = languageFromRequest(req);
     const url = new URL(req.url, "http://localhost");
     const forceRefresh = url.searchParams.get("force") === "true";
 
@@ -12,11 +15,11 @@ export async function handleAnalytics(req: Request): Promise<Response> {
 
     const analytics = await getGlobalAnalytics();
 
-    return Response.json({
+    return Response.json(await translateStructured({
       ...analytics,
       cacheKey: analyticsCacheKey("global"),
       cacheExpiresAt: Date.now() + ANALYTICS_CACHE_MS,
-    });
+    }, lang, ["dataSource"]));
   } catch (error) {
     return Response.json({ error: "Analytics temporarily unavailable" }, { status: 503 });
   }

@@ -6,6 +6,8 @@ import { getCache, setCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
 import { safeParseJson } from "../_shared/validation";
 import { isRegion, type Region } from "../_shared/regions";
+import { languageFromRequest } from "../_shared/language";
+import { translateStructured } from "../_shared/translate";
 import type { Factor, RegionId, Solution } from "../_shared/types";
 
 const EVIDENCE_CACHE_MS = 30_000;
@@ -288,12 +290,13 @@ async function fetchFreshEvidence(scope: RegionId, abortSignal: AbortSignal): Pr
  * reasons the UI shows are the reasons the solutions were generated from.
  */
 export async function handleSolutions(req: Request): Promise<Response> {
+  const lang = languageFromRequest(req);
   const url = new URL(req.url, "http://localhost");
   const force = url.searchParams.get("force") === "true";
   const regionParam = url.searchParams.get("region");
   const isGlobal = regionParam === null || regionParam === "";
   const scope: RegionId = isGlobal ? "global" : isValidRegionId(regionParam) ? regionParam : "global";
-  const cacheKey = `solutions:${scope}`;
+  const cacheKey = `solutions:${lang}:${scope}`;
 
   if (!force) {
     const cached = await getCache<CachedSolutions>(cacheKey, SOLUTIONS_CACHE_MS);
@@ -376,7 +379,11 @@ export async function handleSolutions(req: Request): Promise<Response> {
 
     const aiCurated = aiSolutions.length > 0;
     const fallback = buildFallbackSolutions(scope, analytics, factors);
-    const solutions = [...aiSolutions, ...fallback].slice(0, MAX_SOLUTIONS);
+    const solutions = await translateStructured(
+      [...aiSolutions, ...fallback].slice(0, MAX_SOLUTIONS),
+      lang,
+      ["title", "summary", "actions"],
+    );
 
     await setCache(cacheKey, { solutions, aiCurated } satisfies CachedSolutions, SOLUTIONS_CACHE_MS);
 
@@ -396,7 +403,7 @@ export async function handleSolutions(req: Request): Promise<Response> {
     );
   } catch (error) {
     console.error("Solutions error:", error);
-    const fallback = buildFallbackSolutions(scope, analytics, factors);
+    const fallback = await translateStructured(buildFallbackSolutions(scope, analytics, factors), lang, ["title", "summary", "actions"]);
     return Response.json(
       {
         solutions: fallback,

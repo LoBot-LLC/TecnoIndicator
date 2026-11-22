@@ -1,5 +1,7 @@
 import { FORECAST_CACHE_MS, sanitizeUrl, isReputableSource } from "../_shared/http";
 import { getCache, setCache } from "../_shared/cache";
+import { parseLanguage, type ApiLanguage } from "../_shared/language";
+import { translateStructured } from "../_shared/translate";
 import type { Factor, ForecastPoint, RegionId, CommodityId } from "../_shared/types";
 import { generateForecast, FACTORS as MODEL_FACTORS, REGIONS as MODEL_REGIONS, COMMODITIES as MODEL_COMMODITIES } from "../../../src/lib/model";
 
@@ -15,7 +17,7 @@ const KNOWN_SOURCES = [
   { title: "UN Water", url: "https://www.unwater.org/" },
 ];
 
-export interface ForecastParams { region: RegionId; commodities: CommodityId[]; horizon: number; fresh: boolean; format: string; }
+export interface ForecastParams { region: RegionId; commodities: CommodityId[]; horizon: number; fresh: boolean; format: string; lang: ApiLanguage; }
 export class ParamError extends Error { param: string; constructor(param: string, message: string) { super(message); this.param = param; } }
 
 export function parseForecastParams(search: URLSearchParams): ForecastParams {
@@ -39,12 +41,13 @@ export function parseForecastParams(search: URLSearchParams): ForecastParams {
   const format = (search.get("format") ?? "json").toLowerCase();
   if (format !== "json" && format !== "csv") throw new ParamError("format", "format must be json");
   const fresh = ["true", "1", "yes"].includes((search.get("fresh") ?? "").toLowerCase());
-  return { region: regionRaw as RegionId, commodities, horizon, fresh, format };
+  const lang = parseLanguage(search.get("lang"));
+  return { region: regionRaw as RegionId, commodities, horizon, fresh, format, lang };
 }
 
 export function hashString(s: string): string { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(16); }
-export function forecastCacheKey(p: ForecastParams): string { return `forecast:${p.region}:${p.commodities.join(",")}:${p.horizon}`; }
-export function buildETag(p: ForecastParams, generatedAt: string): string { return `"${hashString(`1|${p.region}|${p.commodities.join(",")}|${p.horizon}|${generatedAt}`)}"`; }
+export function forecastCacheKey(p: ForecastParams): string { return `forecast:${p.lang}:${p.region}:${p.commodities.join(",")}:${p.horizon}`; }
+export function buildETag(p: ForecastParams, generatedAt: string): string { return `"${hashString(`1|${p.lang}|${p.region}|${p.commodities.join(",")}|${p.horizon}|${generatedAt}`)}"`; }
 
 const START_YEAR = new Date().getFullYear();
 export function buildFallbackForecast(region: RegionId, horizon: number): ForecastPoint[] {
@@ -88,6 +91,11 @@ const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods
 function headers(etag?: string) { return { "Content-Type": "application/json", "Cache-Control": "public,max-age=300,stale-while-revalidate=60", ...CORS, "X-API-Version": "1", ...(etag ? { ETag: etag } : {}) }; }
 function err(status: number, code: string, message: string, param?: string) { const requestId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now()); return Response.json({ error: { code, message, ...(param ? { param } : {}), requestId } }, { status, headers: headers() }); }
 
+/** Translates user-facing free text (factor names/categories, source titles). Numbers, ids and URLs are untouched. */
+async function localizeEnvelope<T extends { factors: unknown; sources: unknown }>(envelope: T, lang: ApiLanguage): Promise<T> {
+  return translateStructured(envelope, lang, ["name", "category", "title"]);
+}
+
 export async function handleForecast(req: Request): Promise<Response> {
   try {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
@@ -113,12 +121,14 @@ export async function handleForecast(req: Request): Promise<Response> {
       servedFrom = win?.factors?.length ? "model" : "fallback";
     } catch { bands = null; }
     if (!bands || bands.length !== params.horizon + 1) { bands = buildFallbackForecast(params.region, params.horizon); if (!factors.length) factors = buildFallbackFactors(params.region); servedFrom = "fallback"; }
-    const { envelope, etag } = buildEnvelope(params, bands, factors, servedFrom, false);
+    const built = buildEnvelope(params, bands, factors, servedFrom, false);
+    const envelope = await localizeEnvelope(built.envelope, params.lang);
+    const etag = built.etag;
     if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: headers(etag) });
     try { await setCache(key, envelope, FORECAST_CACHE_MS); } catch {}
     return Response.json(envelope, { status: 200, headers: headers(etag) });
   } catch (e) {
-    try { const p = parseForecastParams(new URL(req.url, "http://localhost").searchParams); const { envelope, etag } = buildEnvelope(p, buildFallbackForecast(p.region, p.horizon), buildFallbackFactors(p.region), "fallback", false); return Response.json(envelope, { status: 200, headers: headers(etag) }); } catch { return err(500, "INTERNAL", "Internal error"); }
+    try { const p = parseForecastParams(new URL(req.url, "http://localhost").searchParams); const { envelope, etag } = buildEnvelope(p, buildFallbackForecast(p.region, p.horizon), buildFallbackFactors(p.region), "fallback", false); return Response.json(await localizeEnvelope(envelope, p.lang), { status: 200, headers: headers(etag) }); } catch { return err(500, "INTERNAL", "Internal error"); }
   }
 }
 export { MODEL_COMMODITIES };

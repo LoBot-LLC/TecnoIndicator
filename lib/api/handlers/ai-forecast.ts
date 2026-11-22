@@ -1,3 +1,4 @@
+import { languageFromRequest } from "../_shared/language";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getGlobalAnalytics } from "../_shared/deterministicAnalytics";
 import { FORECAST_CACHE_MS, factorCacheKey } from "../_shared/http";
@@ -28,9 +29,10 @@ function buildGlobalForecastFallback(): ForecastPoint[] {
 /** GET /api/ai-forecast — 11-year global oil/electricity/water forecast band. */
 export async function handleAiForecast(req: Request): Promise<Response> {
   try {
+    const lang = languageFromRequest(req);
     const url = new URL(req.url, "http://localhost");
     const forceRefresh = url.searchParams.get("force") === "true";
-    const cacheKey = "ai-forecast:global";
+    const cacheKey = `ai-forecast:${lang}:global`;
     const cached = forceRefresh ? null : await getCache<ForecastPoint[]>(cacheKey, FORECAST_CACHE_MS);
     if (cached) return Response.json(cached, { status: 200 });
 

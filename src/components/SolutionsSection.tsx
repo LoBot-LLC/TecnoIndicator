@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { ArrowUpRight, Shield, Truck, Zap } from "lucide-react";
 import Reveal from "./Reveal";
 import type { Factor, Solution } from "../lib/model";
+import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/dictionaries";
 
 const MAX_SOLUTIONS = 3;
 
@@ -9,6 +11,12 @@ const STRATEGY_ICONS: Record<string, typeof Shield> = {
   resilience: Shield,
   cost: Truck,
   strategy: Zap,
+};
+
+const STRATEGY_LABEL_KEYS: Record<string, TranslationKey> = {
+  resilience: "solutionsSection.strategy.resilience",
+  cost: "solutionsSection.strategy.cost",
+  strategy: "solutionsSection.strategy.strategy",
 };
 
 function StrategyIcon({ strategy }: { strategy: string }) {
@@ -24,6 +32,7 @@ function SolutionCard({
   index: number;
 }) {
   const strategy = index === 0 ? "resilience" : index === 1 ? "cost" : "strategy";
+  const { t } = useLanguage();
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 transition-all duration-300 hover:border-teal-400/40 hover:bg-panel">
@@ -33,11 +42,11 @@ function SolutionCard({
             <StrategyIcon strategy={strategy} />
           </span>
           <span className="rounded-full border border-line bg-base/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-500">
-            {strategy}
+            {t(STRATEGY_LABEL_KEYS[strategy])}
           </span>
         </div>
         <span className="font-display text-xs font-bold text-teal-400 dark:text-teal-300">
-          {solution.confidence}% confidence
+          {t("solutionsSection.confidence", { value: solution.confidence })}
         </span>
       </div>
       <h3 className="mt-3 font-display text-base font-semibold text-slate-900 dark:text-white">
@@ -49,14 +58,14 @@ function SolutionCard({
       {solution.aiCurated && (
         <div className="mt-3 border-t border-teal-200/30 pt-2 bg-teal-50 dark:bg-teal-800/30">
           <p className="text-[8px] font-semibold text-teal-400 dark:text-teal-300">
-            AI-generated from live factor window + TinyFish evidence
+            {t("solutionsSection.aiSource")}
           </p>
         </div>
       )}
       {solution.sources && solution.sources.length > 0 && (
         <div className="mt-3 border-t border-teal-200/30 pt-2 bg-teal-50 dark:bg-teal-800/30">
           <p className="text-[8px] font-semibold text-teal-400 dark:text-teal-300">
-            Sources: {solution.sources.slice(0, 3).map((s, i) => `${i + 1}. ${s.slice(0, 40)}...`).join(" ")}
+            {t("solutionsSection.sources")} {solution.sources.slice(0, 3).map((s, i) => `${i + 1}. ${s.slice(0, 40)}...`).join(" ")}
           </p>
         </div>
       )}
@@ -81,7 +90,7 @@ function SolutionCard({
       {solution.relatedFactors.length > 0 && (
         <div className="mt-3 border-t border-line/50 pt-2">
           <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-500">
-            Linked factors
+            {t("solutionsSection.linkedFactors")}
           </p>
           <p className="mt-1 text-[10px] text-slate-700 dark:text-slate-500 line-clamp-2">
             {solution.relatedFactors.join(", ")}
@@ -105,6 +114,7 @@ export default function SolutionsSection({
   healthStatus,
   solutions,
 }: SolutionsSectionProps) {
+  const { t } = useLanguage();
   const allSolutions = useMemo(() => {
     if (solutions.length > 0) return solutions;
     
@@ -127,36 +137,40 @@ export default function SolutionsSection({
       let strategyTitle: string;
       let strategyActions: string[];
       
+      const name = factor.name.toLowerCase();
+      const commodities = factor.commodities.join(", ");
       if (index === 0) {
         // Strategic focus: Operational resilience
-        strategyTitle = factor.direction === "up" 
-          ? `Secure supply against ${factor.name.toLowerCase()}` 
-          : `Optimize efficiency for ${factor.name.toLowerCase()}`;
+        strategyTitle = factor.direction === "up"
+          ? t("solutionsSection.fallback.secureSupply", { name })
+          : t("solutionsSection.fallback.optimizeEfficiency", { name });
         strategyActions = [
-          `Diversify ${factor.commodities[0]} sources to mitigate supply risk`,
-          `Build ${factor.magnitude === "High" ? "30-60 days" : "15-30 days"} inventory buffers`,
-          `Monitor ${factor.name.toLowerCase()} trends weekly`,
-          `Negotiate flexible contracts with ${factor.magnitude === "High" ? "price protection" : "tiered pricing"}`,
+          t("solutionsSection.fallback.diversify", { commodity: factor.commodities[0] }),
+          factor.magnitude === "High" ? t("solutionsSection.fallback.buffersHigh") : t("solutionsSection.fallback.buffersLow"),
+          t("solutionsSection.fallback.monitorWeekly", { name }),
+          factor.magnitude === "High" ? t("solutionsSection.fallback.protection") : t("solutionsSection.fallback.tiered"),
         ];
       } else if (index === 1) {
         // Strategic focus: Cost optimization
         strategyTitle = factor.direction === "down"
-          ? `Capture savings through ${factor.name.toLowerCase()}`
-          : `Manage ${factor.name.toLowerCase()} costs strategically`;
+          ? t("solutionsSection.fallback.captureSavings", { name })
+          : t("solutionsSection.fallback.manageCosts", { name });
         strategyActions = [
-          `Implement demand ${factor.direction === "down" ? "shifting" : "optimization"} for ${factor.commodities.join(", ")}`,
-          `Explore alternative sources for ${factor.commodities.join(", ")}`,
-          `Track ${factor.name.toLowerCase()} pricing and adjust purchasing accordingly`,
-          `Utilize ${factor.magnitude === "High" ? "financial hedging" : "spot market timing"}`,
+          factor.direction === "down"
+            ? t("solutionsSection.fallback.demandShifting", { commodities })
+            : t("solutionsSection.fallback.demandOptimization", { commodities }),
+          t("solutionsSection.fallback.altSources", { commodities }),
+          t("solutionsSection.fallback.trackPricing", { name }),
+          factor.magnitude === "High" ? t("solutionsSection.fallback.hedging") : t("solutionsSection.fallback.spotTiming"),
         ];
       } else {
         // Strategic focus: Long-term positioning
-        strategyTitle = `Position for long-term ${factor.name.toLowerCase()} trends`;
+        strategyTitle = t("solutionsSection.fallback.longTerm", { name });
         strategyActions = [
-          `Invest in ${factor.commodities.join(", ")} efficiency technologies`,
-          `Monitor regulatory changes affecting ${factor.name.toLowerCase()}`,
-          `Develop scenario plans for ${factor.bias || "mid"}-term ${factor.name.toLowerCase()} outlook`,
-          `Engage with ${factor.category.toLowerCase()} stakeholders for early insights`,
+          t("solutionsSection.fallback.invest", { commodities }),
+          t("solutionsSection.fallback.regulatory", { name }),
+          t("solutionsSection.fallback.scenario", { bias: factor.bias || "mid", name }),
+          t("solutionsSection.fallback.engage", { category: factor.category.toLowerCase() }),
         ];
       }
       
@@ -178,7 +192,7 @@ export default function SolutionsSection({
         scope: factor.scope,
       };
     });
-  }, [solutions, fallbackFactors]);
+  }, [solutions, fallbackFactors, t]);
 
   return (
     <section id="solutions" className="relative scroll-mt-20 border-t border-line py-16 sm:py-20">
@@ -188,21 +202,19 @@ export default function SolutionsSection({
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
-                AI solutions
+                {t("solutionsSection.header.eyebrow")}
               </p>
               <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-                3 actionable strategies
+                {t("solutionsSection.header.title")}
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-                AI-generated solutions adapted from current dynamic reasons to help
-                business owners and executives make better logistical and business
-                decisions. Solutions update automatically as market factors change.
+                {t("solutionsSection.header.body")}
               </p>
             </div>
             <span className="text-[11px] text-slate-600 dark:text-slate-500">
               {healthStatus === "Online Model Connected"
-                ? "AI-generated"
-                : "Static fallback"}
+                ? t("solutionsSection.header.aiGenerated")
+                : t("solutionsSection.header.staticFallback")}
             </span>
           </div>
         </Reveal>
@@ -215,7 +227,7 @@ export default function SolutionsSection({
           ))}
           {allSolutions.length === 0 && (
             <div className="col-span-full rounded-2xl border border-line bg-panel/60 p-8 text-center text-sm text-slate-700 dark:text-slate-500">
-              No solutions available yet. AI curation in progress.
+              {t("solutionsSection.empty")}
             </div>
           )}
         </div>

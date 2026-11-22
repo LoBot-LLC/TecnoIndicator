@@ -20,6 +20,26 @@ import {
   type Magnitude,
 } from "../lib/model";
 import { truncateAtSentence } from "../lib/truncate";
+import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/dictionaries";
+
+const MAGNITUDE_KEY: Record<Magnitude, TranslationKey> = {
+  High: "factors.magnitude.high",
+  Medium: "factors.magnitude.medium",
+  Low: "factors.magnitude.low",
+};
+
+const TREND_KEY: Record<string, TranslationKey> = {
+  rising: "factors.trend.rising",
+  fading: "factors.trend.fading",
+  steady: "factors.trend.steady",
+};
+
+const STATUS_KEY: Record<string, TranslationKey> = {
+  "Initializing AI": "factors.statusInitializing",
+  "Online Model Connected": "factors.statusOnline",
+  "Offline Model": "factors.statusOffline",
+};
 
 const MAG_COLOR: Record<Magnitude, string> = {
   High: "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15",
@@ -58,6 +78,7 @@ function FactorCard({
   horizon: number;
   index: number;
 }) {
+  const { t } = useLanguage();
   const relevance = factorRelevance(factor.bias, horizon);
   const trend = relevanceTrend(factor.bias, horizon);
   const width = Math.min(100, Math.round((relevance / 2.0) * 100));
@@ -81,14 +102,14 @@ function FactorCard({
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${MAG_COLOR[factor.magnitude]}`}
             >
               <DirectionIcon direction={factor.direction} />
-              {factor.magnitude}
+              {t(MAGNITUDE_KEY[factor.magnitude])}
             </span>
           </div>
           <h3 className="mt-3 font-display text-base font-semibold text-slate-900 dark:text-white">
             {factor.name}
             {isNew && (
               <span className="ml-2 inline-flex items-center rounded-full bg-teal-500 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900 dark:text-white">
-                New
+                {t("factors.new")}
               </span>
             )}
           </h3>
@@ -99,7 +120,7 @@ function FactorCard({
           </span>
           {factor.importanceScore >= 0 && (
             <span className="text-[11px] font-semibold text-teal-400 dark:text-teal-300">
-              Impact: {factor.importanceScore}/100
+              {t("factors.impact", { score: factor.importanceScore })}
             </span>
           )}
         </div>
@@ -117,12 +138,12 @@ function FactorCard({
           {isExpanded ? (
             <>
               <ChevronUp className="h-3.5 w-3.5" />
-              Show less
+              {t("factors.showLess")}
             </>
           ) : (
             <>
               <ChevronDown className="h-3.5 w-3.5" />
-              Show more
+              {t("factors.showMore")}
             </>
           )}
         </button>
@@ -157,7 +178,7 @@ function FactorCard({
       {factor.grounding && factor.commodities.some((id) => factor.grounding?.[id]) && (
         <div className="mt-5 rounded-lg border border-line bg-base/50 px-3 py-3">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
-            Grounded in live dashboard prices
+            {t("factors.grounded")}
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1.5">
             {factor.commodities.map((id) => {
@@ -190,7 +211,7 @@ function FactorCard({
           </div>
           {factor.grounding?.asOf && (
             <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 italic">
-              Prices as of {factor.grounding.asOf}
+              {t("factors.pricesAsOf", { date: factor.grounding.asOf })}
             </p>
           )}
         </div>
@@ -198,7 +219,7 @@ function FactorCard({
 
       <div className="mt-4">
         <div className="mb-1.5 flex items-center justify-between text-[11px]">
-          <span className="font-semibold text-slate-700 dark:text-slate-500">Relevance @ {horizon}y</span>
+          <span className="font-semibold text-slate-700 dark:text-slate-500">{t("factors.relevance", { horizon })}</span>
 <span
             className={`inline-flex items-center gap-1 font-semibold ${
               trend === "rising"
@@ -211,7 +232,7 @@ function FactorCard({
             {trend === "rising" && <TrendingUp className="h-3 w-3" />}
             {trend === "fading" && <TrendingDown className="h-3 w-3" />}
             {trend === "steady" && <GitBranch className="h-3 w-3" />}
-            {trend}
+            {t(TREND_KEY[trend])}
           </span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-line">
@@ -224,7 +245,7 @@ function FactorCard({
 
       <div className="mt-3">
         <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-500 block mb-1">
-          Source URL
+          {t("factors.sourceUrl")}
         </span>
         {isHttpUrl(factor.source) ? (
           <a
@@ -234,7 +255,7 @@ function FactorCard({
             className="block text-[10px] text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
           >
             {factor.source}
-            <ExternalLink className="ml-1 inline h-3 w-3 fill-current" aria-label="Open source" />
+            <ExternalLink className="ml-1 inline h-3 w-3 fill-current" aria-label={t("factors.openSource")} />
           </a>
         ) : (
           <span className="block text-[10px] text-slate-600 dark:text-slate-500 break-all">{factor.source}</span>
@@ -301,6 +322,7 @@ export default function FactorsSection({
   healthStatus,
   factorsLoaded = false,
 }: FactorsSectionProps) {
+  const { t } = useLanguage();
   const isOnline = healthStatus === "Online Model Connected";
   const isLoading = !factorsLoaded;
 
@@ -330,26 +352,26 @@ export default function FactorsSection({
         <Reveal>
           <div className="mb-10 max-w-2xl">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
-              Key factors & drivers
+              {t("factors.title")}
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              {isAiCurated ? "AI-Curated Factors" : "Key factors & drivers"}
+              {isAiCurated ? t("factors.titleAi") : t("factors.title")}
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-500">
               {isAiCurated
-                ? "Live AI curation via Kilo Gateway. Factors update automatically every 2 minutes."
+                ? t("factors.descAi")
                 : !isLoading && activeFactors.length === 0
-                ? "Factors appear only when they can be traced to a fetched source URL. None are available right now."
-                : "Relevance automatically reweights as you change the horizon — short horizons emphasize policy and inventories; longer ones highlight structural transition and scarcity."}
+                ? t("factors.descEmpty")
+                : t("factors.descDefault")}
             </p>
             {isOnline && (
               <p className="mt-2 text-xs text-teal-400 dark:text-teal-300/80">
-                Status: {healthStatus}
+                {t("factors.status", { status: healthStatus ? t(STATUS_KEY[healthStatus]) : "" })}
               </p>
             )}
             {isLoading && (
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Loading factors…
+                {t("factors.loading")}
               </p>
             )}
           </div>
@@ -370,8 +392,7 @@ export default function FactorsSection({
             ))
           ) : (
             <p className="col-span-full text-center text-sm text-slate-500 dark:text-slate-400 py-8">
-              No live price factors are available right now. Reasons are only shown when they can be
-              traced to a fetched source URL.
+              {t("factors.emptyState")}
             </p>
           )}
         </div>

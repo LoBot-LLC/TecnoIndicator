@@ -1,3 +1,5 @@
+import { languageFromRequest } from "../_shared/language";
+import { translateStructured } from "../_shared/translate";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getCache, setCache } from "../_shared/cache";
@@ -120,17 +122,18 @@ export async function handlePrices(req: Request): Promise<Response> {
 }
 
 async function resolvePrices(req: Request): Promise<Response> {
+  const lang = languageFromRequest(req);
   const url = new URL(req.url, "http://localhost");
   const force = url.searchParams.get("force") === "true";
   const regionParam = url.searchParams.get("region");
   const isGlobal = regionParam === null || regionParam === "";
   const scope: RegionId = isGlobal ? "global" : isRegion(regionParam) ? (regionParam as Region) : "global";
-  const cacheKey = `live-prices:${scope}`;
+  const cacheKey = `live-prices:${lang}:${scope}`;
 
   if (!force) {
     const cached = await getCache<PricesPayload>(cacheKey, SEARCH_CACHE_MS);
     if (cached) {
-      return Response.json(cached, { status: 200 });
+      return Response.json(await translateStructured(cached, lang, ["dataSource"]), { status: 200 });
     }
   }
 
@@ -144,7 +147,7 @@ async function resolvePrices(req: Request): Promise<Response> {
 
     if (searchResults.isLive) {
       await setCache(cacheKey, searchResults, SEARCH_CACHE_MS);
-      return Response.json(searchResults, { status: 200 });
+      return Response.json(await translateStructured(searchResults, lang, ["dataSource"]), { status: 200 });
     }
   } catch (error) {
     console.warn("TinyFish search failed, falling back to defaults:", error);
@@ -168,7 +171,7 @@ async function resolvePrices(req: Request): Promise<Response> {
   };
 
   await setCache(cacheKey, fallbackResult, SEARCH_CACHE_MS);
-  return Response.json(fallbackResult, { status: 200 });
+  return Response.json(await translateStructured(fallbackResult, lang, ["dataSource"]), { status: 200 });
 }
 
 /**

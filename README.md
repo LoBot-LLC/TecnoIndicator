@@ -61,6 +61,14 @@ The app ships a **Light / Dark / System** color theme, selectable from the Setti
 
 ---
 
+## 🌐 Languages
+
+The UI is available in **English**, **Español** and **Tiếng Việt**.
+
+- **Switching language** — Open the Settings menu and choose a language. The choice is persisted in `localStorage` under `tecno.language`. Static UI strings and region names come from the dictionaries in `src/i18n/dictionaries.ts`.
+- **API `lang` parameter** — API routes accept `lang=en|es|vi` (default `en`). Unknown values fall back to `en`. Example: `GET /api/forecast?lang=vi`.
+- **Translation is best-effort** — Web-searched content (factor explanations, solutions) is translated through the Kilo AI Gateway and cached. If translation fails or is unavailable, the English original is returned. Numeric values are preserved, and translations that change numbers are rejected.
+
 ## 🚀 How to Use
 
 ### Quick Start
@@ -104,6 +112,16 @@ npm start       # next start
 | `npm run build` | Build for production (`next build`) |
 | `npm start` | Serve the production build (`next start`) |
 | `npm run typecheck` | Run `tsc --noEmit` for strict type checking |
+
+### Tests
+
+Pure-logic tests run with `tsx`:
+
+```bash
+npx tsx --test src/lib/__tests__/correlation.test.mjs
+npx tsx --test lib/api/handlers/__tests__/language.test.mjs
+npx tsx --test lib/api/handlers/__tests__/forecast.test.mjs
+```
 
 ### API endpoints
 
@@ -531,6 +549,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 - **Single-Source-of-Truth Live Flow** — `src/hook/useLiveMarket.ts` refreshes `liveQuotes` (price + source + asOf) on every fetch/poll, and the Hero "Market Snapshot" / live global feed renders those URL-sourced numbers (matching the Interactive price forecast cards) with no ad-hoc unit conversion.
 - **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis REST (`lib/api/_shared/redis.ts`, no SDK dependency) for cross-instance sharing
 - **Text utilities** (`lib/api/_shared/textUtils.ts`) — Shared `truncateAtWordBoundary` and `truncateAtSentenceBoundary` for word-safe truncation of factor explanations.
+- **i18n (English, Español, Tiếng Việt)** — Custom client-side i18n in `src/i18n/` (dictionaries, `LanguageContext`, region text localization, `withLang` URL helper). Web-searched content (factor explanations, solutions) is translated via the Kilo AI Gateway (`lib/api/_shared/translate.ts`) with a translation cache in the shared cache layer; API routes accept a `lang` query parameter (`en` | `es` | `vi`, default `en`) parsed by `lib/api/_shared/language.ts`. See [Languages](#-languages).
 
 ### Data & Models (`src/lib/`)
 - **Forecast Engine** (`model.ts`) — Client-side forecast computations, `FACTORS` / `REGIONAL_FACTORS` static fallbacks, commodity types, and scenario math
@@ -591,7 +610,8 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   └── api/
 │       ├── handlers/                    # Endpoint business logic
 │       │   ├── __tests__/
-│       │   │   └── forecast.test.mjs    # Forecast envelope unit tests
+│       │   │   ├── forecast.test.mjs    # Forecast envelope unit tests
+│       │   │   └── language.test.mjs    # `lang` parsing and translation tests
 │       │   ├── ai-forecast.ts           # Forecast band generation
 │       │   ├── analytics.ts             # Global indices computation
 │       │   ├── cron-curate-factors.ts   # Nightly curation job
@@ -609,9 +629,11 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │           ├── deterministicAnalytics.ts# Fuel/grid/water math + getScopePriceDefaults
 │           ├── http.ts                  # Constants, key utilities, shared HTTP helpers
 │           ├── kiloRouter.ts            # Kilo Gateway model routing
+│           ├── language.ts              # `lang` parsing (en|es|vi, default en) from query/body
 │           ├── redis.ts                 # Upstash Redis client (optional)
 │           ├── regions.ts               # Region definitions & metadata
 │           ├── textUtils.ts             # Word/sentence-boundary truncation utilities
+│           ├── translate.ts             # Best-effort Kilo Gateway translation of web-searched content (cached)
 │           ├── tinyfishRouter.ts        # TinyFish search (+ include_domains) + single/batch scrape routing
 │           ├── types.ts                 # Shared TypeScript interfaces
 │           └── validation.ts            # Request validation helpers
@@ -643,6 +665,11 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   ├── hook/                            # Custom React hooks
 │   │   ├── useFlash.ts                  # Toast/flash notifications
 │   │   └── useLiveMarket.ts             # Live market data polling
+│   ├── i18n/                            # Client i18n (English, Español, Tiếng Việt)
+│   │   ├── dictionaries.ts              # Language codes + UI string dictionaries
+│   │   ├── LanguageContext.tsx          # LanguageProvider / useLanguage (persisted to localStorage `tecno.language`)
+│   │   ├── regionText.ts                # localizeRegion — translated region names, blurbs and drivers
+│   │   └── withLang.ts                  # Appends `lang=` to API URLs
 │   ├── lib/                             # Frontend business logic
 │   │   ├── currencies.ts                # Currency codes, symbols, formatting
 │   │   ├── correlation.ts               # Pearson-r series builders + matrix computation (derivedDrift fix for TinyFish factors)

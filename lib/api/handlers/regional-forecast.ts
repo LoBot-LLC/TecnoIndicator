@@ -1,3 +1,4 @@
+import { languageFromRequest } from "../_shared/language";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { REGION_NAMES, isRegion, type Region } from "../_shared/regions";
@@ -47,13 +48,14 @@ function buildRegionalForecastFallback(region: Region): RegionalForecastPoint[] 
 
 /** GET /api/regional-forecast?region=… — 11-year region-specific forecast band. */
 export async function handleRegionalForecast(req: Request): Promise<Response> {
+  const lang = languageFromRequest(req);
   const url = new URL(req.url, "http://localhost");
   const regionParam = url.searchParams.get("region");
   if (!regionParam || !isRegion(regionParam)) {
     return Response.json({ error: "Missing or invalid 'region' query parameter" }, { status: 400 });
   }
   const region = regionParam as Region;
-  const cacheKey = `regional-forecast:${region}`;
+  const cacheKey = `regional-forecast:${lang}:${region}`;
 
   try {
     const forceRefresh = url.searchParams.get("force") === "true";

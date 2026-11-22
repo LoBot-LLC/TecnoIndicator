@@ -14,6 +14,8 @@ import Reveal from "./Reveal";
 import Ticker from "./Ticker";
 import { useCurrency } from "../context/CurrencyContext";
 import { useUnit } from "../context/UnitContext";
+import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/dictionaries";
 import { energyLabel, waterLabel } from "../lib/units";
 import {
   COMMODITIES,
@@ -56,11 +58,11 @@ function LivePrice({ value }: { value: number }) {
   );
 }
 
-const STATS = [
-  { value: "3", label: "Commodities" },
-  { value: "5", label: "World regions" },
-  { value: "10", label: "Year horizon" },
-  { value: "12", label: "Key drivers" },
+const STATS: Array<{ value: string; labelKey: TranslationKey }> = [
+  { value: "3", labelKey: "hero.statCommodities" },
+  { value: "5", labelKey: "hero.statRegions" },
+  { value: "10", labelKey: "hero.statHorizon" },
+  { value: "12", labelKey: "hero.statDrivers" },
 ];
 
 interface HeroProps {
@@ -85,6 +87,7 @@ export default function Hero({
 }: HeroProps) {
   const { selectedCurrency } = useCurrency();
   const { lengthUnit, energyUnit } = useUnit();
+  const { t } = useLanguage();
 
   const today = new Date();
   const horizon = horizonProp ?? 10;
@@ -111,10 +114,10 @@ export default function Hero({
     color: string;
     decimals: number;
   }> = [
-    { id: "oil", name: "Brent Crude", unit: `${selectedCurrency}/bbl`, icon: Fuel, color: "#f5b840", decimals: 2 },
+    { id: "oil", name: t("hero.brent"), unit: `${selectedCurrency}/bbl`, icon: Fuel, color: "#f5b840", decimals: 2 },
     {
       id: "electricity",
-      name: "Electricity",
+      name: t("hero.electricity"),
       unit: `${selectedCurrency}/${energyLabel(energyUnit)}`,
       icon: Zap,
       color: "#2dd4bf",
@@ -122,7 +125,7 @@ export default function Hero({
     },
     {
       id: "water",
-      name: "Water",
+      name: t("hero.water"),
       unit: `${selectedCurrency}/${waterLabel(lengthUnit)}`,
       icon: Droplets,
       color: "#38bdf8",
@@ -149,7 +152,7 @@ export default function Hero({
                 <span className="ping-ring absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-400 pulse-dot" />
               </span>
-              Live · Global commodity intelligence
+              {t("hero.liveBadge")}
             </div>
           </Reveal>
 
@@ -159,11 +162,10 @@ export default function Hero({
               <span className="text-teal-600 dark:text-teal-300"> TecnoIndicator</span>
             </h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-600 dark:text-slate-500 sm:text-lg">
-              Real-time 10-year forecasts for global{" "}
-              <span className="font-medium text-oil">oil</span>,{" "}
-              <span className="font-medium text-elec">electricity</span> &{" "}
-              <span className="font-medium text-water">water</span> prices — with scenario bands,
-              five-region evaluation, driver analysis and exportable analytics.
+              {t("hero.leadStart")}{" "}
+              <span className="font-medium text-oil">{t("hero.leadOil")}</span>,{" "}
+              <span className="font-medium text-elec">{t("hero.leadElec")}</span> {t("hero.leadAnd")}{" "}
+              <span className="font-medium text-water">{t("hero.leadWater")}</span> {t("hero.leadEnd")}
             </p>
           </Reveal>
 
@@ -176,7 +178,7 @@ export default function Hero({
               <span className="hidden h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600 sm:inline-block" />
                 <span className="inline-flex items-center gap-2">
                   <Globe2 className="h-4 w-4 text-slate-600 dark:text-slate-500" />
-                  All figures in {selectedCurrency} · 5 regions
+                  {t("hero.allFigures", { currency: selectedCurrency })}
                 </span>
             </div>
           </Reveal>
@@ -187,20 +189,20 @@ export default function Hero({
                 href="#forecast"
                 className="inline-flex items-center gap-2 rounded-xl bg-teal-400 px-5 py-3 text-sm font-semibold text-slate-900 shadow-[0_0_28px_rgba(45,212,191,0.35)] transition-all hover:bg-teal-300"
               >
-                Start Forecast
+                {t("hero.startForecast")}
                 <ArrowRight className="h-4 w-4" />
               </a>
               <a
                 href="#regions"
                 className="inline-flex items-center gap-2 rounded-xl border border-line bg-panel/5 px-5 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 transition-all hover:border-line-strong hover:bg-panel/10"
               >
-                Evaluate Regions
+                {t("hero.evaluateRegions")}
               </a>
               <a
                 href="#factors"
                 className="inline-flex items-center gap-2 rounded-xl border border-transparent px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:text-teal-600 dark:text-slate-500 dark:hover:text-teal-200"
               >
-                Explore Drivers
+                {t("hero.exploreDrivers")}
                 <ChevronDown className="h-4 w-4" />
               </a>
             </div>
@@ -210,12 +212,12 @@ export default function Hero({
             <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {STATS.map((s) => (
                 <div
-                  key={s.label}
+                  key={s.labelKey}
                   className="rounded-2xl border border-line bg-panel/50 px-4 py-4"
                 >
                   <p className="font-display text-2xl font-bold text-slate-900 dark:text-white">{s.value}</p>
                   <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-600 dark:text-slate-500">
-                    {s.label}
+                    {t(s.labelKey)}
                   </p>
                 </div>
               ))}
@@ -229,15 +231,15 @@ export default function Hero({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600 dark:text-slate-500">
-                  Market snapshot
+                  {t("hero.marketSnapshot")}
                 </p>
                 <p className="mt-1 font-display text-lg font-semibold text-slate-900 dark:text-white">
-                  Live global feed
+                  {t("hero.liveFeed")}
                 </p>
               </div>
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold text-emerald-300">
                 <Radio className="h-3 w-3" />
-                Live
+                {t("forecast.live")}
               </div>
             </div>
 
@@ -285,7 +287,7 @@ export default function Hero({
               </svg>
               <div className="mt-1 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-500">
                 <span suppressHydrationWarning>{START_YEAR}</span>
-                <span>{horizon}-year trajectory</span>
+                <span>{t("hero.trajectory", { years: horizon })}</span>
                 <span suppressHydrationWarning>{START_YEAR + horizon}</span>
               </div>
             </div>
@@ -320,7 +322,7 @@ export default function Hero({
 
             {/* floating badge */}
             <div className="absolute -bottom-3 left-6 rounded-full border border-line bg-panel px-3 py-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-500 shadow-lg">
-              Model runs 100% in-browser · Americas → Oceania
+              {t("hero.floatBadge")}
             </div>
           </div>
         </Reveal>

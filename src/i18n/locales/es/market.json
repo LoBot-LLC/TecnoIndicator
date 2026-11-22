@@ -10,5 +10,31 @@
   "waterScarcityHint": "agua ajustada por escasez",
   "brent": "CRUDO BRENT",
   "power": "ENERGÍA GLOBAL",
-  "water": "AGUA GLOBAL"
+  "water": "AGUA GLOBAL",
+  "commodity": {
+    "oil": "Petróleo",
+    "electricity": "Electricidad",
+    "water": "Agua"
+  },
+  "commodityLong": {
+    "oil": "Petróleo crudo Brent",
+    "electricity": "Electricidad global",
+    "water": "Agua global"
+  },
+  "region": {
+    "global": "Promedio global",
+    "americas": "Américas",
+    "europe": "Europa",
+    "asia": "Asia",
+    "africa": "África",
+    "oceania": "Oceanía"
+  },
+  "regionShort": {
+    "global": "Global",
+    "americas": "Américas",
+    "europe": "Europa",
+    "asia": "Asia",
+    "africa": "África",
+    "oceania": "Oceanía"
+  }
 }

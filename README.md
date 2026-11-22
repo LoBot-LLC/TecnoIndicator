@@ -55,7 +55,9 @@ The UI ships in three languages: **English**, **Español**, and **Tiếng Việt
 - **Selection** — the language is chosen from the Settings menu and persisted in `localStorage` under the `tecno.language` key. `src/context/LanguageContext.tsx` provides the `LanguageProvider` / `useLanguage` hook; `src/i18n/index.ts` initializes i18next with react-i18next.
 - **Locale files** — one JSON file per namespace per language, laid out as `src/i18n/locales/{lang}/{namespace}.json` (for example `src/i18n/locales/es/factors.json`). Every language must contain the same key set as English.
 - **Auto-translated factor explanations** — factor explanations are translated to Spanish and Vietnamese on demand via `POST /api/translate-factors` (`app/api/translate-factors/route.ts` → `lib/api/handlers/translate-factors.ts` → `lib/api/_shared/translateExplanation.ts`). The client helper is `src/lib/translateFactors.ts`.
+- **General dynamic-string translation** — arbitrary dynamic UI strings (factor names, solution titles/summaries, region driver notes, commodity/region labels, …) are translated to Spanish and Vietnamese on demand via `POST /api/translate-text` (`app/api/translate-text/route.ts` → `lib/api/handlers/translate-text.ts` → `lib/api/_shared/translateText.ts`). English passes through unchanged. The client helper is `src/lib/translateDynamic.ts` (`fetchTranslatedTexts` / `useTranslatedTexts`).
 - **Commodity + price opening rule** — translated explanations keep the opening rule of the source text: each explanation begins with the commodity and its price, and the translation preserves that structure.
+- **Static market dictionaries** — the `market` i18n namespace carries static per-language dictionaries (`commodity`/`commodityLong` and `region`/`regionShort`) for oil, electricity, water, and global/regional labels (added to `en`, `es`, and `vi` `market.json`).
 
 ---
 
@@ -139,6 +141,7 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/regional-factors?region=` | The 8 curated factors for one region (includes `aiCurated` flag) |
 | `/api/solutions?region=` | Up to 3 AI-curated strategy recommendations — Kilo Gateway generates from the canonical factor window + fresh TinyFish-scraped evidence; data-driven fallbacks only when AI is unavailable |
 | `/api/health` | Gateway/key availability plus real cache status |
+| `/api/translate-text` | Translate arbitrary plain texts (titles, factor names, driver notes, solution copy) to Spanish or Vietnamese; English passes through unchanged |
 | `/api/ai-forecast` | 11-year global forecast band |
 | `/api/regional-forecast?region=` | 11-year region-specific forecast band |
 | `/api/cron/curate-factors` | Nightly factor re-curation (Vercel cron, `0 2 * * *` UTC) |
@@ -600,7 +603,8 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   ├── regional-forecast/route.ts    # 11-year region-specific forecast
 │   │   ├── solutions/route.ts            # Up to 3 AI-curated strategy recommendations
 │   │   ├── telemetry/route.ts            # Client-side analytics ingestion
-│   │   └── translate-factors/route.ts    # Translates factor explanations to es/vi (POST)
+│   │   ├── translate-factors/route.ts    # Translates factor explanations to es/vi (POST)
+│   │   └── translate-text/route.ts       # Translate arbitrary dynamic strings to es/vi (POST)
 │   ├── globals.css                       # Global styles + Tailwind CSS 4 imports + @custom-variant dark
 │   ├── layout.tsx                        # Root layout (providers, fonts, metadata, inline theme pre-hydration script)
 │   ├── page.tsx                          # Main single-page application entry
@@ -624,10 +628,12 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │       │   ├── regional-factors.ts       # Regional factor curation
 │       │   ├── regional-forecast.ts      # Regional forecast generation
 │       │   ├── solutions.ts              # AI solution generation
-│       │   └── translate-factors.ts      # Factor explanation translation request handling
+│       │   ├── translate-factors.ts      # Factor explanation translation request handling
+│       │   └── translate-text.ts         # General dynamic-string translation request handling
 │       └── _shared/                      # Cross-cutting utilities
 │           ├── __tests__/
-│           │   └── translateExplanation.test.mjs  # Explanation translation tests
+│           │   ├── translateExplanation.test.mjs  # Explanation translation tests
+│           │   └── translateText.test.mjs         # Translation utility tests
 │           ├── cache.ts                  # In-memory + optional Redis cache with TTLs
 │           ├── deterministicAnalytics.ts # Fuel/grid/water math + getScopePriceDefaults
 │           ├── http.ts                   # Constants, key utilities, shared HTTP helpers
@@ -684,6 +690,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   ├── markdown.ts                   # Markdown report generation
 │   │   ├── model.ts                      # Forecast engine + static FACTORS/REGIONAL_FACTORS
 │   │   ├── translateFactors.ts           # Client helper calling POST /api/translate-factors
+│   │   ├── translateDynamic.ts           # Client helper calling POST /api/translate-text (fetchTranslatedTexts, useTranslatedTexts)
 │   │   ├── truncate.ts                   # Sentence-boundary truncation helper (truncateAtSentence)
 │   │   └── units.ts                      # Unit conversion & display
 │   └── utils/                            # Shared frontend utilities

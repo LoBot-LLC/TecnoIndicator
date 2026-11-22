@@ -49,6 +49,7 @@ import {
 import { buildRegionalMarkdown } from "../lib/markdown";
 import { truncateAtSentence } from "../lib/truncate";
 import { fetchTranslatedExplanations } from "../lib/translateFactors";
+import { useTranslatedTexts } from "../lib/translateDynamic";
 
 // Registered on the client only; the Chart instance is built in useEffect.
 if (typeof window !== "undefined") {
@@ -182,8 +183,10 @@ function RegionCard({
   rank: number;
 }) {
   const { t } = useTranslation("regional");
+  const { t: tMarket } = useTranslation("market");
   const { selectedCurrency, formatPrice } = useCurrency();
   const { lengthUnit, energyUnit } = useUnit();
+  const regionName = tMarket(`region.${ev.region.id}`);
   const oilFlash = useFlash(convertFor("oil", ev.spots.oil, lengthUnit, energyUnit));
   const elecFlash = useFlash(convertFor("electricity", ev.spots.electricity, lengthUnit, energyUnit));
   const waterFlash = useFlash(convertFor("water", ev.spots.water, lengthUnit, energyUnit));
@@ -219,7 +222,7 @@ const outlookColor =
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-display text-base font-semibold text-slate-900 dark:text-white">
-                {ev.region.name}
+                {regionName}
               </h3>
               <span className="rounded-full border border-line bg-base/40 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-400">
                 #{rank}
@@ -300,6 +303,10 @@ function RegionalFactorCard({
   index: number;
 }) {
   const { t } = useTranslation("regional");
+  const { t: tMarket } = useTranslation("market");
+  const { language } = useLanguage();
+  const factorNames = useTranslatedTexts([{ id: factor.id, text: factor.name }], language);
+  const factorName = factorNames.get(factor.id) ?? factor.name;
   const isNew = isNewFactor(factor.createdAt);
   const [isExpanded, setIsExpanded] = useState(false);
   const MAX_CHARS = 400;
@@ -321,7 +328,7 @@ function RegionalFactorCard({
             </span>
           </div>
           <h4 className="mt-2 font-display text-sm font-semibold text-slate-900 dark:text-white leading-snug">
-            {factor.name}
+            {factorName}
             {isNew && (
               <span className="ml-1.5 inline-flex items-center rounded-full bg-teal-500 px-1.5 py-0.5 text-[9px] font-semibold text-slate-900 dark:text-white">
                 {t("factors.new")}
@@ -371,7 +378,7 @@ function RegionalFactorCard({
               className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold"
               style={{ color: c.color, background: `${c.color}18` }}
             >
-              {c.short}
+              {tMarket(`commodity.${c.id}`)}
             </span>
           );
         })}
@@ -412,7 +419,7 @@ function RegionalFactorCard({
                 >
                   <div className="flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
-                    <span className="font-semibold">{c.short}</span>
+                    <span className="font-semibold">{tMarket(`commodity.${c.id}`)}</span>
                     <span className="tabular-nums font-bold">
                       ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </span>
@@ -517,6 +524,8 @@ export default function RegionalEvaluation({
   factorsLoaded = false,
 }: RegionalEvaluationProps) {
   const { t } = useTranslation("regional");
+  const { t: tMarket } = useTranslation("market");
+  const { language } = useLanguage();
   const { selectedCurrency, formatPrice } = useCurrency();
   const { theme } = useTheme();
   const { lengthUnit, energyUnit } = useUnit();
@@ -546,6 +555,10 @@ export default function RegionalEvaluation({
     ? []
     : (dynamicFactors[selected.region.id] ?? []).filter((f) => isHttpUrl(f.source));
   const translations = useTranslatedExplanations(activeRegionalFactors);
+  const driverTranslations = useTranslatedTexts(
+    selected.region.drivers.map((d, i) => ({ id: `driver-${i}`, text: d })),
+    language,
+  );
 
   // Close the export menu on outside click or Escape, returning focus to the
   // trigger so keyboard users never lose their place (WAI-ARIA menu button).
@@ -841,7 +854,7 @@ export default function RegionalEvaluation({
                 {t("export.trigger")}
                 <span className="inline-flex items-center gap-1 rounded-md border border-line bg-base/40 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:text-slate-300">
                   <span aria-hidden="true">{selected.region.flag}</span>
-                  {selected.region.name}
+                  {tMarket(`region.${selected.region.id}`)}
                 </span>
                 <ChevronDown
                   className={`h-3.5 w-3.5 text-slate-600 transition-transform dark:text-slate-300 ${
@@ -896,7 +909,7 @@ export default function RegionalEvaluation({
                 {t("insights.bestScore")}
               </div>
               <p className="mt-2 font-display text-lg font-semibold text-slate-900 dark:text-white">
-                {topScore.region.flag} {topScore.region.name}{" "}
+                {topScore.region.flag} {tMarket(`region.${topScore.region.id}`)}{" "}
                 <span className="text-teal-400 dark:text-teal-300">{topScore.score}/100</span>
               </p>
             </div>
@@ -906,7 +919,7 @@ export default function RegionalEvaluation({
                 {t("insights.lowestPower")}
               </div>
               <p className="mt-2 font-display text-lg font-semibold text-slate-900 dark:text-white">
-                {cheapestPower.region.flag} {cheapestPower.region.name}{" "}
+                {cheapestPower.region.flag} {tMarket(`region.${cheapestPower.region.id}`)}{" "}
                <span className="text-elec">
                    {formatPrice(convertFor("electricity", cheapestPower.spots.electricity, lengthUnit, energyUnit), selectedCurrency)}/{energyLabel(energyUnit)}
                  </span>
@@ -918,7 +931,7 @@ export default function RegionalEvaluation({
                 {t("insights.highestWater")}
               </div>
               <p className="mt-2 font-display text-lg font-semibold text-slate-900 dark:text-white">
-                {dearestWater.region.flag} {dearestWater.region.name}{" "}
+                {dearestWater.region.flag} {tMarket(`region.${dearestWater.region.id}`)}{" "}
                 <span className="text-water">
                   {formatPrice(convertFor("water", dearestWater.spots.water, lengthUnit, energyUnit), selectedCurrency)}/{waterLabel(lengthUnit)}
                 </span>
@@ -989,7 +1002,7 @@ export default function RegionalEvaluation({
                     {t("deepDive.eyebrow")}
                   </p>
                   <h3 className="font-display text-xl font-semibold text-slate-900 dark:text-white">
-                    {selected.region.name}
+                    {tMarket(`region.${selected.region.id}`)}
                   </h3>
                 </div>
               </div>
@@ -1008,7 +1021,7 @@ export default function RegionalEvaluation({
                       <div className="flex items-center justify-between gap-2">
                           <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
                             <Icon className="h-3.5 w-3.5" style={{ color: meta.color }} />
-                            {meta.label}
+                            {t(`commodity.${c.id}`)}
                             <span className="font-normal text-slate-600 dark:text-slate-400">
                               {selectedCurrency}/{unitFor(c.id, lengthUnit, energyUnit)}
                             </span>
@@ -1052,7 +1065,7 @@ export default function RegionalEvaluation({
                   {t("deepDive.drivers")}
                 </p>
                 <ul className="mt-2 space-y-1.5">
-                  {selected.region.drivers.map((d) => (
+                  {selected.region.drivers.map((d, i) => (
                     <li
                       key={d}
                       className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400"
@@ -1061,7 +1074,7 @@ export default function RegionalEvaluation({
                         className="mt-0.5 h-3 w-3 shrink-0"
                         style={{ color: selected.region.accent }}
                       />
-                      {d}
+                      {driverTranslations.get(`driver-${i}`) ?? d}
                     </li>
                   ))}
                 </ul>
@@ -1090,7 +1103,7 @@ export default function RegionalEvaluation({
                        ))
                      ) : (
                        <p className="col-span-full text-center text-sm text-slate-500 dark:text-slate-400 py-8">
-                         {t("factors.empty", { region: selected.region.name })}
+                         {t("factors.empty", { region: tMarket(`region.${selected.region.id}`) })}
                          
                        </p>
                      )}
@@ -1106,7 +1119,7 @@ export default function RegionalEvaluation({
                 className="mt-auto inline-flex items-center justify-center gap-2 rounded-xl bg-teal-400 px-4 py-2.5 text-xs font-semibold text-slate-950 transition-all hover:bg-teal-300"
               >
                 <Globe2 className="h-3.5 w-3.5" />
-                {t("openForecast", { region: selected.region.short })}
+                {t("openForecast", { region: tMarket(`regionShort.${selected.region.id}`) })}
               </button>
             </div>
           </Reveal>
@@ -1161,7 +1174,7 @@ export default function RegionalEvaluation({
                           <span className="text-lg">{e.region.flag}</span>
                           <span>
                              <span className="block font-display font-semibold text-slate-900 dark:text-slate-100">
-                               {e.region.name}
+                               {tMarket(`region.${e.region.id}`)}
                              </span>
                              <span className="text-[11px] text-slate-600 dark:text-slate-400">
                                #{idx + 1} · {e.region.oilMarker}

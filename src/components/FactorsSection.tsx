@@ -11,8 +11,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import Reveal from "./Reveal";
 import { useLanguage } from "../context/LanguageContext";
+import { useTranslatedTexts } from "../lib/translateDynamic";
 import {
   COMMODITIES,
   factorRelevance,
@@ -23,6 +23,7 @@ import {
 } from "../lib/model";
 import { truncateAtSentence } from "../lib/truncate";
 import { fetchTranslatedExplanations } from "../lib/translateFactors";
+import Reveal from "./Reveal";
 
 const MAG_COLOR: Record<Magnitude, string> = {
   High: "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15",
@@ -89,6 +90,10 @@ function FactorCard({
   index: number;
 }) {
   const { t } = useTranslation("factors");
+  const { t: tMarket } = useTranslation("market");
+  const { language } = useLanguage();
+  const factorNames = useTranslatedTexts([{ id: factor.id, text: factor.name }], language);
+  const factorName = factorNames.get(factor.id) ?? factor.name;
   const relevance = factorRelevance(factor.bias, horizon);
   const trend = relevanceTrend(factor.bias, horizon);
   const width = Math.min(100, Math.round((relevance / 2.0) * 100));
@@ -116,7 +121,7 @@ function FactorCard({
             </span>
           </div>
           <h3 className="mt-3 font-display text-base font-semibold text-slate-900 dark:text-white">
-            {factor.name}
+            {factorName}
             {isNew && (
               <span className="ml-2 inline-flex items-center rounded-full bg-teal-500 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900 dark:text-white">
                 {t("new")}
@@ -173,7 +178,7 @@ function FactorCard({
               className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
               style={{ color: c.color, background: `${c.color}18` }}
             >
-              {c.short}
+              {tMarket(`commodity.${c.id}`)}
             </span>
           );
         })}
@@ -207,7 +212,7 @@ function FactorCard({
                 >
                   <div className="flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
-                    <span className="font-semibold">{c.short}</span>
+                    <span className="font-semibold">{tMarket(`commodity.${c.id}`)}</span>
                     <span className="tabular-nums font-bold">
                       ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </span>

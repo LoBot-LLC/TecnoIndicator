@@ -10,5 +10,31 @@
   "waterScarcityHint": "scarcity-adjusted water",
   "brent": "BRENT CRUDE",
   "power": "GLOBAL POWER",
-  "water": "GLOBAL WATER"
+  "water": "GLOBAL WATER",
+  "commodity": {
+    "oil": "Oil",
+    "electricity": "Electricity",
+    "water": "Water"
+  },
+  "commodityLong": {
+    "oil": "Brent Crude Oil",
+    "electricity": "Global Electricity",
+    "water": "Global Water"
+  },
+  "region": {
+    "global": "Global Average",
+    "americas": "Americas",
+    "europe": "Europe",
+    "asia": "Asia",
+    "africa": "Africa",
+    "oceania": "Oceania"
+  },
+  "regionShort": {
+    "global": "Global",
+    "americas": "Americas",
+    "europe": "Europe",
+    "asia": "Asia",
+    "africa": "Africa",
+    "oceania": "Oceania"
+  }
 }

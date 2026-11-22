@@ -10,5 +10,31 @@
   "waterScarcityHint": "nước điều chỉnh theo khan hiếm",
   "brent": "DẦU THÔ BRENT",
   "power": "ĐIỆN TOÀN CẦU",
-  "water": "NƯỚC TOÀN CẦU"
+  "water": "NƯỚC TOÀN CẦU",
+  "commodity": {
+    "oil": "Dầu",
+    "electricity": "Điện",
+    "water": "Nước"
+  },
+  "commodityLong": {
+    "oil": "Dầu thô Brent",
+    "electricity": "Điện toàn cầu",
+    "water": "Nước toàn cầu"
+  },
+  "region": {
+    "global": "Trung bình toàn cầu",
+    "americas": "Châu Mỹ",
+    "europe": "Châu Âu",
+    "asia": "Châu Á",
+    "africa": "Châu Phi",
+    "oceania": "Châu Đại Dương"
+  },
+  "regionShort": {
+    "global": "Toàn cầu",
+    "americas": "Châu Mỹ",
+    "europe": "Châu Âu",
+    "asia": "Châu Á",
+    "africa": "Châu Phi",
+    "oceania": "Châu Đại Dương"
+  }
 }

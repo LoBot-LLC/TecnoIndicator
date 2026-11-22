@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, Shield, Truck, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import Reveal from "./Reveal";
 import { useLanguage } from "../context/LanguageContext";
+import { useTranslatedTexts } from "../lib/translateDynamic";
+import Reveal from "./Reveal";
 import type { Factor, Solution } from "../lib/model";
 import { fetchTranslatedExplanations } from "../lib/translateFactors";
 
@@ -52,7 +53,33 @@ function SolutionCard({
   index: number;
 }) {
   const { t } = useTranslation("solutions");
+  const { language } = useLanguage();
   const strategy = index === 0 ? "resilience" : index === 1 ? "cost" : "strategy";
+
+  const solutionItems = useMemo(() => {
+    const items: { id: string; text: string }[] = [
+      { id: `title`, text: solution.title },
+      { id: `summary`, text: solution.summary },
+    ];
+    solution.actions.forEach((action, i) => {
+      items.push({ id: `action-${i}`, text: action });
+    });
+    if (solution.sources) {
+      solution.sources.slice(0, 3).forEach((source, i) => {
+        items.push({ id: `source-${i}`, text: source });
+      });
+    }
+    return items;
+  }, [solution]);
+
+  const solutionTranslations = useTranslatedTexts(solutionItems, language);
+
+  const solutionTitle = solutionTranslations.get("title") ?? solution.title;
+  const solutionSummary = solutionTranslations.get("summary") ?? solution.summary;
+  const solutionActions = solution.actions.map((action, i) => solutionTranslations.get(`action-${i}`) ?? action);
+  const translatedSources = (solution.sources ?? [])
+    .slice(0, 3)
+    .map((source, i) => solutionTranslations.get(`source-${i}`) ?? source);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 transition-all duration-300 hover:border-teal-400/40 hover:bg-panel">
@@ -70,10 +97,10 @@ function SolutionCard({
         </span>
       </div>
       <h3 className="mt-3 font-display text-base font-semibold text-slate-900 dark:text-white">
-        {solution.title}
+        {solutionTitle}
       </h3>
       <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-500 line-clamp-3">
-        {solution.summary}
+        {solutionSummary}
       </p>
       {solution.aiCurated && (
         <div className="mt-3 border-t border-teal-200/30 pt-2 bg-teal-50 dark:bg-teal-800/30">
@@ -85,12 +112,12 @@ function SolutionCard({
       {solution.sources && solution.sources.length > 0 && (
         <div className="mt-3 border-t border-teal-200/30 pt-2 bg-teal-50 dark:bg-teal-800/30">
           <p className="text-[8px] font-semibold text-teal-400 dark:text-teal-300">
-            {t("sources", { list: solution.sources.slice(0, 3).map((s, i) => `${i + 1}. ${s.slice(0, 40)}...`).join(" ") })}
+            {t("sources", { list: translatedSources.map((s, i) => `${i + 1}. ${s.slice(0, 40)}...`).join(" ") })}
           </p>
         </div>
       )}
       <div className="mt-3 space-y-1.5">
-        {solution.actions.map((action, i) => (
+        {solutionActions.map((action, i) => (
           <div key={i} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-500">
             <ArrowUpRight className="mt-0.5 h-3 w-3 shrink-0 text-teal-400 dark:text-teal-300" />
             <span>{action}</span>

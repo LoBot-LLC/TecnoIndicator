@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLanguage } from "@/context/LanguageContext";
+import { useTranslatedTexts } from "@/lib/translateDynamic";
 import Reveal from "./Reveal";
 import {
   COMMODITIES,
@@ -54,6 +56,8 @@ function formatR(r: number | null, na: string): string {
 export default function CorrelationSection(props: CorrelationSectionProps) {
   const { horizon, region, onRegion } = props;
   const { t } = useTranslation("correlation");
+  const { t: tMarket } = useTranslation("market");
+  const { language } = useLanguage();
   const na = t("notAvailable");
   const prices = props.prices ?? DEFAULT_PRICES;
 
@@ -65,6 +69,11 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
         .sort((a, b) => (b.importanceScore ?? 0) - (a.importanceScore ?? 0))
         .slice(0, 8),
     [pool],
+  );
+
+  const factorNames = useTranslatedTexts(
+    topFactors.map((f) => ({ id: f.id, text: f.name })),
+    language,
   );
 
   const matrix = useMemo<CorrelationCell[]>(
@@ -142,14 +151,14 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                         className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wider"
                         style={{ color: c.color }}
                       >
-                        {c.short}
+                        {tMarket(`commodity.${c.id}`)}
                       </div>
                     ))}
                   </div>
                   {topFactors.map((f) => (
                     <div key={f.id} role="row" className="grid grid-cols-[1.4fr_repeat(3,1fr)] border-b border-line/60 last:border-0">
-                      <div role="rowheader" className="truncate px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200" title={f.name}>
-                        {f.name}
+                      <div role="rowheader" className="truncate px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200" title={factorNames.get(f.id) ?? f.name}>
+                        {factorNames.get(f.id) ?? f.name}
                       </div>
                       {COMMODITIES.map((c) => {
                         const cell = cellFor(f.id, c.id);
@@ -160,7 +169,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                             <button
                               type="button"
                               onClick={() => setSelectedId(f.id)}
-                              aria-label={t("cellLabel", { factor: f.name, commodity: c.short, r: formatR(r, na) })}
+                              aria-label={t("cellLabel", { factor: factorNames.get(f.id) ?? f.name, commodity: tMarket(`commodity.${c.id}`), r: formatR(r, na) })}
                               aria-pressed={active}
                               className={`w-full rounded-lg px-2 py-1.5 font-display text-xs font-bold tabular-nums transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60 ${
                                 active ? "ring-2 ring-teal-400/60" : "hover:brightness-110"
@@ -184,7 +193,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
             {selectedFactor && (
               <div className="mt-6 rounded-2xl border border-line bg-panel/60 p-5 sm:p-6" aria-live="polite">
                 <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">
-                  {t("detailTitle", { name: selectedFactor.name })}
+                  {t("detailTitle", { name: factorNames.get(selectedFactor.id) ?? selectedFactor.name })}
                   <span className="ml-2 text-xs font-normal text-slate-500">
                     {t("vs")} {(selectedFactor.commodities[0] ?? "oil").toUpperCase()}
                   </span>
@@ -193,16 +202,17 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                   {detail.map((d) => {
                     const meta = REGIONS.find((r) => r.id === d.regionId);
                     const pct = d.r === null ? 0 : Math.abs(d.r) * 100;
+                    const regionName = meta ? tMarket(`region.${meta.id}`) : d.regionId;
                     return (
                       <button
                         key={d.regionId}
                         type="button"
                         onClick={() => scrollToRegions(d.regionId)}
-                        aria-label={t("openRegion", { region: meta?.name ?? d.regionId, r: formatR(d.r, na) })}
+                        aria-label={t("openRegion", { region: regionName, r: formatR(d.r, na) })}
                         className="group flex w-full items-center gap-3 rounded-xl border border-line bg-base/40 px-3 py-2 text-left transition-all hover:border-teal-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60"
                       >
                         <span className="w-28 shrink-0 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {meta?.flag} {meta?.name ?? d.regionId}
+                          {meta?.flag} {regionName}
                         </span>
                         <span className="h-2 flex-1 overflow-hidden rounded-full bg-line">
                           <span

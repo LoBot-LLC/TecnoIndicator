@@ -20,6 +20,18 @@ import {
 } from "../_shared/types";
 import { getScopePriceDefaults } from "../_shared/deterministicAnalytics";
 import { truncateAtWordBoundary, truncateAtSentenceBoundary } from "../_shared/textUtils";
+import { getLanguageName, type Language } from "@/lib/translations";
+
+/**
+ * Builds the prompt suffix that instructs the Kilo Gateway model to write all
+ * user-facing text in the selected language. Returns an empty string for
+ * English so default behavior is unchanged.
+ */
+function buildLanguageInstruction(language: Language = "en"): string {
+  if (language === "en") return "";
+  const langName = getLanguageName(language);
+  return `LANGUAGE INSTRUCTION: The user is currently viewing this app in ${langName}. Write ALL user-facing text (factor names, categories, explanations) in ${langName}. Keep numeric prices, units, URLs, source fields, and JSON field names exactly as-is. Translate every user-facing string into ${langName}; do not leave it in English.`;
+}
 
 /**
  * The shape stored under the canonical `dynamic-factors:{scope}` key. Every
@@ -35,6 +47,7 @@ export interface FactorWindow {
 
 export interface FactorAnalysisOptions {
   abortSignal?: AbortSignal;
+  language?: Language;
 }
 
 /** Response body shared by /api/dynamic-factors and /api/regional-factors. */
@@ -699,7 +712,12 @@ export async function reSummarizeExplanation(
     water: { price: number; unit: string };
   },
   signal?: AbortSignal,
+  language: Language = "en",
 ): Promise<string | null> {
+  const languageInstruction =
+    language !== "en"
+      ? `LANGUAGE INSTRUCTION: The user is currently viewing this app in ${getLanguageName(language)}. Write the explanation in ${getLanguageName(language)}. Keep numeric prices, units, URLs, source fields, and JSON field names exactly as-is. Translate every user-facing string into ${getLanguageName(language)}; do not leave it in English.`
+      : "";
   const prompt = `Rewrite the following text into 1-3 meaningful sentences (under 400 characters total) that explain WHY the commodity price is moving. The explanation MUST start with "With [commodity] at $[price]/[unit]..." using the exact current price numbers provided below. Write in your own words — do NOT copy text verbatim.
 
 Explain the actual price driver: a supply change (production cuts, outages, disruptions), a demand change, an unplanned outage, a policy or sanctions action, or an inventory/stock change. State what changed and why it moves the price.
@@ -714,9 +732,11 @@ Current prices: oil \$${currentPrices.oil.price}/${currentPrices.oil.unit}, elec
 
 Text to summarize: "${rawExplanation}"`;
 
+  const systemContent = `You are a precise commodity analyst and summarizer. Output 1-3 meaningful sentences (under 400 chars total) that explain WHY the price is moving — a supply change, demand change, unplanned outage, policy/sanctions action, or inventory change. Start with "With [commodity] at $[price]/[unit],". Never merely describe an event, report, or agency action without its price effect. Never end with a truncated word or fragment ("E", "co", "cheaper"). Never use the middle-dot "·" separator or list-style scraped text. No preamble, no markdown, no URLs, no bullet points, no dashes at the start, no publication headers, dates, or metadata.${languageInstruction ? `\n\n${languageInstruction}` : ""}`;
+
   const payload = {
     messages: [
-      { role: "system", content: "You are a precise commodity analyst and summarizer. Output 1-3 meaningful sentences (under 400 chars total) that explain WHY the price is moving — a supply change, demand change, unplanned outage, policy/sanctions action, or inventory change. Start with \"With [commodity] at $[price]/[unit],\". Never merely describe an event, report, or agency action without its price effect. Never end with a truncated word or fragment (\"E\", \"co\", \"cheaper\"). Never use the middle-dot \"·\" separator or list-style scraped text. No preamble, no markdown, no URLs, no bullet points, no dashes at the start, no publication headers, dates, or metadata." },
+      { role: "system", content: systemContent },
       { role: "user", content: prompt },
     ],
     max_tokens: 200,
@@ -800,6 +820,7 @@ export async function validateAndRepairWindow(
     water: { price: number; unit: string; source: string };
   },
   signal?: AbortSignal,
+  language: Language = "en",
 ): Promise<Factor[]> {
   const repaired: Factor[] = [];
   const filtered = filterStaticFallbacks(factors);
@@ -813,7 +834,7 @@ export async function validateAndRepairWindow(
   if (needingRepair.length > 0) {
     console.warn(`validateAndRepairWindow: ${needingRepair.length} factors need re-summarization, running in parallel`);
     const repairPromises = needingRepair.map((f) =>
-      reSummarizeExplanation(f.explanation, currentPrices, signal).then((reSummary) => ({ factor: f, reSummary, reQuality: reSummary ? validateExplanationQuality(reSummary) : { ok: false, reason: "re-summarization returned null" } }))
+      reSummarizeExplanation(f.explanation, currentPrices, signal, language).then((reSummary) => ({ factor: f, reSummary, reQuality: reSummary ? validateExplanationQuality(reSummary) : { ok: false, reason: "re-summarization returned null" } }))
     );
     const repairResults = await Promise.allSettled(repairPromises);
 
@@ -2177,6 +2198,7 @@ export async function runFactorAnalysis(
   options: FactorAnalysisOptions = {},
 ): Promise<FactorWindow> {
   const signal = options.abortSignal;
+  const language = options.language ?? "en";
   const region = scopeRegion(scope);
   const previous = await readFactorWindow(scope);
   // The previously stored factors are the rolling window; the static fallbacks
@@ -2256,14 +2278,14 @@ export async function runFactorAnalysis(
         if (deterministic.length > 0) {
           console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors from known URLs for scope "${scope}"`);
           return {
-            factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal),
+            factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal, language),
             aiCurated: false,
             updatedAt: now,
           };
         }
       }
       console.warn(`Factor analysis: no candidates from known URLs either; falling back to existing factors`);
-      const repaired = await validateAndRepairWindow(existing, currentPrices, signal);
+      const repaired = await validateAndRepairWindow(existing, currentPrices, signal, language);
       return { factors: repaired, aiCurated: carriedAiCurated, updatedAt: now };
     }
 
@@ -2296,7 +2318,9 @@ export async function runFactorAnalysis(
       site_name: (c as { site_name?: string }).site_name,
     }));
 
-    const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
+    const basePrompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
+    const languageInstruction = buildLanguageInstruction(language);
+    const prompt = languageInstruction ? `${basePrompt}\n\n${languageInstruction}` : basePrompt;
     const payload = {
       messages: [
         { role: "system", content: prompt },
@@ -2338,7 +2362,7 @@ BAD: "Global electricity demand growth accelerates as markets navigate energy pr
 BAD: "With oil at $104.86/bbl, in Energy Skip to page content Filter by article type In-brief analysis Nov 13 2026" (contains page navigation chrome)
 BAD: "With oil at $104.86/bbl, using ship-to-ship transfers along Oman's coast added to supply which was reflected in prices during late October and early" (mid-sentence fragment starting with participle)
 
-Every explanation you output must follow the GOOD format: literal "With <commodity> at $<price>/<unit>,..." opening, 1-3 meaningful sentences, your own words, no URLs, no markdown, no bullet points, no raw article text, no publication headers, dates, or metadata, no page navigation chrome, no participle-opener fragments.`;
+Every explanation you output must follow the GOOD format: literal "With <commodity> at $<price>/<unit>,..." opening, 1-3 meaningful sentences, your own words, no URLs, no markdown, no bullet points, no raw article text, no publication headers, dates, or metadata, no page navigation chrome, no participle-opener fragments.${languageInstruction ? `\n\n${languageInstruction}` : ""}`;
 
       console.warn(`Factor analysis: retrying Kilo for scope "${scope}" after invalid/empty response (content length ${content.length}, factors ${Array.isArray(parsed?.factors) ? parsed.factors.length : 0})`);
 
@@ -2367,13 +2391,13 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}"`);
         return {
-          factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal),
+          factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal, language),
           aiCurated: false,
           updatedAt: now,
         };
       }
       console.warn(`Factor analysis: no deterministic factors could be built for scope "${scope}"; falling back to existing factors`);
-      const repaired = await validateAndRepairWindow(existing, currentPrices, signal);
+      const repaired = await validateAndRepairWindow(existing, currentPrices, signal, language);
       return { factors: repaired, aiCurated: carriedAiCurated, updatedAt: now };
     }
 
@@ -2445,13 +2469,13 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}"`);
         return {
-          factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal),
+          factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal, language),
           aiCurated: false,
           updatedAt: now,
         };
       }
       console.warn(`Factor analysis: no deterministic factors could be built for scope "${scope}"; falling back to existing factors`);
-      const repaired = await validateAndRepairWindow(existing, currentPrices, signal);
+      const repaired = await validateAndRepairWindow(existing, currentPrices, signal, language);
       return { factors: repaired, aiCurated: carriedAiCurated, updatedAt: now };
     }
 
@@ -2490,7 +2514,7 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}" after error (aiCurated=false)`);
         return {
-          factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal),
+          factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal, language),
           aiCurated: false,
           updatedAt: now,
         };
@@ -2517,7 +2541,7 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
         if (deterministic.length > 0) {
           console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors from known URLs for scope "${scope}" after error`);
           return {
-            factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal),
+            factors: await validateAndRepairWindow(mergeRollingWindow(existing, deterministic), currentPrices, signal, language),
             aiCurated: false,
             updatedAt: now,
           };
@@ -2526,7 +2550,7 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
     } catch (fallbackError) {
       console.error(`Factor analysis: known-URL fallback also failed for scope "${scope}":`, fallbackError);
     }
-    const repaired = await validateAndRepairWindow(existing, currentPrices, signal);
+    const repaired = await validateAndRepairWindow(existing, currentPrices, signal, language);
     return { factors: repaired, aiCurated: carriedAiCurated, updatedAt: now };
   }
 }

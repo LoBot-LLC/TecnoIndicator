@@ -9,6 +9,7 @@ import {
 } from "./factor-analysis";
 import { FACTORS_CACHE_MS } from "../_shared/http";
 import { isRegion, type Region } from "../_shared/regions";
+import { isLanguage, type Language } from "@/lib/translations";
 import { sanitizeError } from "../_shared/validation";
 import type { RegionId } from "../_shared/types";
 
@@ -29,6 +30,11 @@ function resolveScope(url: URL): { ok: true; scope: RegionId } | { ok: false; re
   return { ok: true, scope: regionParam as Region };
 }
 
+function resolveLanguage(value: string | null): Language {
+  if (value && isLanguage(value)) return value;
+  return "en";
+}
+
 /**
  * GET /api/dynamic-factors — curated price factors for a scope ("global" by
  * default, or a region via `?region=`). Serves the canonical
@@ -41,6 +47,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
   if (!scopeResult.ok) return scopeResult.response;
   const scope = scopeResult.scope;
   const force = url.searchParams.get("force") === "true";
+  const language = resolveLanguage(url.searchParams.get("lang"));
 
   try {
     if (!force) {
@@ -57,7 +64,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 55000);
     try {
-      const result = await runFactorAnalysis(scope, { abortSignal: abortController.signal });
+      const result = await runFactorAnalysis(scope, { abortSignal: abortController.signal, language });
       const stored = await writeFactorWindow(scope, result.factors, result.aiCurated);
       return Response.json(
         toFactorsPayload(result.factors, scope, result.aiCurated, { updatedAt: stored.updatedAt }),

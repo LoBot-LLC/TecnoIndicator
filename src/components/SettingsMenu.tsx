@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Palette, Ruler, Search, SlidersHorizontal, X, Zap } from "lucide-react";
+import { Palette, Ruler, Search, SlidersHorizontal, X, Zap, Globe } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { useUnit } from "../context/UnitContext";
 import { useFont } from "../context/FontContext";
+import { useLanguage } from "../context/LanguageContext";
 import { ENERGY_UNITS, LENGTH_UNITS, type EnergyUnit, type LengthUnit } from "../lib/units";
 
 export default function SettingsMenu() {
@@ -19,6 +20,7 @@ export default function SettingsMenu() {
   const { selectedCurrency, setSelectedCurrency, currencies, rates, isLoading } = useCurrency();
   const { lengthUnit, setLengthUnit, energyUnit, setEnergyUnit } = useUnit();
   const { fontKey, setFontKey, fonts, current } = useFont();
+  const { language, setLanguage, translations, languageOptions } = useLanguage();
 
   useEffect(() => {
     if (!open) return;
@@ -54,52 +56,87 @@ export default function SettingsMenu() {
           <div
             ref={panelRef}
             role="dialog"
-            aria-label="Settings"
+            aria-label={translations["Settings"] || "Settings"}
             className="fixed right-4 top-[72px] z-50 w-[min(380px,calc(100vw-2rem))] max-h-[80vh] overflow-y-auto rounded-2xl border border-line bg-panel shadow-2xl"
           >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-panel px-4 py-3">
-              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">Settings</h2>
+              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
+                {translations["Settings"] || "Settings"}
+              </h2>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-panel/5 text-slate-600 hover:text-teal-600 dark:text-slate-300 dark:hover:text-teal-200"
-                aria-label="Close settings"
+                aria-label={translations["Close settings"] || "Close settings"}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <div className="p-4">
-              {/* Appearance */}
+              {/* Language */}
               <div className="flex items-center gap-2">
-                <Palette className="h-4 w-4 text-teal-600 dark:text-teal-300" />
+                <Globe className="h-4 w-4 text-teal-600 dark:text-teal-300" />
                 <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 dark:text-slate-400">
-                  Fonts &amp; themes
+                  Language
                 </h3>
               </div>
 
               <div className="mt-3 space-y-3">
                 <label className="block">
-                  <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">Color theme</span>
+                  <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    {translations["Select your preferred language from the dropdown below"] || "Language"}
+                  </span>
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value as "en" | "es" | "vi")}
+                    className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100 dark:[color-scheme:dark]"
+                  >
+                    {languageOptions.map((lang) => (
+                      <option key={lang.code} value={lang.code} className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">
+                        {lang.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <hr className="my-4 border-line" />
+
+              {/* Appearance */}
+              <div className="flex items-center gap-2">
+                <Palette className="h-4 w-4 text-teal-600 dark:text-teal-300" />
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 dark:text-slate-400">
+                  {translations["Fonts & themes"] || "Fonts & themes"}
+                </h3>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    {translations["Color theme"] || "Color theme"}
+                  </span>
                   <select
                     value={mode}
                     onChange={(e) => setMode(e.target.value as "light" | "dark" | "system")}
                     className="w-full rounded-lg border border-line bg-panel/5 px-3 py-2 text-sm text-slate-800 focus:border-teal-400/40 focus:outline-none dark:text-slate-100 dark:[color-scheme:dark]"
                   >
                     <option value="light" className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">
-                      Light
+                      {translations["Light"] || "Light"}
                     </option>
                     <option value="dark" className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">
-                      Dark
+                      {translations["Dark"] || "Dark"}
                     </option>
                     <option value="system" className="text-slate-800 dark:text-slate-100 dark:bg-slate-800">
-                      System
+                      {translations["System"] || "System"}
                     </option>
                   </select>
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">Font</span>
+                  <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    {translations["Font"] || "Font"}
+                  </span>
                   <select
                     value={fontKey}
                     onChange={(e) => setFontKey(e.target.value)}
@@ -115,7 +152,7 @@ export default function SettingsMenu() {
                     className="mt-1.5 text-xs text-slate-600 dark:text-slate-400"
                     style={{ fontFamily: current.family }}
                   >
-                    Preview: The quick brown fox — 012345
+                    {translations["Preview: The quick brown fox — 012345"] || "Preview: The quick brown fox — 012345"}
                   </p>
                 </label>
               </div>
@@ -126,21 +163,23 @@ export default function SettingsMenu() {
               <div className="flex items-center gap-2">
                 <Ruler className="h-4 w-4 text-teal-600 dark:text-teal-300" />
                 <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 dark:text-slate-400">
-                  Unit conversion
+                  {translations["Unit conversion"] || "Unit conversion"}
                 </h3>
               </div>
 
               <div className="mt-3 space-y-3">
                 <div className="block">
-                  <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">Currency</span>
+                  <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    {translations["Currency"] || "Currency"}
+                  </span>
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                     <input
                       type="text"
                       value={currencyQuery}
                       onChange={(e) => setCurrencyQuery(e.target.value)}
-                      placeholder="Search currency…"
-                      aria-label="Search currencies"
+                      placeholder={translations["Search currency…"] || "Search currency…"}
+                      aria-label={translations["Search currencies"] || "Search currencies"}
                       className="w-full rounded-lg border border-line bg-panel/5 py-1.5 pl-8 pr-3 text-sm text-slate-800 placeholder:text-slate-500 focus:border-teal-400/40 focus:outline-none dark:text-slate-100"
                     />
                   </div>
@@ -159,7 +198,6 @@ export default function SettingsMenu() {
                           disabled={noRate}
                           onClick={() => {
                             if (noRate || active) return;
-                            // CurrencyContext.setSelectedCurrency triggers a reload by design.
                             setSelectedCurrency(c.code);
                           }}
                           className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
@@ -180,7 +218,9 @@ export default function SettingsMenu() {
                 </div>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">Length / volume</span>
+                  <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    {translations["Length / volume"] || "Length / volume"}
+                  </span>
                   <select
                     value={lengthUnit}
                     onChange={(e) => setLengthUnit(e.target.value as LengthUnit)}
@@ -196,7 +236,7 @@ export default function SettingsMenu() {
 
                 <label className="block">
                   <span className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300">
-                    <Zap className="h-3.5 w-3.5" /> Energy
+                    <Zap className="h-3.5 w-3.5" /> {translations["Energy"] || "Energy"}
                   </span>
                   <select
                     value={energyUnit}
@@ -213,7 +253,8 @@ export default function SettingsMenu() {
               </div>
 
               <p className="mt-4 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
-                Unit conversions update in real time. Currency selection reloads to apply across all data.
+                {translations["Unit conversions update in real time. Currency selection reloads to apply across all data."] ||
+                  "Unit conversions update in real time. Currency selection reloads to apply across all data."}
               </p>
             </div>
           </div>,
@@ -228,8 +269,8 @@ export default function SettingsMenu() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-label="Settings"
-        title="Settings"
+        aria-label={translations["Settings"] || "Settings"}
+        title={translations["Settings"] || "Settings"}
         className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-panel/5 text-slate-800 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:text-slate-100 dark:hover:text-teal-200"
       >
         <SlidersHorizontal className="h-4.5 w-4.5" />

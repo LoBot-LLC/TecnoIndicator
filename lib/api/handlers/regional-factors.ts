@@ -8,8 +8,14 @@ import {
   writeFactorWindow,
 } from "./factor-analysis";
 import { FACTORS_CACHE_MS } from "../_shared/http";
+import { isLanguage, type Language } from "@/lib/translations";
 import { isRegion, type Region } from "../_shared/regions";
 import { sanitizeError } from "../_shared/validation";
+
+function resolveLanguage(value: string | null): Language {
+  if (value && isLanguage(value)) return value;
+  return "en";
+}
 
 /**
  * GET /api/regional-factors?region=… — same payload and, importantly, the same
@@ -29,6 +35,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
   }
   const region = regionParam as Region;
   const force = url.searchParams.get("force") === "true";
+  const language = resolveLanguage(url.searchParams.get("lang"));
 
   try {
     if (!force) {
@@ -45,7 +52,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 55000);
     try {
-      const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
+      const result = await runFactorAnalysis(region, { abortSignal: abortController.signal, language });
       const stored = await writeFactorWindow(region, result.factors, result.aiCurated);
       return Response.json(
         toFactorsPayload(result.factors, region, result.aiCurated, { updatedAt: stored.updatedAt }),

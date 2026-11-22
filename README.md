@@ -14,6 +14,7 @@ A commodity price forecasting dashboard for **oil**, **electricity**, and **wate
 
 - **Hero Dashboard** — Clean landing with project name, tagline, current date, and prominent "Start Forecast" CTA.
 - **Currency Selector** — Predict prices in your country's currency at any moment.
+- **Multi-language support** — English, Español, and Vietnamese, selectable from the Settings menu ("Language"). UI strings are translated via a dictionary (`src/lib/translations.ts`, `getTranslation`), persisted in `localStorage` under `tecno.language`, and served through a `LanguageProvider` (`src/context/LanguageContext.tsx`). AI-generated content (dynamic factors, solutions) is translated via Kilo Gateway using a `?lang=` query parameter on `/api/dynamic-factors`, `/api/regional-factors`, and `/api/solutions`.
 - **Interactive Prediction Tool**
   - Horizon slider (1–10 years)
   - Three commodity cards: **Brent Crude Oil (USD/barrel)**, **Global Water (USD/M³)**, and **Global Electricity (USD/MWh)**
@@ -56,6 +57,19 @@ The app ships a **Light / Dark / System** color theme, selectable from the Setti
 - **No FOUC** — an inline pre-hydration script in `app/layout.tsx` applies the stored/system theme (adds/removes the `.dark` class on `<html>`) before first paint, so there is no flash of the wrong theme.
 - **Tailwind v4 dark mode** — wired via `@custom-variant dark (&:where(.dark, .dark *))` in `app/globals.css`; dark overrides live under the `.dark` selector. The `<html>` element uses `suppressHydrationWarning`.
 - **Implementation** — `src/context/ThemeContext.tsx` (`ThemeProvider` / `useTheme`, toggles `.dark` and persists the choice), consumed by `src/components/SettingsMenu.tsx`.
+
+---
+
+## 🌐 Multi-language support
+
+The app ships with **English**, **Español**, and **Tiếng Việt**, selectable from the Settings menu ("Language").
+
+- **Language selector** — A dropdown in `src/components/SettingsMenu.tsx` renders `LANGUAGE_OPTIONS` (`en` = English, `es` = Español, `vi` = Tiếng Việt) using `useLanguage()` from `src/context/LanguageContext.tsx`.
+- **LanguageContext provider** — `src/context/LanguageContext.tsx` (`LanguageProvider` / `useLanguage`) holds the selected `Language` (`"en" | "es" | "vi"`), persists it in `localStorage` under the `tecno.language` key, and exposes the current translations dictionary via `getLanguageTranslations(language)`.
+- **Translation dictionary** — `src/lib/translations.ts` defines `TRANSLATIONS` (a `Record<Language, Record<key, string>>`) for all UI strings, plus `getTranslation(key, language)` (falls back to English then the raw key), `getLanguageName(language)` (returns "English"/"Spanish"/"Vietnamese" for Kilo Gateway instructions), `LANGUAGE_OPTIONS`, `DEFAULT_LANGUAGE`, and `isLanguage()`.
+- **localStorage key** — `tecno.language`; the choice is read on first render and restored on reload.
+- **UI strings** — Consumed via `getTranslation(key, language)` throughout components (SettingsMenu, Navbar, etc.), so labels, placeholders, and ARIA text render in the selected language.
+- **AI content translation** — Dynamic factors and solutions are translated via Kilo Gateway. The client passes `?lang=<language>` to `/api/dynamic-factors`, `/api/regional-factors?region=`, and `/api/solutions?region=`. The route handlers resolve the language via `resolveLanguage()` (defaulting to `"en"`), pass it to `runFactorAnalysis`, and Kilo prompts use `getLanguageName(language)` (e.g. "Spanish", "Vietnamese") to instruct the model to write all user-facing text in the selected language while keeping numbers, sources/URLs, and JSON field names as-is.
 
 ---
 

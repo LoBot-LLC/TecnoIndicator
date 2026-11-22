@@ -7,6 +7,7 @@ import { readFactorWindow } from "./factor-analysis";
 import { safeParseJson } from "../_shared/validation";
 import { isRegion, type Region } from "../_shared/regions";
 import type { Factor, RegionId, Solution } from "../_shared/types";
+import { getLanguageName, type Language } from "@/lib/translations";
 
 const EVIDENCE_CACHE_MS = 30_000;
 
@@ -87,6 +88,12 @@ function recentMonth(): string {
 
 function isValidRegionId(value: string): value is RegionId {
   return value === "global" || isRegion(value);
+}
+
+function resolveLanguage(value: string | null): Language {
+  const v = value ?? "en";
+  if (v === "en" || v === "es" || v === "vi") return v;
+  return "en";
 }
 
 function buildSolution(s: unknown, scope: RegionId, validRegions: RegionId[]): Solution | null {
@@ -294,6 +301,7 @@ export async function handleSolutions(req: Request): Promise<Response> {
   const isGlobal = regionParam === null || regionParam === "";
   const scope: RegionId = isGlobal ? "global" : isValidRegionId(regionParam) ? regionParam : "global";
   const cacheKey = `solutions:${scope}`;
+  const language = resolveLanguage(url.searchParams.get("lang"));
 
   if (!force) {
     const cached = await getCache<CachedSolutions>(cacheKey, SOLUTIONS_CACHE_MS);
@@ -342,9 +350,15 @@ export async function handleSolutions(req: Request): Promise<Response> {
       freshEvidence = [];
     }
 
+    const languageInstruction =
+      language === "en"
+        ? ""
+        : `LANGUAGE INSTRUCTION: The user is currently viewing this app in ${getLanguageName(language)}. Write ALL user-facing text (solution titles, summaries, action items) in ${getLanguageName(language)}. Keep numbers, sources/URLs, and JSON field names as-is.`;
+    const systemContent = SOLUTION_PROMPT + (languageInstruction ? `\n\n${languageInstruction}` : "");
+
     const payload = {
       messages: [
-        { role: "system", content: SOLUTION_PROMPT },
+        { role: "system", content: systemContent },
         {
           role: "user",
           content: JSON.stringify({

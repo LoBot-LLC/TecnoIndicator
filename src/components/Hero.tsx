@@ -14,6 +14,7 @@ import Reveal from "./Reveal";
 import Ticker from "./Ticker";
 import { useCurrency } from "../context/CurrencyContext";
 import { useUnit } from "../context/UnitContext";
+import { useLanguage } from "../context/LanguageContext";
 import { energyLabel, waterLabel } from "../lib/units";
 import {
   COMMODITIES,
@@ -56,7 +57,7 @@ function LivePrice({ value }: { value: number }) {
   );
 }
 
-const STATS = [
+const STATS: Array<{ value: string; label: string }> = [
   { value: "3", label: "Commodities" },
   { value: "5", label: "World regions" },
   { value: "10", label: "Year horizon" },
@@ -85,6 +86,7 @@ export default function Hero({
 }: HeroProps) {
   const { selectedCurrency } = useCurrency();
   const { lengthUnit, energyUnit } = useUnit();
+  const { translations } = useLanguage();
 
   const today = new Date();
   const horizon = horizonProp ?? 10;
@@ -215,7 +217,7 @@ export default function Hero({
                 >
                   <p className="font-display text-2xl font-bold text-slate-900 dark:text-white">{s.value}</p>
                   <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-600 dark:text-slate-500">
-                    {s.label}
+                    {translations[s.label] || s.label}
                   </p>
                 </div>
               ))}

@@ -12,6 +12,7 @@ import RegionalEvaluation from "@/components/RegionalEvaluation";
 import AboutSection from "@/components/AboutSection";
 import Footer from "@/components/Footer";
 import { useLiveMarket } from "@/hook/useLiveMarket";
+import { useLanguage } from "@/context/LanguageContext";
 import {
   EVAL_REGIONS,
   generateForecast,
@@ -54,6 +55,7 @@ export default function HomePage() {
     fetchElectricity,
     toggleLive,
   } = useLiveMarket();
+  const { language } = useLanguage();
 
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("Initializing AI");
   const [globalFactors, setGlobalFactors] = useState<Factor[]>([]);
@@ -161,9 +163,9 @@ export default function HomePage() {
     let active = true;
     const pollFactors = async () => {
       // Fire all requests simultaneously: global + all regions
-      const globalPromise = fetch("/api/dynamic-factors");
+      const globalPromise = fetch("/api/dynamic-factors?lang=${encodeURIComponent(language)}");
       const regionalPromises = EVAL_REGIONS.map((r) =>
-        fetch(`/api/regional-factors?region=${r.id}`).then(async (res) => {
+        fetch(`/api/regional-factors?region=${r.id}&lang=${encodeURIComponent(language)}`).then(async (res) => {
           if (!res.ok) return { region: r.id, factors: null, aiCurated: false, error: "fetch failed" };
           const data = await res.json();
           return { region: r.id, factors: Array.isArray(data.factors) ? data.factors : null, aiCurated: !!data.aiCurated };
@@ -202,7 +204,7 @@ export default function HomePage() {
       active = false;
       clearInterval(id);
     };
-  }, []);
+  }, [language]);
 
   /**
    * Solutions fetch. A new request cancels the one still in flight so a burst
@@ -217,7 +219,7 @@ export default function HomePage() {
       solutionsAbortRef.current = controller;
       try {
         const qs = force ? "?force=true" : "";
-        const res = await fetch(`/api/solutions?region=${scope}${qs}`, {
+        const res = await fetch(`/api/solutions?region=${scope}${qs}&lang=${encodeURIComponent(language)}`, {
           signal: controller.signal,
         });
         if (!res.ok) return;
@@ -230,7 +232,7 @@ export default function HomePage() {
         if (solutionsAbortRef.current === controller) solutionsAbortRef.current = null;
       }
     },
-    [scope],
+    [scope, language],
   );
 
   // Backstop poll for solutions (also covers the very first paint)
@@ -242,7 +244,7 @@ export default function HomePage() {
       solutionsAbortRef.current?.abort();
       solutionsAbortRef.current = null;
     };
-  }, [fetchSolutions]);
+  }, [fetchSolutions, language]);
 
   /**
    * Real-time regeneration: whenever the reason set for the active scope

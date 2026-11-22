@@ -19,6 +19,7 @@ import {
 } from "@/lib/correlation";
 import { REGIONS } from "@/lib/model";
 import { useLanguage } from "../context/LanguageContext";
+import { useTranslatedTexts } from "../hook/useTranslatedTexts";
 
 /** Translate signature shared with `useLanguage()`, for plain helpers. */
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
@@ -78,7 +79,7 @@ function formatR(r: number | null, t: Translate): string {
 }
 
 export default function CorrelationSection(props: CorrelationSectionProps) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const { horizon, region, onRegion } = props;
   const prices = props.prices ?? DEFAULT_PRICES;
 
@@ -91,6 +92,9 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
         .slice(0, 8),
     [pool],
   );
+
+  const factorNameTexts = topFactors.map((f) => f.name);
+  const translatedFactorNames = useTranslatedTexts(factorNameTexts, locale);
 
   const matrix = useMemo<CorrelationCell[]>(
     () =>
@@ -106,6 +110,9 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedFactor: Factor | undefined =
     topFactors.find((f) => f.id === selectedId) ?? topFactors[0];
+  const selectedFactorIndex = topFactors.findIndex((f) => f.id === selectedFactor?.id);
+  const translatedSelectedFactorName =
+    selectedFactorIndex !== -1 ? translatedFactorNames[selectedFactorIndex] ?? selectedFactor?.name : selectedFactor?.name;
 
   const detail = useMemo(() => {
     if (!selectedFactor) return [];
@@ -176,10 +183,10 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                       </div>
                     ))}
                   </div>
-                  {topFactors.map((f) => (
+                  {topFactors.map((f, i) => (
                     <div key={f.id} role="row" className="grid grid-cols-[1.4fr_repeat(3,1fr)] border-b border-line/60 last:border-0">
                       <div role="rowheader" className="truncate px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200" title={f.name}>
-                        {f.name}
+                        {translatedFactorNames[i] ?? f.name}
                       </div>
                       {COMMODITIES.map((c) => {
                         const cell = cellFor(f.id, c.id);
@@ -191,7 +198,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                               type="button"
                               onClick={() => setSelectedId(f.id)}
                               aria-label={t("{factor} vs {commodity}: {r}", {
-                                factor: f.name,
+                                factor: translatedFactorNames[i] ?? f.name,
                                 commodity: commodityLabel(c.id, t),
                                 r: formatR(r, t),
                               })}
@@ -218,7 +225,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
             {selectedFactor && (
               <div className="mt-6 rounded-2xl border border-line bg-panel/60 p-5 sm:p-6" aria-live="polite">
                 <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">
-                  {t("{factor} — per-region correlation", { factor: selectedFactor.name })}
+                  {t("{factor} — per-region correlation", { factor: translatedSelectedFactorName })}
                   <span className="ml-2 text-xs font-normal text-slate-500">
                     {t("vs {commodity}", {
                       commodity: commodityLabel(selectedFactor.commodities[0] ?? "oil", t).toUpperCase(),

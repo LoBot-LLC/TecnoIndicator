@@ -181,7 +181,7 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => doExport("png")}
-              aria-label={t("Download chart as PNG")}
+              aria-label={t("Download chart (PNG)")}
               className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
             >
               <FileImage className="h-4 w-4" /> PNG
@@ -189,7 +189,7 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => doExport("csv")}
-              aria-label={t("Download data as CSV")}
+              aria-label={t("Download data (CSV)")}
               className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
             >
               <FileText className="h-4 w-4" /> CSV
@@ -197,7 +197,7 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => doExport("md")}
-              aria-label={t("Download data as Markdown")}
+              aria-label={t("Data as MD")}
               className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel/5 px-2 py-2.5 text-sm text-slate-800 dark:text-slate-100"
             >
               <FileCode2 className="h-4 w-4" /> MD

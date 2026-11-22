@@ -156,10 +156,9 @@ function RegionCard({
   rank: number;
 }) {
   const { selectedCurrency, formatPrice } = useCurrency();
-  const { t, locale } = useLanguage();
+  const { t } = useLanguage();
   const { lengthUnit, energyUnit } = useUnit();
-  const [translatedBlurb] = useTranslatedTexts([ev.region.blurb], locale);
-  const blurb = translatedBlurb || ev.region.blurb;
+  const blurb = t(ev.region.blurb);
   const oilFlash = useFlash(convertFor("oil", ev.spots.oil, lengthUnit, energyUnit));
   const elecFlash = useFlash(convertFor("electricity", ev.spots.electricity, lengthUnit, energyUnit));
   const waterFlash = useFlash(convertFor("water", ev.spots.water, lengthUnit, energyUnit));
@@ -519,11 +518,11 @@ export default function RegionalEvaluation({
 
   const selected = evals.find((e) => e.region.id === region) ?? evals[0];
 
-  const [translatedSelectedBlurb, ...translatedSelectedDrivers] = useTranslatedTexts(
-    [selected.region.blurb, ...selected.region.drivers],
+  const selectedBlurb = t(selected.region.blurb);
+  const [translatedSelectedDrivers] = useTranslatedTexts(
+    selected.region.drivers,
     locale,
   );
-  const selectedBlurb = translatedSelectedBlurb || selected.region.blurb;
   const selectedDrivers = selected.region.drivers.map(
     (driver, i) => translatedSelectedDrivers[i] || driver,
   );

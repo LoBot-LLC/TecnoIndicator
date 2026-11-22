@@ -90,7 +90,10 @@ The interface ships in three locales. The labels in the Settings picker are the 
 
 **Dynamic (AI-curated / web-searched) content**
 
-Static UI strings come from the catalogs, but factor names, explanations, categories, region blurbs/drivers, and strategy titles/summaries/actions are generated at runtime, so they are translated on demand:
+Two translation paths are used depending on where a string originates:
+
+- **Static strings** (UI chrome, nav labels, hero copy, region blurbs, static source names already present in a catalog) are translated through the catalog key: `t("English source string", vars)` via the `useLanguage()` hook. These work fully offline — no gateway call is needed.
+- **Dynamic strings** (AI-curated factor names/explanations, driver names, strategy titles/summaries/actions, web-searched source names, and SOURCES in AboutSection) are generated at runtime, so they are translated on demand through the dynamic hook.
 
 1. `useTranslatedTexts(texts, locale)` batches unique strings, dedupes in-flight requests, and keeps a session-level cache. For `en` it returns the inputs unchanged without fetching.
 2. Non-English text is sent to `POST /api/translate` with `{ locale, texts }` (1–40 texts, at most 600 chars each and 12,000 chars total).
@@ -98,7 +101,7 @@ Static UI strings come from the catalogs, but factor names, explanations, catego
 4. The endpoint returns `{ locale, translations, translated }`; `translations` always matches the input length and order. If Kilo is unavailable or returns partial results, the originals are returned with `translated: false` (HTTP 200), and the hook renders the English text.
 5. `app/api/translate/route.ts` is a thin handler with `dynamic = "force-dynamic"` and `maxDuration = 60`.
 
-The hook is wired into `FactorsSection` (factor name / explanation / category), `RegionalEvaluation` (regional factor fields plus region blurbs and drivers), and `SolutionsSection` (solution title / summary / actions).
+The hook is wired into `FactorsSection` (factor name / explanation / category) and `SolutionsSection` (solution title / summary / actions). `RegionalEvaluation` uses `t()` for static region blurbs and `useTranslatedTexts` for dynamic factor drivers.
 
 ```tsx
 import { useLanguage } from "../context/LanguageContext";

@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import Reveal from "./Reveal";
 import { useCurrency } from "../context/CurrencyContext";
 import { useLanguage } from "../context/LanguageContext";
+import { useTranslatedTexts } from "../hook/useTranslatedTexts";
 
 /** Renders a USD amount in the selected currency, always with 2 decimals. */
 type MoneyFormatter = (usd: number) => string;
@@ -69,8 +70,10 @@ const METHODS: Method[] = [
 ];
 
 export default function AboutSection() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const { selectedCurrency, convertPrice, getCurrencyInfo } = useCurrency();
+
+  const translatedSources = useTranslatedTexts(SOURCES, locale);
 
   /**
    * Prices in the prose above must not collapse to 0 for zero-decimal
@@ -141,12 +144,12 @@ export default function AboutSection() {
               {t("Base prices, growth rates, regional differentials and driver narratives are grounded in publicly available research.")}
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              {SOURCES.map((s) => (
+              {SOURCES.map((s, i) => (
                 <span
                   key={s}
                   className="rounded-full border border-line bg-base/40 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-500"
                 >
-                  {s}
+                  {translatedSources[i] ?? s}
                 </span>
               ))}
             </div>

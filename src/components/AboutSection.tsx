@@ -1,4 +1,4 @@
-import { BarChart3, FunctionSquare, Globe2, ShieldAlert, Workflow } from "lucide-react";
+import { BarChart3, FunctionSquare, Globe2, Grid3x3, Search, ShieldAlert, Workflow } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Reveal from "./Reveal";
 import { useCurrency } from "../context/CurrencyContext";
@@ -66,6 +66,30 @@ const METHODS: Method[] = [
         europePower: money(0.26),
         asiaPower: money(0.09),
       }),
+  },
+  {
+    icon: Search,
+    color: "#6366f1",
+    title: "Web-grounded factor correlation",
+    text: (money) =>
+      `Each of the 8 key factors is sourced from live web searches via TinyFish, scraped articles, and before curation the current live spot prices (Brent, electricity, water) are injected as grounding data into the AI prompt. Every factor explanation opens with the exact live price shown in the "Live global feed" (e.g., "With oil at ${money(
+        105
+      )}/bbl, …"), ensuring a direct auditable link between the live market number on the dashboard and the driver narratives. Prices referenced: Brent around ${money(
+        105
+      )}/bbl, electricity ${money(166)}/MWh, water ${money(
+        2.5
+      )}/m³.`,
+  },
+  {
+    icon: Grid3x3,
+    color: "#ec4899",
+    title: "Reason–price correlation",
+    text: (money) =>
+      `Each driver row in the Correlation matrix begins as a websearch-fetched reason (TinyFish search + scraped articles). The exact live spot prices shown in the "Live global feed" — Brent around ${money(
+        105
+      )}/bbl, electricity near ${money(166)}/MWh and water near ${money(
+        2.5
+      )}/m³ — anchor the forecast price path, while every reason is converted into a contribution series (direction × magnitude × importance, ramped across the horizon). Pearson's r then measures how tightly each reason's series tracks that live-anchored price path per commodity: +1 means it moves in lockstep, 0 means uncorrelated. A cell reads "n/a" only when the reason has no exposure or a series has zero variance, and oil/electricity/water shocks propagate through the energy–water nexus.`,
   },
 ];
 

@@ -790,7 +790,7 @@ const vi: Dictionary = {
   "nav.forecast": "Dự báo",
   "nav.regions": "Khu vực",
   "nav.factors": "Yếu tố",
-  "nav.about": "Giới thiệu",
+  "nav.about": "Giới thiệu mô hình",
   "nav.export": "Xuất",
   "nav.export.png": "Biểu đồ dạng PNG",
   "nav.export.csv": "Dữ liệu dạng CSV",

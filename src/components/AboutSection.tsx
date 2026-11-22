@@ -1,4 +1,4 @@
-import { BarChart3, FunctionSquare, Globe2, ShieldAlert, Workflow } from "lucide-react";
+import { BarChart3, FunctionSquare, Globe2, Search, ShieldAlert, Workflow } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Reveal from "./Reveal";
 import { useCurrency } from "../context/CurrencyContext";
@@ -54,6 +54,17 @@ const METHODS: Method[] = [
     title: "Five-region evaluation",
     text: (money) =>
       `Americas, Europe, Asia, Africa and Oceania are scored live using research-backed oil markers and 2026 retail electricity/water benchmarks (Europe & Oceania power ~${money(0.26)}/kWh, Asia ~${money(0.09)}/kWh, Americas mid-range).`,
+  },
+  {
+    icon: Search,
+    color: "#6366f1",
+    title: "Web-grounded factor correlation",
+    text: (money) =>
+      `Each of the 8 key factors is sourced from live web searches via TinyFish, scraped articles, and before curation the current live spot prices (Brent, electricity, water) are injected as grounding data into the AI prompt. Every factor explanation opens with the exact live price shown in the "Live global feed" (e.g., "With oil at ${money(
+        105
+      )}/bbl, …"), ensuring a direct auditable link between the live market number on the dashboard and the driver narratives. Prices referenced: Brent around ${money(
+        105
+      )}/bbl, electricity ${money(166)}/MWh, water ${money(2.5)}/m³.`,
   },
 ];
 

@@ -1,4 +1,4 @@
-import { BarChart3, FunctionSquare, Globe2, Search, ShieldAlert, Workflow } from "lucide-react";
+import { BarChart3, FunctionSquare, Globe2, Grid3x3, Search, ShieldAlert, Workflow } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Reveal from "./Reveal";
 import { useCurrency } from "../context/CurrencyContext";
@@ -64,7 +64,20 @@ const METHODS: Method[] = [
         105
       )}/bbl, …"), ensuring a direct auditable link between the live market number on the dashboard and the driver narratives. Prices referenced: Brent around ${money(
         105
-      )}/bbl, electricity ${money(166)}/MWh, water ${money(2.5)}/m³.`,
+      )}/bbl, electricity ${money(166)}/MWh, water ${money(
+        2.5
+      )}/m³.`,
+  },
+  {
+    icon: Grid3x3,
+    color: "#ec4899",
+    title: "Reason–price correlation",
+    text: (money) =>
+      `Each driver row in the Correlation matrix begins as a websearch-fetched reason (TinyFish search + scraped articles). The exact live spot prices shown in the "Live global feed" — Brent around ${money(
+        105
+      )}/bbl, electricity near ${money(166)}/MWh and water near ${money(
+        2.5
+      )}/m³ — anchor the forecast price path, while every reason is converted into a contribution series (direction × magnitude × importance, ramped across the horizon). Pearson's r then measures how tightly each reason's series tracks that live-anchored price path per commodity: +1 means it moves in lockstep, 0 means uncorrelated. A cell reads "n/a" only when the reason has no exposure or a series has zero variance, and oil/electricity/water shocks propagate through the energy–water nexus.`,
   },
 ];
 

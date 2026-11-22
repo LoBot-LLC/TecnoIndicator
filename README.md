@@ -33,6 +33,7 @@ A commodity price forecasting dashboard for **oil**, **electricity**, and **wate
 - **View all global continents** — One click to explore data for all continents: the Americas, Europe, Asia, Africa, Oceania.
 - **Technical Transparency** — Collapsible "Show underlying assumptions" section.
 - **Theming / Color theme** — Light / Dark / System modes, switchable from the Settings menu. The choice is persisted in `localStorage` under `tecno.theme`; "System" follows `prefers-color-scheme`. The theme is applied via a `.dark` class on `<html>` plus an inline pre-hydration script in `app/layout.tsx` (no flash of the wrong theme), with Tailwind v4 dark mode wired through `@custom-variant dark (&:where(.dark, .dark *))` in `app/globals.css`.
+- **Multi-language support** — English, Español (Spanish), and Tiếng Việt (Vietnamese), selectable from the Settings menu ("Language"). The choice is persisted in `localStorage` under `tecno.language`, applied without a page reload, and starts in English so the first render is hydration-safe. UI strings use the English source text as the key; AI-curated / web-searched factor and strategy content is translated on demand through Kilo Gateway (`/api/translate`) with a 24-hour per-text cache and graceful English fallback.
 - **Production Polish**
   - Dark-mode friendly design with teal/navy accents
   - Fully responsive (desktop + mobile)
@@ -56,6 +57,69 @@ The app ships a **Light / Dark / System** color theme, selectable from the Setti
 - **No FOUC** — an inline pre-hydration script in `app/layout.tsx` applies the stored/system theme (adds/removes the `.dark` class on `<html>`) before first paint, so there is no flash of the wrong theme.
 - **Tailwind v4 dark mode** — wired via `@custom-variant dark (&:where(.dark, .dark *))` in `app/globals.css`; dark overrides live under the `.dark` selector. The `<html>` element uses `suppressHydrationWarning`.
 - **Implementation** — `src/context/ThemeContext.tsx` (`ThemeProvider` / `useTheme`, toggles `.dark` and persists the choice), consumed by `src/components/SettingsMenu.tsx`.
+
+---
+
+## 🌐 Internationalization (i18n)
+
+The interface ships in three locales. The labels in the Settings picker are the native language names:
+
+| Locale | Native label | English name |
+| --- | --- | --- |
+| `en` | English | English |
+| `es` | Español | Spanish |
+| `vi` | Tiếng Việt | Vietnamese |
+
+**Switching & persistence**
+
+- Open **Settings → Language → Interface language** and pick a locale. The change applies immediately through React context — there is no page reload.
+- The choice is stored in `localStorage` under `tecno.language`. Missing, invalid, or inaccessible storage (for example private mode) falls back to `en`.
+- `LanguageProvider` always starts in English on both the server and the first client render, then applies the stored preference in an effect after hydration. That keeps the first render identical on both sides (no hydration mismatch).
+- After the locale settles, the provider sets `document.documentElement.lang` to the active code for accessibility, SEO, and correct text rendering.
+
+**Message catalogs (English strings as keys)**
+
+- Translation keys **are the English source strings** (e.g. `"Forecast"`). An unknown key simply falls back to the key itself, so a missing translation always degrades to readable English rather than a raw identifier or blank label.
+- `translate(locale, key, vars)` supports `{placeholder}` interpolation; placeholders without a matching variable are left untouched.
+- Catalogs are split by UI domain and merged into one flat table per locale:
+  - `src/lib/i18n/types.ts` — `Locale`, `SUPPORTED_LOCALES`, `LOCALE_META`, `LocaleMessages`, `isLocale`.
+  - `src/lib/i18n/index.ts` — merges every domain module into `MESSAGES`, exposes `translate()` and the public types/metadata.
+  - `src/lib/i18n/messages/` — flat `en` / `es` / `vi` tables for `settings.ts`, `nav.ts`, `hero.ts`, `forecast.ts`, `factors.ts`, `regional.ts`, `solutions.ts`, `correlation.ts`, and `about.ts`.
+- The `en` tables are generally empty because the key is already the English text; later modules win on duplicate keys during the merge.
+- `src/context/LanguageContext.tsx` provides `LanguageProvider` and `useLanguage()`, returning `{ locale, setLocale, t, locales }`. It wraps the app in `app/layout.tsx`.
+
+**Dynamic (AI-curated / web-searched) content**
+
+Static UI strings come from the catalogs, but factor names, explanations, categories, region blurbs/drivers, and strategy titles/summaries/actions are generated at runtime, so they are translated on demand:
+
+1. `useTranslatedTexts(texts, locale)` batches unique strings, dedupes in-flight requests, and keeps a session-level cache. For `en` it returns the inputs unchanged without fetching.
+2. Non-English text is sent to `POST /api/translate` with `{ locale, texts }` (1–40 texts, at most 600 chars each and 12,000 chars total).
+3. `lib/api/handlers/translate.ts` checks a per-text cache (`translate:{locale}:{fnv1a}`, 24-hour TTL) and sends the misses in one batched Kilo Gateway inference call. The prompt preserves numbers, units, URLs, acronyms, brand names, and the `With <commodity> at $<price>/<unit>,` grounding pattern.
+4. The endpoint returns `{ locale, translations, translated }`; `translations` always matches the input length and order. If Kilo is unavailable or returns partial results, the originals are returned with `translated: false` (HTTP 200), and the hook renders the English text.
+5. `app/api/translate/route.ts` is a thin handler with `dynamic = "force-dynamic"` and `maxDuration = 60`.
+
+The hook is wired into `FactorsSection` (factor name / explanation / category), `RegionalEvaluation` (regional factor fields plus region blurbs and drivers), and `SolutionsSection` (solution title / summary / actions).
+
+```tsx
+import { useLanguage } from "../context/LanguageContext";
+import { useTranslatedTexts } from "../hook/useTranslatedTexts";
+
+function FactorCard({ factor }: { factor: Factor }) {
+  const { t, locale } = useLanguage();
+  const [name, explanation] = useTranslatedTexts(
+    [factor.name, factor.explanation],
+    locale,
+  );
+
+  return (
+    <article>
+      <h3>{name || factor.name}</h3>
+      <p>{explanation || factor.explanation}</p>
+      <span>{t("Forecast")}</span>
+    </article>
+  );
+}
+```
 
 ---
 
@@ -121,6 +185,7 @@ The backend runs as Next.js route handlers. The client calls these relative path
 | `/api/regional-forecast?region=` | 11-year region-specific forecast band |
 | `/api/cron/curate-factors` | Nightly factor re-curation (Vercel cron, `0 2 * * *` UTC) |
 | `/api/telemetry` | Client-side analytics ingestion |
+| `POST /api/translate` | Batch-translates web-searched / AI-curated text into `es` or `vi` via Kilo Gateway. Body `{ locale, texts }`; returns `{ locale, translations, translated }`. Per-text 24h cache; degrades to the English originals when Kilo is unavailable or returns partial results |
 | `/api/forecast` | Public, dashboard/BI-friendly forecast envelope (`version`, `bands`, `factors`, `sources`, `meta`) — see [Forecast API](#forecast-api-get-apiforecast) |
 | `CorrelationSection` (client-side) | Pearson-r correlation matrix (factors × commodities + per-region breakdown) computed in-browser from the forecast engine — see [Correlation Matrix](#-correlation-matrix) |
 
@@ -516,6 +581,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 - **lucide-react 1.45.0** — Clean, consistent icon system
 - **clsx 2.1.1** + **tailwind-merge 3.4.0** — Conditional className utilities
 - **flags 4.3.1** — Feature flag / feature gating support
+- **Custom i18n layer** (`src/lib/i18n/`, `src/context/LanguageContext.tsx`) — Lightweight React context plus per-domain `en` / `es` / `vi` catalogs keyed by English source strings; no external i18n dependency
 - **@vercel/analytics 1.5.0 + @vercel/speed-insights 2.0.0** — Production analytics & performance
 
 ### Backend / API Layer
@@ -527,6 +593,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 - **Single-Source-of-Truth Live Flow** — `src/hook/useLiveMarket.ts` refreshes `liveQuotes` (price + source + asOf) on every fetch/poll, and the Hero "Market Snapshot" / live global feed renders those URL-sourced numbers (matching the Interactive price forecast cards) with no ad-hoc unit conversion.
 - **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis REST (`lib/api/_shared/redis.ts`, no SDK dependency) for cross-instance sharing
 - **Text utilities** (`lib/api/_shared/textUtils.ts`) — Shared `truncateAtWordBoundary` and `truncateAtSentenceBoundary` for word-safe truncation of factor explanations.
+- **Dynamic Translation** (`lib/api/handlers/translate.ts`, `app/api/translate/route.ts`, `src/hook/useTranslatedTexts.ts`) — Kilo Gateway batch translation for AI-curated / web-searched content, with a per-text 24h cache, a client-side session cache/batcher, and graceful fallback to English originals.
 
 ### Data & Models (`src/lib/`)
 - **Forecast Engine** (`model.ts`) — Client-side forecast computations, `FACTORS` / `REGIONAL_FACTORS` static fallbacks, commodity types, and scenario math
@@ -576,7 +643,8 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   ├── regional-factors/route.ts    # 8 curated factors for a region
 │   │   ├── regional-forecast/route.ts   # 11-year region-specific forecast
 │   │   ├── solutions/route.ts           # Up to 3 AI-curated strategy recommendations
-│   │   └── telemetry/route.ts           # Client-side analytics ingestion
+│   │   ├── telemetry/route.ts           # Client-side analytics ingestion
+│   │   └── translate/route.ts           # POST batch translation for curated content (es/vi) via Kilo Gateway
 │   ├── globals.css                      # Global styles + Tailwind CSS 4 imports + @custom-variant dark
 │   ├── layout.tsx                       # Root layout (providers, fonts, metadata, inline theme pre-hydration script)
 │   ├── page.tsx                         # Main single-page application entry
@@ -599,7 +667,8 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │       │   ├── regional-analytics.ts    # Regional indices computation
 │       │   ├── regional-factors.ts      # Regional factor curation
 │       │   ├── regional-forecast.ts     # Regional forecast generation
-│       │   └── solutions.ts             # AI solution generation
+│       │   ├── solutions.ts             # AI solution generation
+│       │   └── translate.ts             # Batch translation via Kilo Gateway (validation, per-text 24h cache, English fallback)
 │       └── _shared/                     # Cross-cutting utilities
 │           ├── cache.ts                 # In-memory + optional Redis cache with TTLs
 │           ├── deterministicAnalytics.ts# Fuel/grid/water math + getScopePriceDefaults
@@ -627,18 +696,20 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   ├── Navbar.tsx                   # Top navigation + export menu
 │   │   ├── RegionalEvaluation.tsx       # Regional intelligence panel
 │   │   ├── Reveal.tsx                   # Scroll/fade animations
-│   │   ├── SettingsMenu.tsx             # Units, theme, currency preferences
+│   │   ├── SettingsMenu.tsx             # Units, theme, language, currency preferences
 │   │   ├── SolutionsSection.tsx         # AI strategy recommendations
 │   │   ├── Ticker.tsx                   # Animated price ticker
 │   │   └── VercelAnalytics.tsx          # Analytics consent + init
 │   ├── context/                         # React Context providers
 │   │   ├── CurrencyContext.tsx          # Currency state & formatting
 │   │   ├── FontContext.tsx              # Font loading & selection
+│   │   ├── LanguageContext.tsx          # Locale state, `t()` helper, persistence (`tecno.language`), `<html lang>`
 │   │   ├── ThemeContext.tsx             # Light/dark/system color theme (persisted to localStorage `tecno.theme`)
 │   │   └── UnitContext.tsx              # Unit system (metric/imperial)
 │   ├── hook/                            # Custom React hooks
 │   │   ├── useFlash.ts                  # Toast/flash notifications
-│   │   └── useLiveMarket.ts             # Live market data polling
+│   │   ├── useLiveMarket.ts             # Live market data polling
+│   │   └── useTranslatedTexts.ts        # Batch/cache dynamic content translations; no-op for English
 │   ├── lib/                             # Frontend business logic
 │   │   ├── currencies.ts                # Currency codes, symbols, formatting
 │   │   ├── correlation.ts               # Pearson-r series builders + matrix computation (derivedDrift fix for TinyFish factors)
@@ -646,6 +717,19 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 │   │   │   └── correlation.test.mjs
 │   │   ├── events.ts                    # Event bus for cross-component comms
 │   │   ├── fonts.ts                     # Font definitions & loading
+│   │   ├── i18n/                        # Custom i18n layer (English strings are the keys)
+│   │   │   ├── index.ts                 # Merges domain catalogs into MESSAGES; `translate()` with `{placeholder}` interpolation
+│   │   │   ├── types.ts                 # `Locale`, `SUPPORTED_LOCALES`, `LOCALE_META`, `LocaleMessages`, `isLocale`
+│   │   │   └── messages/                # Per-domain flat `en` / `es` / `vi` tables
+│   │   │       ├── about.ts
+│   │   │       ├── correlation.ts
+│   │   │       ├── factors.ts
+│   │   │       ├── forecast.ts
+│   │   │       ├── hero.ts
+│   │   │       ├── nav.ts
+│   │   │       ├── regional.ts
+│   │   │       ├── settings.ts
+│   │   │       └── solutions.ts
 │   │   ├── markdown.ts                  # Markdown report generation
 │   │   ├── model.ts                     # Forecast engine + static FACTORS/REGIONAL_FACTORS
 │   │   ├── truncate.ts                  # Sentence-boundary truncation helper (truncateAtSentence)

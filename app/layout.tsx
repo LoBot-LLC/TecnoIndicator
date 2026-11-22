@@ -4,6 +4,7 @@ import { CurrencyProvider } from "../src/context/CurrencyContext";
 import { ThemeProvider } from "../src/context/ThemeContext";
 import { UnitProvider } from "../src/context/UnitContext";
 import { FontProvider } from "../src/context/FontContext";
+import { LanguageProvider } from "../src/context/LanguageContext";
 import "./globals.css";
 import VercelAnalytics from "../src/components/VercelAnalytics";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -83,13 +84,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link rel="icon" href={FAVICON} />
       </head>
       <body>
-        <ThemeProvider>
-          <CurrencyProvider>
-            <FontProvider>
-              <UnitProvider>{children}</UnitProvider>
-            </FontProvider>
-          </CurrencyProvider>
-        </ThemeProvider>
+        <LanguageProvider>
+          <ThemeProvider>
+            <CurrencyProvider>
+              <FontProvider>
+                <UnitProvider>{children}</UnitProvider>
+              </FontProvider>
+            </CurrencyProvider>
+          </ThemeProvider>
+        </LanguageProvider>
         <VercelAnalytics />
         <SpeedInsights />
       </body>

@@ -1,4 +1,5 @@
 import { LoBotIcon, TecnoIndicatorIcon } from "./icons";
+import { useLanguage } from "../context/LanguageContext";
 
 interface LogoProps {
   onClick?: () => void;
@@ -6,13 +7,15 @@ interface LogoProps {
 }
 
 export default function Logo({ onClick, variant = "tecnoindicator" }: LogoProps) {
+  const { t } = useLanguage();
+
   if (variant === "lobot") {
     return (
       <a
         href="#top"
         onClick={onClick}
         className="group inline-flex items-center gap-3"
-        aria-label="LoBot LLC home"
+        aria-label={t("LoBot LLC home")}
       >
         <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-teal-400/30 bg-teal-400/10 text-teal-400 dark:text-teal-300 shadow-[0_0_24px_rgba(45,212,191,0.18)] transition-transform duration-300 group-hover:scale-105">
           <LoBotIcon className="h-10 w-10" />
@@ -29,7 +32,7 @@ export default function Logo({ onClick, variant = "tecnoindicator" }: LogoProps)
       href="#top"
       onClick={onClick}
       className="group inline-flex items-center gap-2.5"
-      aria-label="LoBot TecnoIndicator home"
+      aria-label={t("LoBot TecnoIndicator home")}
     >
       <span className="flex h-9 w-9 items-center justify-center">
         <TecnoIndicatorIcon className="h-9 w-9 text-teal-400 dark:text-teal-300" />

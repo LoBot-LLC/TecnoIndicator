@@ -28,6 +28,8 @@ import {
 } from "lucide-react";
 import Reveal from "./Reveal";
 import { useFlash } from "../hook/useFlash";
+import { useLanguage } from "../context/LanguageContext";
+import { useTranslatedTexts } from "../hook/useTranslatedTexts";
 import { useCurrency } from "../context/CurrencyContext";
 import { useTheme } from "../context/ThemeContext";
 import { useUnit } from "../context/UnitContext";
@@ -154,7 +156,10 @@ function RegionCard({
   rank: number;
 }) {
   const { selectedCurrency, formatPrice } = useCurrency();
+  const { t, locale } = useLanguage();
   const { lengthUnit, energyUnit } = useUnit();
+  const [translatedBlurb] = useTranslatedTexts([ev.region.blurb], locale);
+  const blurb = translatedBlurb || ev.region.blurb;
   const oilFlash = useFlash(convertFor("oil", ev.spots.oil, lengthUnit, energyUnit));
   const elecFlash = useFlash(convertFor("electricity", ev.spots.electricity, lengthUnit, energyUnit));
   const waterFlash = useFlash(convertFor("water", ev.spots.water, lengthUnit, energyUnit));
@@ -190,7 +195,7 @@ const outlookColor =
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-display text-base font-semibold text-slate-900 dark:text-white">
-                {ev.region.name}
+                {t(ev.region.name)}
               </h3>
               <span className="rounded-full border border-line bg-base/40 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-400">
                 #{rank}
@@ -202,7 +207,7 @@ const outlookColor =
         <ScoreRing score={ev.score} color={ev.region.accent} />
       </div>
 
-      <p className="mt-3 text-xs leading-relaxed text-slate-700 dark:text-slate-400 line-clamp-2">{ev.region.blurb}</p>
+      <p className="mt-3 text-xs leading-relaxed text-slate-700 dark:text-slate-400 line-clamp-2">{blurb}</p>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
         {COMMODITIES.map((c) => {
@@ -213,7 +218,7 @@ const outlookColor =
               className="rounded-xl border border-line bg-base/40 px-2.5 py-2.5"
             >
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
-                {meta.label}
+                {t(meta.label)}
               </p>
               <p
                 className={`mt-1 font-display text-sm font-bold tabular-nums text-slate-900 dark:text-slate-100 ${flashes[c.id]}`}
@@ -232,10 +237,10 @@ const outlookColor =
         <span
           className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${outlookColor}`}
         >
-          {ev.outlook} outlook
+          {t("{outlook} outlook", { outlook: t(ev.outlook) })}
         </span>
         <span className="text-[11px] text-slate-600 dark:text-slate-400">
-          vs global power{" "}
+          {t("vs global power")}{" "}
           <span className="font-semibold text-slate-600 dark:text-slate-400">
             {ev.vsGlobalPct.electricity >= 0 ? "+" : ""}
             {ev.vsGlobalPct.electricity.toFixed(0)}%
@@ -269,13 +274,19 @@ function RegionalFactorCard({
   factor: Factor;
   index: number;
 }) {
+  const { t, locale } = useLanguage();
+  const [translatedName, translatedExplanation, translatedCategory] =
+    useTranslatedTexts([factor.name, factor.explanation, factor.category], locale);
+  const name = translatedName || factor.name;
+  const explanation = translatedExplanation || factor.explanation;
+  const category = translatedCategory || factor.category;
   const isNew = isNewFactor(factor.createdAt);
   const [isExpanded, setIsExpanded] = useState(false);
   const MAX_CHARS = 400;
-  const shouldTruncate = factor.explanation.length > MAX_CHARS;
+  const shouldTruncate = explanation.length > MAX_CHARS;
   const displayText = isExpanded || !shouldTruncate
-    ? factor.explanation
-    : truncateAtSentence(factor.explanation, MAX_CHARS);
+    ? explanation
+    : truncateAtSentence(explanation, MAX_CHARS);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-4 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -283,17 +294,17 @@ function RegionalFactorCard({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="rounded-full border border-line bg-base/50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
-              {factor.category}
+              {category}
             </span>
             <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold text-amber-300 border-amber-400/30 bg-amber-400/10">
-              {factor.magnitude}
+              {t(factor.magnitude)}
             </span>
           </div>
           <h4 className="mt-2 font-display text-sm font-semibold text-slate-900 dark:text-white leading-snug">
-            {factor.name}
+            {name}
             {isNew && (
               <span className="ml-1.5 inline-flex items-center rounded-full bg-teal-500 px-1.5 py-0.5 text-[9px] font-semibold text-slate-900 dark:text-white">
-                New
+                {t("New")}
               </span>
             )}
           </h4>
@@ -320,12 +331,12 @@ function RegionalFactorCard({
           {isExpanded ? (
             <>
               <ChevronUp className="h-3 w-3" />
-              Show less
+              {t("Show less")}
             </>
           ) : (
             <>
               <ChevronDown className="h-3 w-3" />
-              Show more
+              {t("Show more")}
             </>
           )}
         </button>
@@ -340,7 +351,7 @@ function RegionalFactorCard({
               className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold"
               style={{ color: c.color, background: `${c.color}18` }}
             >
-              {c.short}
+              {t(c.short)}
             </span>
           );
         })}
@@ -358,7 +369,9 @@ function RegionalFactorCard({
       </div>
 
       <div className="mt-2 flex items-center justify-between text-[10px]">
-        <span className="font-semibold text-teal-400 dark:text-teal-300">Impact: {factor.importanceScore}/100</span>
+        <span className="font-semibold text-teal-400 dark:text-teal-300">
+          {t("Impact: {score}/100", { score: factor.importanceScore })}
+        </span>
         <span className="font-semibold text-slate-700 dark:text-slate-400 capitalize">
           {factor.direction} · {factor.bias}
         </span>
@@ -367,7 +380,7 @@ function RegionalFactorCard({
       {factor.grounding && factor.commodities.some((id) => factor.grounding?.[id]) && (
         <div className="mt-2 rounded-lg border border-line bg-base/50 px-2 py-2">
           <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">
-            Grounded in live dashboard prices
+            {t("Grounded in live dashboard prices")}
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1.5">
             {factor.commodities.map((id) => {
@@ -381,7 +394,7 @@ function RegionalFactorCard({
                 >
                   <div className="flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
-                    <span className="font-semibold">{c.short}</span>
+                    <span className="font-semibold">{t(c.short)}</span>
                     <span className="tabular-nums font-bold">
                       ${p.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </span>
@@ -400,7 +413,7 @@ function RegionalFactorCard({
           </div>
           {factor.grounding?.asOf && (
             <p className="mt-1.5 text-[9px] text-slate-500 dark:text-slate-400 italic">
-              Prices as of {factor.grounding.asOf}
+              {t("Prices as of {asOf}", { asOf: factor.grounding.asOf })}
             </p>
           )}
         </div>
@@ -408,7 +421,7 @@ function RegionalFactorCard({
 
       <div className="mt-2">
         <span className="text-[9px] font-semibold text-slate-600 dark:text-slate-500 block mb-0.5">
-          Source URL
+          {t("Source URL")}
         </span>
         {isHttpUrl(factor.source) ? (
           <a
@@ -418,7 +431,7 @@ function RegionalFactorCard({
             className="block text-[9px] text-teal-400 dark:text-teal-300 hover:underline underline-offset-4 break-all"
           >
             {factor.source}
-            <ExternalLink className="ml-1 inline h-3 w-3" aria-label="Open source" />
+            <ExternalLink className="ml-1 inline h-3 w-3" aria-label={t("Open source")} />
           </a>
         ) : (
           <span className="block text-[9px] text-slate-600 dark:text-slate-500 break-all">{factor.source}</span>
@@ -486,6 +499,7 @@ export default function RegionalEvaluation({
   factorsLoaded = false,
 }: RegionalEvaluationProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
+  const { t, locale } = useLanguage();
   const { theme } = useTheme();
   const { lengthUnit, energyUnit } = useUnit();
   const evals = useMemo(
@@ -504,6 +518,15 @@ export default function RegionalEvaluation({
   const horizonYear = START_YEAR + horizon;
 
   const selected = evals.find((e) => e.region.id === region) ?? evals[0];
+
+  const [translatedSelectedBlurb, ...translatedSelectedDrivers] = useTranslatedTexts(
+    [selected.region.blurb, ...selected.region.drivers],
+    locale,
+  );
+  const selectedBlurb = translatedSelectedBlurb || selected.region.blurb;
+  const selectedDrivers = selected.region.drivers.map(
+    (driver, i) => translatedSelectedDrivers[i] || driver,
+  );
 
   // The AI / regional factors section must ONLY ever render factors genuinely
   // backed by a fetched source URL. Never fall back to the hard-coded
@@ -546,7 +569,7 @@ export default function RegionalEvaluation({
     // rather than throwing during hydration.
     if (!canvas.getContext("2d")) return;
 
-    const labels = evals.map((e) => e.region.short);
+    const labels = evals.map((e) => t(e.region.short));
     const spotData = evals.map((e) => convertFor(focusCommodity, e.spots[focusCommodity], lengthUnit, energyUnit));
     const horizonData = evals.map((e) =>
       convertFor(focusCommodity, e.horizon[focusCommodity].avg, lengthUnit, energyUnit),
@@ -561,7 +584,7 @@ export default function RegionalEvaluation({
         labels,
         datasets: [
           {
-            label: `Spot ${START_YEAR}`,
+            label: t("Spot {year}", { year: START_YEAR }),
             data: spotData,
             backgroundColor: hexToRgba(color, 0.35),
             borderColor: hexToRgba(color, 0.55),
@@ -570,7 +593,7 @@ export default function RegionalEvaluation({
             maxBarThickness: 28,
           },
           {
-            label: `Forecast ${horizonYear}`,
+            label: t("Forecast {year}", { year: horizonYear }),
             data: horizonData,
             backgroundColor: hexToRgba(color, 0.85),
             borderRadius: 6,
@@ -642,7 +665,7 @@ export default function RegionalEvaluation({
     return () => {
       // keep chart instance across commodity toggles; destroy on unmount only
     };
-  }, [evals, focusCommodity, horizonYear, formatPrice, selectedCurrency, theme, lengthUnit, energyUnit]);
+  }, [evals, focusCommodity, horizonYear, formatPrice, selectedCurrency, theme, lengthUnit, energyUnit, t, locale]);
 
   useEffect(() => {
     return () => {
@@ -743,15 +766,15 @@ export default function RegionalEvaluation({
   const exportOptions = [
     {
       id: "csv",
-      label: "Export as CSV",
-      description: "Region price table (.csv)",
+      label: t("Export as CSV"),
+      description: t("Region price table (.csv)"),
       icon: FileText,
       onSelect: exportRegional,
     },
     {
       id: "md",
-      label: "Export as Markdown",
-      description: "Region report with factors (.md)",
+      label: t("Export as Markdown"),
+      description: t("Region report with factors (.md)"),
       icon: FileCode2,
       onSelect: exportRegionalMd,
     },
@@ -771,16 +794,13 @@ export default function RegionalEvaluation({
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
-                Regional intelligence
+                {t("Regional intelligence")}
               </p>
               <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-                Evaluate 5 world regions
+                {t("Evaluate 5 world regions")}
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                Live oil, electricity and water prices mapped to Americas, Europe, Asia, Africa and
-                Oceania using research-backed regional markers — WTI, Dated Brent, Dubai/Oman, West
-                African sweet and import-parity crude, plus retail power and municipal water
-                tariffs. Scores update automatically with the live feed.
+                {t("Live oil, electricity and water prices mapped to Americas, Europe, Asia, Africa and Oceania using research-backed regional markers — WTI, Dated Brent, Dubai/Oman, West African sweet and import-parity crude, plus retail power and municipal water tariffs. Scores update automatically with the live feed.")}
               </p>
             </div>
             <div
@@ -806,10 +826,10 @@ export default function RegionalEvaluation({
                 className="inline-flex items-center gap-2 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all hover:border-teal-400/40 hover:text-slate-900 dark:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60"
               >
                 <Download className="h-3.5 w-3.5 text-teal-400 dark:text-teal-300" />
-                Export region
+                {t("Export region")}
                 <span className="inline-flex items-center gap-1 rounded-md border border-line bg-base/40 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:text-slate-300">
                   <span aria-hidden="true">{selected.region.flag}</span>
-                  {selected.region.name}
+                  {t(selected.region.name)}
                 </span>
                 <ChevronDown
                   className={`h-3.5 w-3.5 text-slate-600 transition-transform dark:text-slate-300 ${
@@ -861,20 +881,20 @@ export default function RegionalEvaluation({
             <div className="rounded-2xl border border-line bg-panel/60 p-4">
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
                 <Gauge className="h-3.5 w-3.5 text-teal-400 dark:text-teal-300" />
-                Best composite score
+                {t("Best composite score")}
               </div>
               <p className="mt-2 font-display text-lg font-semibold text-slate-900 dark:text-white">
-                {topScore.region.flag} {topScore.region.name}{" "}
+                {topScore.region.flag} {t(topScore.region.name)}{" "}
                 <span className="text-teal-400 dark:text-teal-300">{topScore.score}/100</span>
               </p>
             </div>
             <div className="rounded-2xl border border-line bg-panel/60 p-4">
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
                 <Zap className="h-3.5 w-3.5 text-elec" />
-                Lowest power tariff
+                {t("Lowest power tariff")}
               </div>
               <p className="mt-2 font-display text-lg font-semibold text-slate-900 dark:text-white">
-                {cheapestPower.region.flag} {cheapestPower.region.name}{" "}
+                {cheapestPower.region.flag} {t(cheapestPower.region.name)}{" "}
                <span className="text-elec">
                    {formatPrice(convertFor("electricity", cheapestPower.spots.electricity, lengthUnit, energyUnit), selectedCurrency)}/{energyLabel(energyUnit)}
                  </span>
@@ -883,10 +903,10 @@ export default function RegionalEvaluation({
             <div className="rounded-2xl border border-line bg-panel/60 p-4">
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
                 <Droplets className="h-3.5 w-3.5 text-water" />
-                Highest water tariff
+                {t("Highest water tariff")}
               </div>
               <p className="mt-2 font-display text-lg font-semibold text-slate-900 dark:text-white">
-                {dearestWater.region.flag} {dearestWater.region.name}{" "}
+                {dearestWater.region.flag} {t(dearestWater.region.name)}{" "}
                 <span className="text-water">
                   {formatPrice(convertFor("water", dearestWater.spots.water, lengthUnit, energyUnit), selectedCurrency)}/{waterLabel(lengthUnit)}
                 </span>
@@ -916,10 +936,10 @@ export default function RegionalEvaluation({
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">
-                    Cross-region comparison
+                    {t("Cross-region comparison")}
                   </h3>
                   <p className="mt-1 text-xs text-slate-700 dark:text-slate-400">
-                    Spot vs {horizon}-year average forecast by region
+                    {t("Spot vs {horizon}-year average forecast by region", { horizon })}
                   </p>
                 </div>
                 <div className="flex rounded-lg border border-line bg-base/50 p-0.5">
@@ -935,13 +955,13 @@ export default function RegionalEvaluation({
                           : "text-slate-600 dark:text-slate-100 hover:text-slate-800 dark:text-slate-100"
                       }`}
                     >
-                      {COMM_META[id].label}
+                      {t(COMM_META[id].label)}
                     </button>
                   ))}
                 </div>
               </div>
               <div className="h-[300px] w-full sm:h-[340px]">
-                <canvas ref={canvasRef} aria-label="Regional price comparison chart" />
+                <canvas ref={canvasRef} aria-label={t("Regional price comparison chart")} />
               </div>
             </div>
           </Reveal>
@@ -954,15 +974,15 @@ export default function RegionalEvaluation({
                 </span>
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
-                    Deep dive
+                    {t("Deep dive")}
                   </p>
                   <h3 className="font-display text-xl font-semibold text-slate-900 dark:text-white">
-                    {selected.region.name}
+                    {t(selected.region.name)}
                   </h3>
                 </div>
               </div>
 
-              <p className="mt-4 text-sm leading-relaxed text-slate-600 dark:text-slate-400">{selected.region.blurb}</p>
+              <p className="mt-4 text-sm leading-relaxed text-slate-600 dark:text-slate-400">{selectedBlurb}</p>
 
               <div className="mt-5 space-y-3">
                 {COMMODITIES.map((c) => {
@@ -976,7 +996,7 @@ export default function RegionalEvaluation({
                       <div className="flex items-center justify-between gap-2">
                           <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
                             <Icon className="h-3.5 w-3.5" style={{ color: meta.color }} />
-                            {meta.label}
+                            {t(meta.label)}
                             <span className="font-normal text-slate-600 dark:text-slate-400">
                               {selectedCurrency}/{unitFor(c.id, lengthUnit, energyUnit)}
                             </span>
@@ -986,7 +1006,7 @@ export default function RegionalEvaluation({
                       <div className="mt-2 flex items-end justify-between gap-2">
                         <div>
                           <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                            Spot
+                            {t("Spot")}
                           </p>
                           <p className="font-display text-base font-bold tabular-nums text-slate-900 dark:text-white">
                             {formatPrice(convertFor(c.id, selected.spots[c.id], lengthUnit, energyUnit), selectedCurrency)}
@@ -994,7 +1014,7 @@ export default function RegionalEvaluation({
                         </div>
                         <div className="text-right">
                           <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                            {horizonYear} avg
+                            {t("{year} avg", { year: horizonYear })}
                           </p>
                           <p className="font-display text-base font-bold tabular-nums text-slate-800 dark:text-slate-100">
                             {formatPrice(convertFor(c.id, selected.horizon[c.id].avg, lengthUnit, energyUnit), selectedCurrency)}
@@ -1002,7 +1022,7 @@ export default function RegionalEvaluation({
                         </div>
                         <div className="text-right">
                           <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                            vs world
+                            {t("vs world")}
                           </p>
                           <p className="font-display text-sm font-semibold tabular-nums text-slate-600 dark:text-slate-400">
                             {selected.vsGlobalPct[c.id] >= 0 ? "+" : ""}
@@ -1017,19 +1037,19 @@ export default function RegionalEvaluation({
 
               <div className="mt-5">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
-                  Key regional drivers
+                  {t("Key regional drivers")}
                 </p>
                 <ul className="mt-2 space-y-1.5">
-                  {selected.region.drivers.map((d) => (
+                  {selected.region.drivers.map((driverKey, i) => (
                     <li
-                      key={d}
+                      key={driverKey}
                       className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400"
                     >
                       <TrendingUp
                         className="mt-0.5 h-3 w-3 shrink-0"
                         style={{ color: selected.region.accent }}
                       />
-                      {d}
+                      {selectedDrivers[i]}
                     </li>
                   ))}
                 </ul>
@@ -1040,11 +1060,11 @@ export default function RegionalEvaluation({
                  <div className="mb-3 flex items-center justify-between">
                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-400">
                      {activeRegionalFactors.length > 0 && healthStatus === "Online Model Connected"
-                       ? "AI Factors"
-                       : "Regional factors"}
+                       ? t("AI Factors")
+                       : t("Regional factors")}
                    </p>
                    <span className="text-[11px] text-slate-600 dark:text-slate-400">
-                     {isLoading ? "Loading…" : `${activeRegionalFactors.length} factors`}
+                     {isLoading ? t("Loading…") : t("{count} factors", { count: activeRegionalFactors.length })}
                    </span>
                  </div>
                    <div className="grid gap-2 sm:grid-cols-2">
@@ -1058,8 +1078,7 @@ export default function RegionalEvaluation({
                        ))
                      ) : (
                        <p className="col-span-full text-center text-sm text-slate-500 dark:text-slate-400 py-8">
-                         No live regional factors are available right now for {selected.region.name}.
-                         Reasons appear only when traceable to a fetched source URL.
+                         {t("No live regional factors are available right now for {region}. Reasons appear only when traceable to a fetched source URL.", { region: t(selected.region.name) })}
                        </p>
                      )}
                    </div>
@@ -1074,7 +1093,7 @@ export default function RegionalEvaluation({
                 className="mt-auto inline-flex items-center justify-center gap-2 rounded-xl bg-teal-400 px-4 py-2.5 text-xs font-semibold text-slate-950 transition-all hover:bg-teal-300"
               >
                 <Globe2 className="h-3.5 w-3.5" />
-                Open {selected.region.short} in forecast studio
+                {t("Open {region} in forecast studio", { region: t(selected.region.short) })}
               </button>
             </div>
           </Reveal>
@@ -1085,32 +1104,31 @@ export default function RegionalEvaluation({
           <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel/60">
             <div className="border-b border-line px-5 py-4 sm:px-6">
               <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-white">
-                Regional scoreboard
+                {t("Regional scoreboard")}
               </h3>
               <p className="mt-0.5 text-xs text-slate-700 dark:text-slate-400">
-                Live spots, {horizon}-year averages and premium/discount vs global · ranked by
-                composite affordability score
+                {t("Live spots, {horizon}-year averages and premium/discount vs global · ranked by composite affordability score", { horizon })}
               </p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-line bg-base/40 text-[11px] uppercase tracking-wider text-slate-700 dark:text-slate-400">
-                    <th className="px-5 py-3 font-semibold sm:px-6">Region</th>
-                    <th className="px-3 py-3 text-center font-semibold text-oil">Oil spot</th>
+                    <th className="px-5 py-3 font-semibold sm:px-6">{t("Region")}</th>
+                    <th className="px-3 py-3 text-center font-semibold text-oil">{t("Oil spot")}</th>
                     <th className="px-3 py-3 text-center font-semibold text-oil">
-                      Oil {horizonYear}
+                      {t("Oil {year}", { year: horizonYear })}
                     </th>
-                    <th className="px-3 py-3 text-center font-semibold text-elec">Power spot</th>
+                    <th className="px-3 py-3 text-center font-semibold text-elec">{t("Power spot")}</th>
                     <th className="px-3 py-3 text-center font-semibold text-elec">
-                      Power {horizonYear}
+                      {t("Power {year}", { year: horizonYear })}
                     </th>
-                    <th className="px-3 py-3 text-center font-semibold text-water">Water spot</th>
+                    <th className="px-3 py-3 text-center font-semibold text-water">{t("Water spot")}</th>
                     <th className="px-3 py-3 text-center font-semibold text-water">
-                      Water {horizonYear}
+                      {t("Water {year}", { year: horizonYear })}
                     </th>
-                    <th className="px-3 py-3 text-center font-semibold">Score</th>
-                    <th className="px-5 py-3 text-center font-semibold sm:px-6">Outlook</th>
+                    <th className="px-3 py-3 text-center font-semibold">{t("Score")}</th>
+                    <th className="px-5 py-3 text-center font-semibold sm:px-6">{t("Outlook")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1130,7 +1148,7 @@ export default function RegionalEvaluation({
                           <span className="text-lg">{e.region.flag}</span>
                           <span>
                              <span className="block font-display font-semibold text-slate-900 dark:text-slate-100">
-                               {e.region.name}
+                               {t(e.region.name)}
                              </span>
                              <span className="text-[11px] text-slate-600 dark:text-slate-400">
                                #{idx + 1} · {e.region.oilMarker}
@@ -1168,7 +1186,7 @@ export default function RegionalEvaluation({
                         </span>
                       </td>
                       <td className="px-5 py-3 text-center capitalize text-xs font-semibold text-slate-600 dark:text-slate-400 sm:px-6">
-                        {e.outlook}
+                        {t(e.outlook)}
                       </td>
                     </tr>
                   ))}

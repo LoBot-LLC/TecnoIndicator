@@ -1,6 +1,7 @@
 import { Droplets, Fuel, TrendingDown, TrendingUp, Zap } from "lucide-react";
 import { useCurrency } from "../context/CurrencyContext";
 import { useUnit } from "../context/UnitContext";
+import { useLanguage } from "../context/LanguageContext";
 import { convertEnergy, convertWater, energyLabel, waterLabel } from "../lib/units";
 import { type CommodityId } from "../lib/model";
 
@@ -21,6 +22,7 @@ interface TickerProps {
 export default function Ticker({ prices, deltas }: TickerProps) {
   const { selectedCurrency, formatPrice } = useCurrency();
   const { lengthUnit, energyUnit } = useUnit();
+  const { t } = useLanguage();
   const items = (Object.keys(META) as CommodityId[]).map((id) => {
     const m = META[id];
     const delta = deltas[id] ?? 0;
@@ -45,7 +47,7 @@ export default function Ticker({ prices, deltas }: TickerProps) {
           <div key={`${keyPrefix}-${it.id}`} className="flex items-center gap-3 whitespace-nowrap">
             <Icon className="h-3.5 w-3.5" style={{ color: it.color }} />
             <span className="text-[11px] font-semibold tracking-[0.18em] text-slate-700 dark:text-slate-100">
-              {it.name}
+              {t(it.name)}
             </span>
             <span className="font-display text-sm font-semibold text-slate-900 dark:text-white">
               {formatPrice(it.displayValue, selectedCurrency)}

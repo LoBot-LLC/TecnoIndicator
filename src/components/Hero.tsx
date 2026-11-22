@@ -14,6 +14,7 @@ import Reveal from "./Reveal";
 import Ticker from "./Ticker";
 import { useCurrency } from "../context/CurrencyContext";
 import { useUnit } from "../context/UnitContext";
+import { useLanguage } from "../context/LanguageContext";
 import { energyLabel, waterLabel } from "../lib/units";
 import {
   COMMODITIES,
@@ -85,6 +86,7 @@ export default function Hero({
 }: HeroProps) {
   const { selectedCurrency } = useCurrency();
   const { lengthUnit, energyUnit } = useUnit();
+  const { t } = useLanguage();
 
   const today = new Date();
   const horizon = horizonProp ?? 10;
@@ -149,7 +151,7 @@ export default function Hero({
                 <span className="ping-ring absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-400 pulse-dot" />
               </span>
-              Live · Global commodity intelligence
+              {t("Live · Global commodity intelligence")}
             </div>
           </Reveal>
 
@@ -159,11 +161,13 @@ export default function Hero({
               <span className="text-teal-600 dark:text-teal-300"> TecnoIndicator</span>
             </h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-600 dark:text-slate-500 sm:text-lg">
-              Real-time 10-year forecasts for global{" "}
-              <span className="font-medium text-oil">oil</span>,{" "}
-              <span className="font-medium text-elec">electricity</span> &{" "}
-              <span className="font-medium text-water">water</span> prices — with scenario bands,
-              five-region evaluation, driver analysis and exportable analytics.
+              {t("Real-time 10-year forecasts for global")}{" "}
+              <span className="font-medium text-oil">{t("oil")}</span>{", "}
+              <span className="font-medium text-elec">{t("electricity")}</span> {t("&")}{" "}
+              <span className="font-medium text-water">{t("water")}</span>{" "}
+              {t(
+                "prices — with scenario bands, five-region evaluation, driver analysis and exportable analytics.",
+              )}
             </p>
           </Reveal>
 
@@ -176,7 +180,7 @@ export default function Hero({
               <span className="hidden h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600 sm:inline-block" />
                 <span className="inline-flex items-center gap-2">
                   <Globe2 className="h-4 w-4 text-slate-600 dark:text-slate-500" />
-                  All figures in {selectedCurrency} · 5 regions
+                  {t("All figures in {currency} · 5 regions", { currency: selectedCurrency })}
                 </span>
             </div>
           </Reveal>
@@ -187,20 +191,20 @@ export default function Hero({
                 href="#forecast"
                 className="inline-flex items-center gap-2 rounded-xl bg-teal-400 px-5 py-3 text-sm font-semibold text-slate-900 shadow-[0_0_28px_rgba(45,212,191,0.35)] transition-all hover:bg-teal-300"
               >
-                Start Forecast
+                {t("Start Forecast")}
                 <ArrowRight className="h-4 w-4" />
               </a>
               <a
                 href="#regions"
                 className="inline-flex items-center gap-2 rounded-xl border border-line bg-panel/5 px-5 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 transition-all hover:border-line-strong hover:bg-panel/10"
               >
-                Evaluate Regions
+                {t("Evaluate Regions")}
               </a>
               <a
                 href="#factors"
                 className="inline-flex items-center gap-2 rounded-xl border border-transparent px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:text-teal-600 dark:text-slate-500 dark:hover:text-teal-200"
               >
-                Explore Drivers
+                {t("Explore Drivers")}
                 <ChevronDown className="h-4 w-4" />
               </a>
             </div>
@@ -215,7 +219,7 @@ export default function Hero({
                 >
                   <p className="font-display text-2xl font-bold text-slate-900 dark:text-white">{s.value}</p>
                   <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-600 dark:text-slate-500">
-                    {s.label}
+                    {t(s.label)}
                   </p>
                 </div>
               ))}
@@ -229,15 +233,15 @@ export default function Hero({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600 dark:text-slate-500">
-                  Market snapshot
+                  {t("Market snapshot")}
                 </p>
                 <p className="mt-1 font-display text-lg font-semibold text-slate-900 dark:text-white">
-                  Live global feed
+                  {t("Live global feed")}
                 </p>
               </div>
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold text-emerald-300">
                 <Radio className="h-3 w-3" />
-                Live
+                {t("Live")}
               </div>
             </div>
 
@@ -285,7 +289,7 @@ export default function Hero({
               </svg>
               <div className="mt-1 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-500">
                 <span suppressHydrationWarning>{START_YEAR}</span>
-                <span>{horizon}-year trajectory</span>
+                <span>{t("{horizon}-year trajectory", { horizon })}</span>
                 <span suppressHydrationWarning>{START_YEAR + horizon}</span>
               </div>
             </div>
@@ -308,7 +312,7 @@ export default function Hero({
                         <Icon className="h-4 w-4" />
                       </span>
                       <div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{r.name}</p>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t(r.name)}</p>
                         <p className="text-[11px] text-slate-600 dark:text-slate-500">{r.unit}</p>
                       </div>
                     </div>
@@ -320,7 +324,7 @@ export default function Hero({
 
             {/* floating badge */}
             <div className="absolute -bottom-3 left-6 rounded-full border border-line bg-panel px-3 py-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-500 shadow-lg">
-              Model runs 100% in-browser · Americas → Oceania
+              {t("Model runs 100% in-browser · Americas → Oceania")}
             </div>
           </div>
         </Reveal>

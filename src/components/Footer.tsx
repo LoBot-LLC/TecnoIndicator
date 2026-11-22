@@ -3,6 +3,7 @@ import Logo from "./Logo";
 import { GithubIcon, LinkedinIcon, LoBotIcon } from "./icons";
 import { fmtFullDate, fmtTime } from "../lib/model";
 import { EVENTS, emit } from "../lib/events";
+import { useLanguage } from "../context/LanguageContext";
 
 const NAV = [
   { href: "#forecast", label: "Forecast" },
@@ -20,6 +21,8 @@ interface FooterProps {
 }
 
 export default function Footer({ lastUpdated }: FooterProps) {
+  const { t } = useLanguage();
+
   return (
     <footer className="border-t border-line bg-panel/40">
       <div className="mx-auto max-w-7xl px-5 py-14 sm:px-8">
@@ -27,21 +30,22 @@ export default function Footer({ lastUpdated }: FooterProps) {
           <div>
             <Logo variant="lobot" />
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-              LoBot LLC is a Vietnamese AI-native startup that creates business solutions enabling large
-              enterprises to make future-ready strategic decisions.
+              {t(
+                "LoBot LLC is a Vietnamese AI-native startup that creates business solutions enabling large enterprises to make future-ready strategic decisions.",
+              )}
             </p>
             <a
               href={REPO_URL}
               target="_blank"
               rel="noreferrer"
-              aria-label="LoBot LLC on GitHub"
+              aria-label={t("LoBot LLC on GitHub")}
               className="mt-5 inline-flex items-center gap-2.5 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
             >
               <GithubIcon className="h-4 w-4" />
             </a>
             <a
               href={LINKEDIN_URL}
-              aria-label="LoBot LLC on LinkedIn"
+              aria-label={t("LoBot LLC on LinkedIn")}
               className="mt-5 inline-flex items-center gap-2.5 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
             >
               <LinkedinIcon className="h-4 w-4" />
@@ -49,16 +53,16 @@ export default function Footer({ lastUpdated }: FooterProps) {
             <a
               href={COMPANY_URL}
               rel="noreferrer"
-              aria-label="Visit LoBot LLC company website"
+              aria-label={t("Visit LoBot LLC company website")}
               className="mt-5 inline-flex items-center gap-2.5 rounded-xl border border-line bg-panel/5 px-4 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100 transition-all duration-200 hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-200"
             >
               <LoBotIcon className="h-4 w-4" />
             </a>
           </div>
 
-          <nav aria-label="Footer">
+          <nav aria-label={t("Footer")}>
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-600 dark:text-slate-500">
-              Navigate
+              {t("Navigate")}
             </p>
             <ul className="mt-4 space-y-2.5">
               {NAV.map((l) => (
@@ -67,7 +71,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
                     href={l.href}
                     className="text-sm text-slate-600 transition-colors hover:text-teal-600 dark:text-slate-500 dark:hover:text-teal-200"
                   >
-                    {l.label}
+                    {t(l.label)}
                   </a>
                 </li>
               ))}
@@ -76,7 +80,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
 
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-600 dark:text-slate-500">
-              Resources
+              {t("Resources")}
             </p>
             <ul className="mt-4 space-y-2.5">
               <li>
@@ -85,7 +89,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
                   onClick={() => emit(EVENTS.EXPORT_PNG)}
                   className="flex items-center gap-2 text-sm text-slate-600 transition-colors hover:text-oil dark:text-slate-500"
                 >
-                  <FileImage className="h-4 w-4" /> Download chart (PNG)
+                  <FileImage className="h-4 w-4" /> {t("Download chart (PNG)")}
                 </button>
               </li>
               <li>
@@ -94,7 +98,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
                   onClick={() => emit(EVENTS.EXPORT_CSV)}
                   className="flex items-center gap-2 text-sm text-slate-600 transition-colors hover:text-water dark:text-slate-500"
                 >
-                  <FileText className="h-4 w-4" /> Download data (CSV)
+                  <FileText className="h-4 w-4" /> {t("Download data (CSV)")}
                 </button>
               </li>
               <li>
@@ -102,7 +106,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
                   href="#regions"
                   className="flex items-center gap-2 text-sm text-slate-600 transition-colors hover:text-teal-600 dark:text-slate-500 dark:hover:text-teal-200"
                 >
-                  <Globe2 className="h-4 w-4" /> Regional evaluation
+                  <Globe2 className="h-4 w-4" /> {t("Regional evaluation")}
                 </a>
               </li>
               <li>
@@ -110,7 +114,7 @@ export default function Footer({ lastUpdated }: FooterProps) {
                   href="#forecast"
                   className="flex items-center gap-2 text-sm text-slate-600 transition-colors hover:text-teal-600 dark:text-slate-500 dark:hover:text-teal-200"
                 >
-                  <Waves className="h-4 w-4" /> Live water price
+                  <Waves className="h-4 w-4" /> {t("Live water price")}
                 </a>
               </li>
             </ul>
@@ -119,14 +123,15 @@ export default function Footer({ lastUpdated }: FooterProps) {
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-line pt-6 sm:flex-row sm:items-center">
           <p className="text-xs text-slate-600 dark:text-slate-500">
-            <span suppressHydrationWarning>© {new Date().getFullYear()}</span> LoBot, LLC - All rights reserved{" "}
+            <span suppressHydrationWarning>© {new Date().getFullYear()}</span>{" "}
+            {t("LoBot, LLC - All rights reserved")}{" "}
           </p>
           <p className="text-xs text-slate-600 dark:text-slate-500">
-            Last updated:{" "}
+            {t("Last updated:")}{" "}
             <span suppressHydrationWarning>
               {fmtFullDate(lastUpdated)} · {fmtTime(lastUpdated)}
             </span>{" "}
-            · Model uses publicly available drivers.
+            {t("· Model uses publicly available drivers.")}
           </p>
         </div>
       </div>

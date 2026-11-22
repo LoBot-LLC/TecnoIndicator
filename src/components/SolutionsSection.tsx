@@ -1,9 +1,14 @@
 import { useMemo } from "react";
 import { ArrowUpRight, Shield, Truck, Zap } from "lucide-react";
 import Reveal from "./Reveal";
+import { useLanguage } from "../context/LanguageContext";
+import { useTranslatedTexts } from "../hook/useTranslatedTexts";
 import type { Factor, Solution } from "../lib/model";
 
 const MAX_SOLUTIONS = 3;
+
+/** Translate signature shared with `useLanguage()`, for plain helpers. */
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 const STRATEGY_ICONS: Record<string, typeof Shield> = {
   resilience: Shield,
@@ -19,11 +24,21 @@ function StrategyIcon({ strategy }: { strategy: string }) {
 function SolutionCard({
   solution,
   index,
+  t,
 }: {
   solution: Solution;
   index: number;
+  t: Translate;
 }) {
   const strategy = index === 0 ? "resilience" : index === 1 ? "cost" : "strategy";
+  const { locale } = useLanguage();
+  const [translatedTitle, translatedSummary, ...translatedActions] = useTranslatedTexts(
+    [solution.title, solution.summary, ...solution.actions],
+    locale,
+  );
+  const title = translatedTitle || solution.title;
+  const summary = translatedSummary || solution.summary;
+  const actions = solution.actions.map((action, i) => translatedActions[i] || action);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 transition-all duration-300 hover:border-teal-400/40 hover:bg-panel">
@@ -33,35 +48,35 @@ function SolutionCard({
             <StrategyIcon strategy={strategy} />
           </span>
           <span className="rounded-full border border-line bg-base/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-500">
-            {strategy}
+            {t(strategy)}
           </span>
         </div>
         <span className="font-display text-xs font-bold text-teal-400 dark:text-teal-300">
-          {solution.confidence}% confidence
+          {t("{confidence}% confidence", { confidence: solution.confidence })}
         </span>
       </div>
       <h3 className="mt-3 font-display text-base font-semibold text-slate-900 dark:text-white">
-        {solution.title}
+        {title}
       </h3>
       <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-500 line-clamp-3">
-        {solution.summary}
+        {summary}
       </p>
       {solution.aiCurated && (
         <div className="mt-3 border-t border-teal-200/30 pt-2 bg-teal-50 dark:bg-teal-800/30">
           <p className="text-[8px] font-semibold text-teal-400 dark:text-teal-300">
-            AI-generated from live factor window + TinyFish evidence
+            {t("AI-generated from live factor window + TinyFish evidence")}
           </p>
         </div>
       )}
       {solution.sources && solution.sources.length > 0 && (
         <div className="mt-3 border-t border-teal-200/30 pt-2 bg-teal-50 dark:bg-teal-800/30">
           <p className="text-[8px] font-semibold text-teal-400 dark:text-teal-300">
-            Sources: {solution.sources.slice(0, 3).map((s, i) => `${i + 1}. ${s.slice(0, 40)}...`).join(" ")}
+            {t("Sources:")} {solution.sources.slice(0, 3).map((s, i) => `${i + 1}. ${s.slice(0, 40)}...`).join(" ")}
           </p>
         </div>
       )}
       <div className="mt-3 space-y-1.5">
-        {solution.actions.map((action, i) => (
+        {actions.map((action, i) => (
           <div key={i} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-500">
             <ArrowUpRight className="mt-0.5 h-3 w-3 shrink-0 text-teal-400 dark:text-teal-300" />
             <span>{action}</span>
@@ -74,14 +89,14 @@ function SolutionCard({
             key={c}
             className="rounded-full border border-line bg-base/50 px-1.5 py-0.5 text-[9px] font-semibold capitalize text-slate-700 dark:text-slate-500"
           >
-            {c}
+            {t(c)}
           </span>
         ))}
       </div>
       {solution.relatedFactors.length > 0 && (
         <div className="mt-3 border-t border-line/50 pt-2">
           <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-500">
-            Linked factors
+            {t("Linked factors")}
           </p>
           <p className="mt-1 text-[10px] text-slate-700 dark:text-slate-500 line-clamp-2">
             {solution.relatedFactors.join(", ")}
@@ -105,6 +120,7 @@ export default function SolutionsSection({
   healthStatus,
   solutions,
 }: SolutionsSectionProps) {
+  const { t } = useLanguage();
   const allSolutions = useMemo(() => {
     if (solutions.length > 0) return solutions;
     
@@ -188,21 +204,19 @@ export default function SolutionsSection({
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-400 dark:text-teal-300/80">
-                AI solutions
+                {t("AI solutions")}
               </p>
               <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-                3 actionable strategies
+                {t("3 actionable strategies")}
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-500">
-                AI-generated solutions adapted from current dynamic reasons to help
-                business owners and executives make better logistical and business
-                decisions. Solutions update automatically as market factors change.
+                {t("AI-generated solutions adapted from current dynamic reasons to help business owners and executives make better logistical and business decisions. Solutions update automatically as market factors change.")}
               </p>
             </div>
             <span className="text-[11px] text-slate-600 dark:text-slate-500">
               {healthStatus === "Online Model Connected"
-                ? "AI-generated"
-                : "Static fallback"}
+                ? t("AI-generated")
+                : t("Static fallback")}
             </span>
           </div>
         </Reveal>
@@ -210,12 +224,12 @@ export default function SolutionsSection({
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {allSolutions.slice(0, MAX_SOLUTIONS).map((solution, i) => (
             <Reveal key={solution.id} delay={60 + i * 80}>
-              <SolutionCard solution={solution} index={i} />
+              <SolutionCard solution={solution} index={i} t={t} />
             </Reveal>
           ))}
           {allSolutions.length === 0 && (
             <div className="col-span-full rounded-2xl border border-line bg-panel/60 p-8 text-center text-sm text-slate-700 dark:text-slate-500">
-              No solutions available yet. AI curation in progress.
+              {t("No solutions available yet. AI curation in progress.")}
             </div>
           )}
         </div>

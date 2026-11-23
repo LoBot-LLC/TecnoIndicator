@@ -1059,35 +1059,56 @@ The response must contain up to eight validated ${regionName} factors matching t
 
 const GLOBAL_QUERIES = [
   "Brent crude oil price today why moving OPEC supply news November 2026",
+  "WTI crude oil price today why moving supply demand news November 2026",
+  "global oil price today why moving OPEC sanctions supply news 2026",
   "electricity price today why moving gas supply renewables news November 2026",
+  "global electricity price today why moving renewables grid demand news 2026",
+  "US electricity price today why moving Henry Hub gas renewables 2026",
   "water tariff price increase today why drought utilities news 2026",
+  "global water price today why moving scarcity drought utilities news 2026",
+  "water utility price today why moving drought infrastructure news 2026",
 ];
 
 const REGION_QUERIES: Record<Region, string[]> = {
   asia: [
     "Asia oil price today why moving China India demand OPEC November 2026",
+    "Asia crude oil price today why moving Middle East supply demand news 2026",
     "Asia electricity price today why moving renewables grid China India November 2026",
+    "Asia electricity price today why moving coal gas generation demand news 2026",
     "Asia water tariff price today why scarcity drought urbanization 2026",
+    "Asia water price today why moving desalination urban demand news 2026",
   ],
   europe: [
     "Europe oil price today why moving Brent Russian supply sanctions November 2026",
+    "Europe crude oil price today why moving OPEC+ supply disruption news 2026",
     "Europe electricity price today why moving carbon ETS renewables gas November 2026",
+    "Europe electricity price today why moving wind solar nuclear generation news 2026",
     "Europe water tariff price today why drought scarcity Alpine hydropower 2026",
+    "Europe water price today why moving river levels drought utilities news 2026",
   ],
   africa: [
     "Africa oil price today why moving Nigeria Angola production exports November 2026",
+    "Africa crude oil price today why moving supply disruption sanctions news 2026",
     "Africa electricity price today why moving diesel gensets grid reliability 2026",
+    "Africa electricity price today why moving hydro thermal generation news 2026",
     "Africa water tariff price today why drought scarcity Sahel utilities 2026",
+    "Africa water price today why moving scarcity conflict utilities news 2026",
   ],
   americas: [
     "Americas oil price today why moving WTI shale LNG exports November 2026",
+    "Americas crude oil price today why moving Canada Mexico production news 2026",
     "Americas electricity price today why moving hydro drought Henry Hub 2026",
+    "Americas electricity price today why moving Texas ERCIA grid demand news 2026",
     "Americas water tariff price today why drought California Southwest utilities 2026",
+    "Americas water price today why moving drought infrastructure scarcity news 2026",
   ],
   oceania: [
     "Oceania oil price today why moving LNG import parity Australia November 2026",
+    "Oceania crude oil price today why moving Asia Pacific demand supply news 2026",
     "Oceania electricity price today why moving NEM NZ wholesale drought 2026",
+    "Oceania electricity price today why moving coal gas renewables generation news 2026",
     "Oceania water tariff price today why drought Sydney Melbourne utilities 2026",
+    "Oceania water price today why moving drought desalination demand news 2026",
   ],
 };
 
@@ -1099,9 +1120,22 @@ const KNOWN_REPUTABLE_URLS = [
   "https://www.iea.org/reports/world-energy-outlook",
   "https://www.opec.org/opec_web/en/",
   "https://www.eia.gov/petroleum/",
+  "https://www.eia.gov/electricity/",
+  "https://www.iea.org/reports/electricity-market-report",
   "https://www.unwater.org/",
   "https://www.wri.org/",
   "https://www.irena.org/",
+  "https://www.eia.gov/renewable-energy/",
+  "https://www.un.org/sustainabledevelopment/water/",
+  "https://www.worldbank.org/en/topic/water",
+  "https://www.sandpglobal.com/platts/market-news",
+  "https://www.argusmedia.com/en/market-news",
+  "https://www.utilitydive.com/news/",
+  "https://www.energynetworks.org/news",
+  "https://www.canarymedia.com/news/",
+  "https://www.pv-magazine.com/latest-news/",
+  "https://www.windpowermonthly.com/latest",
+  "https://www.recharge.biz/latest",
 ];
 
 /**
@@ -1124,7 +1158,57 @@ const FACTOR_SEARCH_DOMAINS = [
   "prnewswire.com",
   "nasdaq.com",
   "investing.com",
+  "energy.gov",
+  "eia.gov",
+  "iea.org",
+  "opec.org",
+  "utilitydive.com",
+  "energynetworks.org",
+  "canarymedia.com",
+  "pv-magazine.com",
+  "windpowermonthly.com",
+  "recharge.biz",
 ];
+
+/**
+ * Region-specific known reputable URLs for the fallback path when TinyFish
+ * search returns no candidates. Each region has URLs relevant to its
+ * commodity markets (oil, electricity, water) so the fallback can produce
+ * meaningful factors even when live search fails.
+ */
+const KNOWN_REGIONAL_URLS: Record<RegionId, string[]> = {
+  global: KNOWN_REPUTABLE_URLS,
+  asia: [
+    "https://asia.economictimes.indiatimes.com/energy",
+    "https://www.reuters.com/asia/",
+    "https://www.iea.org/asia/",
+    "https://www.unwater.org/asia",
+  ],
+  europe: [
+    "https://www.economist.com/energy-environment",
+    "https://www.reuters.com/europe/",
+    "https://www.iea.org/europe/",
+    "https://www.unwater.org/europe",
+  ],
+  africa: [
+    "https://www.reuters.com/africa/",
+    "https://www.iea.org/africa/",
+    "https://unwater.org/africa",
+    "https://www.worldbank.org/africa/water",
+  ],
+  americas: [
+    "https://www.reuters.com/americas/",
+    "https://www.iea.org/americas/",
+    "https://www.eia.gov/analysis/",
+    "https://unwater.org/americas",
+  ],
+  oceania: [
+    "https://www.reuters.com/oceania/",
+    "https://www.iea.org/oceania/",
+    "https://www.eia.gov/oceania",
+    "https://unwater.org/oceania",
+  ],
+};
 
 const FALLBACK_NAMES: Record<RegionId, string[]> = {
   global: [
@@ -2237,7 +2321,7 @@ export async function runFactorAnalysis(
     if (candidates.length === 0) {
       console.warn(`Factor analysis: no TinyFish candidates for scope "${scope}"; trying known reputable URLs as fallback`);
       const knownExcerpts = await Promise.all(
-        KNOWN_REPUTABLE_URLS.map(async (url) => {
+        KNOWN_REGIONAL_URLS[scope].map(async (url) => {
           try {
             const scraped = await tinyfishRouter.tinyfishScrape(url, signal, {
               purpose: `Identify concrete reasons this page gives for ${scopeLabel(scope)} oil, electricity, or water price movements in ${RECENT_MONTH()}.`,
@@ -2499,7 +2583,7 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
     try {
       console.warn(`Factor analysis: trying known reputable URLs as fallback after error for scope "${scope}"`);
       const knownExcerpts = await Promise.all(
-        KNOWN_REPUTABLE_URLS.map(async (url) => {
+        KNOWN_REGIONAL_URLS[scope].map(async (url) => {
           try {
             const scraped = await tinyfishRouter.tinyfishScrape(url, signal, {
               purpose: `Identify concrete reasons this page gives for ${scopeLabel(scope)} oil, electricity, or water price movements in ${RECENT_MONTH()}.`,

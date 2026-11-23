@@ -16,6 +16,9 @@ import { safeParseJson } from "../_shared/validation";
 const COMMODITY_QUERIES = [
   { commodity: "oil", queryTemplate: "Brent crude oil price today USD per barrel live" },
   { commodity: "electricity", queryTemplate: "wholesale electricity price today EUR per MWh live" },
+  { commodity: "electricity", queryTemplate: "electricity price per MWh today 2026 wholesale spot market" },
+  { commodity: "electricity", queryTemplate: "power market price today EUR MWh day ahead auction" },
+  { commodity: "electricity", queryTemplate: "electricity tariff price per kilowatt hour 2026" },
   { commodity: "water", queryTemplate: "global water prices rose 2026 tariff survey per cubic metre USD" },
 ];
 
@@ -35,6 +38,13 @@ const KNOWN_PRICE_URLS: Record<string, string[]> = {
     "https://electricity-spot.com/",
     "https://euroenergy.live/en/prices",
     "https://euenergy.live/",
+    "https://www.nordpoolgroup.com/",
+    "https://www.epexspot.com/",
+    "https://www.entsoe.eu/",
+    "https://www.pjm.com/",
+    "https://www.caiso.com/",
+    "https://www.ercot.com/",
+    "https://www.octopus.energy/",
   ],
   water: [
     "https://www.globenewswire.com/news-release/2026/10/29/3391565/0/en/global-water-prices-rose-5-6-in-2026-as-the-regional-gap-continues-to-widen-finds-global-water-intelligence-s-global-water-tariff-survey.html",
@@ -181,14 +191,14 @@ async function resolvePrices(req: Request): Promise<Response> {
  */
 const PLAUSIBLE_RANGES: Record<string, { min: number; max: number }> = {
   oil: { min: 40, max: 200 },
-  electricity: { min: 30, max: 300 },
+  electricity: { min: 20, max: 500 },
   water: { min: 0.5, max: 15 },
 };
 
 /** Unit qualifiers used to prefer the number actually quoted per unit. */
 const UNIT_QUALIFIERS: Record<string, RegExp> = {
   oil: /(?:per\s+barrel|a\s+barrel|\/\s*bbl|\bbbl\b)/i,
-  electricity: /(?:per\s+mwh|per\s+megawatt|\/\s*mwh|per\s+kwh|\/\s*kwh|\bmwh\b)/i,
+  electricity: /(?:per\s+mwh|per\s+megawatt|\/\s*mwh|per\s+kwh|\/\s*kwh|\bmwh\b|EUR\/MWh|EUR per MWh|€\/MWh)/i,
   water: /(?:per\s+cubic\s+met(?:er|re)|cubic\s+met(?:er|re)|\/\s*m3|per\s+gallon|\/\s*gal)/i,
 };
 
@@ -250,6 +260,8 @@ function extractPriceFromText(text: string, commodity?: string): number | null {
       if (qualifier && qualifier.test(context)) score += 10;
       // Penalize annual/monthly bill totals so a per-unit figure wins instead.
       if (BILL_PERIOD.test(context)) score -= 10;
+      // Bonus for electricity context keywords (day-ahead, spot, auction).
+      if (commodity === "electricity" && /(?:day ahead|spot price|auction)/i.test(context)) score += 5;
       candidates.push({ price, score });
     }
     // A qualifier-tagged candidate is the strongest signal; stop scanning.

@@ -510,11 +510,17 @@ reduced nexus strength instead of returning 0. Factors with `mixed` direction or
 no declared commodity still report `null`. `pearson()` also rejects
 non-finite inputs instead of returning `NaN`.
 
-**Dark-mode text color fix** — Two visibility bugs were fixed in the Correlation matrix in dark mode:
+**Dark-mode text color fix** — The Correlation matrix had several dark-mode contrast bugs because the dark palette in `app/globals.css` is inverted: dark shades map to light colors and vice versa (e.g. `--color-slate-200` = `#1e293b`, a dark navy). All affected text now uses a bright dark-mode color:
 
 1. **Strong-correlation cell numbers** (`|r| > 0.5`) previously hardcoded text color to `#0b1220`, which became nearly invisible on dark-mode backgrounds. The cell text now uses the `--color-corr-text` CSS custom property (defined in `app/globals.css` under both `@theme` light defaults and `.dark` overrides), which resolves to dark text (`#0b1220`) in light mode and light text (`#f8fafc`) in dark mode for guaranteed contrast.
 
-2. **Factor names** (the "dynamic reasons" in the left column) used `dark:text-slate-200`, but because the dark palette in `app/globals.css` is inverted (`--color-slate-200` = `#1e293b`, a dark navy), this gave only ~1.3:1 contrast on the `#0a1122` panel — nearly invisible. The factor name now uses `dark:text-slate-100` (`#f1f5f9`, near-white), matching the app-wide convention used for body text everywhere else.
+2. **Factor names** (the "dynamic reasons" in the left column) used `dark:text-slate-200` (`#1e293b`), giving only ~1.3:1 contrast on the `#0a1122` panel — nearly invisible. The factor name now uses `dark:text-slate-100` (`#f1f5f9`, near-white), matching the app-wide convention used for body text everywhere else.
+
+3. **Column headers** ("Factor", "Oil", "Electricity", "Water") used `dark:text-slate-400` (`#475569`, ~2.8:1 — fails WCAG AA). Now `dark:text-slate-600` (`#94a3b8`, ~8:1).
+
+4. **Region names** in the per-region breakdown used `dark:text-slate-300` (`#334155`, ~2.0:1 — invisible). Now `dark:text-slate-600` (`#94a3b8`, ~8:1).
+
+5. **Empty-state message** (no factors / horizon < 2) used `dark:text-slate-400` (`#475569`, ~2.8:1). Now `dark:text-slate-600` (`#94a3b8`, ~8:1).
 
 ---
 

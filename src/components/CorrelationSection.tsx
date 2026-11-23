@@ -145,7 +145,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                   </div>
                   {topFactors.map((f) => (
                     <div key={f.id} role="row" className="grid grid-cols-[1.4fr_repeat(3,1fr)] border-b border-line/60 last:border-0">
-                      <div role="rowheader" className="truncate px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200" title={f.name}>
+                      <div role="rowheader" className="truncate px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100" title={f.name}>
                         {f.name}
                       </div>
                       {COMMODITIES.map((c) => {

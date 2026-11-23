@@ -21,6 +21,7 @@
   --color-slate-700: #334155;
   --color-slate-800: #1e293b;
   --color-slate-900: #0f172a;
+  --color-corr-text: #0b1220;
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", "Inter", ui-sans-serif, sans-serif;
 }
@@ -41,6 +42,7 @@
   --color-slate-700: #cbd5e1;
   --color-slate-800: #e2e8f0;
   --color-slate-900: #f8fafc;
+  --color-corr-text: #f8fafc;
 }
 
 html {

@@ -510,6 +510,13 @@ reduced nexus strength instead of returning 0. Factors with `mixed` direction or
 no declared commodity still report `null`. `pearson()` also rejects
 non-finite inputs instead of returning `NaN`.
 
+**Dark-mode text color fix** — Strong-correlation cells (`|r| > 0.5`) previously
+hardcoded text color to `#0b1220`, which became nearly invisible on dark-mode
+backgrounds. The cell text now uses the `--color-corr-text` CSS custom property
+(defined in `app/globals.css` under both `@theme` light defaults and `.dark`
+overrides), which resolves to dark text (`#0b1220`) in light mode and light text
+(`#f8fafc`) in dark mode for guaranteed contrast.
+
 ---
 
 ## 🔄 Static Fallback Behavior

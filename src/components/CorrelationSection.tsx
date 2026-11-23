@@ -164,7 +164,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                               }`}
                               style={{
                                 background: hexToRgba(c.color, r === null ? 0.06 : Math.abs(r)),
-                                color: r === null ? undefined : Math.abs(r) > 0.5 ? "#0b1220" : undefined,
+                                color: r === null ? undefined : Math.abs(r) > 0.5 ? "var(--color-corr-text)" : undefined,
                               }}
                             >
                               {formatR(r)}

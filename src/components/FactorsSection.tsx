@@ -78,17 +78,19 @@ function FactorCard({
   horizon: number;
   index: number;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const relevance = factorRelevance(factor.bias, horizon);
   const trend = relevanceTrend(factor.bias, horizon);
   const width = Math.min(100, Math.round((relevance / 2.0) * 100));
   const isNew = isNewFactor(factor.createdAt);
   const [isExpanded, setIsExpanded] = useState(false);
   const MAX_CHARS = 400;
-  const shouldTruncate = factor.explanation.length > MAX_CHARS;
+  const translatedFactor = factor.translations?.[language];
+  const displayFactor = translatedFactor ?? factor;
+  const shouldTruncate = displayFactor.explanation.length > MAX_CHARS;
   const displayText = isExpanded || !shouldTruncate
-    ? factor.explanation
-    : truncateAtSentence(factor.explanation, MAX_CHARS);
+    ? displayFactor.explanation
+    : truncateAtSentence(displayFactor.explanation, MAX_CHARS);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-5 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -106,7 +108,7 @@ function FactorCard({
             </span>
           </div>
           <h3 className="mt-3 font-display text-base font-semibold text-slate-900 dark:text-white">
-            {factor.name}
+            {displayFactor.name}
             {isNew && (
               <span className="ml-2 inline-flex items-center rounded-full bg-teal-500 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900 dark:text-white">
                 {t("factors.new")}

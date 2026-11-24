@@ -1,5 +1,5 @@
 import { languageFromRequest, type ApiLanguage } from "../_shared/language";
-import { translateStructured } from "../_shared/translate";
+import { translateStructured, attachFactorTranslations } from "../_shared/translate";
 import {
   buildFallbackFactors,
   filterStaticFallbacks,
@@ -12,8 +12,23 @@ import {
 import { FACTORS_CACHE_MS } from "../_shared/http";
 import { isRegion, type Region } from "../_shared/regions";
 import { sanitizeError } from "../_shared/validation";
+import type { Factor } from "../_shared/types";
 
 async function factorsResponse<T>(lang: ApiLanguage, payload: T, init: ResponseInit): Promise<Response> {
+  // When the payload carries factors, prefer their pre-translated name/explanation
+  // (attached during curation) so language switching is instant. Only the
+  // top-level `error` field still needs on-demand translation.
+  if (payload && typeof payload === "object" && ("factors" in payload) && Array.isArray((payload as Record<string, unknown>).factors)) {
+    const withFactors = payload as { factors: Factor[] };
+    if (Array.isArray(withFactors.factors)) {
+      const translatedFactors = withFactors.factors.map((factor) => {
+        const t = factor.translations?.[lang];
+        return t ? { ...factor, name: t.name, explanation: t.explanation } : factor;
+      });
+      const updatedPayload = { ...(payload as Record<string, unknown>), factors: translatedFactors };
+      return Response.json(await translateStructured(updatedPayload, lang, ["error"]), init);
+    }
+  }
   return Response.json(await translateStructured(payload, lang, ["explanation", "error"]), init);
 }
 
@@ -41,9 +56,13 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     if (!force) {
       const stored = await readFactorWindow(region);
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
-        // runFactorAnalysis already validates/repairs; trust the cached window
+        // Attach translations to cached factors if missing, then select language version
+        const factorsWithTranslations = stored.factors.map((f: Factor) => ({
+          ...f,
+          translations: f.translations,
+        }));
         return factorsResponse(lang,
-          toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
+          toFactorsPayload(factorsWithTranslations, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
           { status: 200 },
         );
       }
@@ -53,9 +72,11 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     const timeoutId = setTimeout(() => abortController.abort(), 55000);
     try {
       const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
-      const stored = await writeFactorWindow(region, result.factors, result.aiCurated);
+      // Pre-translate factors to all supported languages for instant switching
+      const factorsWithTranslations = await attachFactorTranslations(result.factors, { signal: abortController.signal });
+      const stored = await writeFactorWindow(region, factorsWithTranslations, result.aiCurated);
       return factorsResponse(lang,
-        toFactorsPayload(result.factors, region, result.aiCurated, { updatedAt: stored.updatedAt }),
+        toFactorsPayload(factorsWithTranslations, region, result.aiCurated, { updatedAt: stored.updatedAt }),
         { status: 200 },
       );
     } finally {
@@ -65,8 +86,16 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     console.error("Regional factors error:", sanitizeError(String(error)));
     const stored = await readFactorWindow(region).catch(() => null);
     const factors = filterStaticFallbacks(stored?.factors.length ? stored.factors : buildFallbackFactors(region));
+    // Attach translations to available factors if possible
+    const factorsWithTranslations = stored?.factors?.map((f: Factor) => ({
+      ...f,
+      translations: f.translations,
+    })) ?? factors.map(f => ({
+      ...f,
+      translations: f.translations,
+    }));
     return factorsResponse(lang,
-      toFactorsPayload(factors, region, stored?.aiCurated ?? false, {
+      toFactorsPayload(factorsWithTranslations, region, stored?.aiCurated ?? false, {
         updatedAt: stored?.updatedAt ?? new Date().toISOString(),
         error: "Regional factors temporarily unavailable; static fallbacks returned",
       }),

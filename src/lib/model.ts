@@ -285,6 +285,8 @@ export interface Factor {
   importanceScore: number;
   /** Server-attached price grounding (dashboard statistics at curation time). Never model-generated. */
   grounding?: FactorGrounding;
+  /** Pre-translated name/explanation for each supported API language. Populated during curation so language switching is instant without a new API call. */
+  translations?: Partial<Record<"en" | "es" | "vi", { name: string; explanation: string }>>;
   createdAt: string;
   updatedAt: string;
 }

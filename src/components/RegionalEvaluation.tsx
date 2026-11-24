@@ -280,13 +280,15 @@ function RegionalFactorCard({
   index: number;
 }) {
   const isNew = isNewFactor(factor.createdAt);
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [isExpanded, setIsExpanded] = useState(false);
   const MAX_CHARS = 400;
-  const shouldTruncate = factor.explanation.length > MAX_CHARS;
+  const translatedFactor = factor.translations?.[language];
+  const displayFactor = translatedFactor ?? factor;
+  const shouldTruncate = displayFactor.explanation.length > MAX_CHARS;
   const displayText = isExpanded || !shouldTruncate
-    ? factor.explanation
-    : truncateAtSentence(factor.explanation, MAX_CHARS);
+    ? displayFactor.explanation
+    : truncateAtSentence(displayFactor.explanation, MAX_CHARS);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/60 p-4 transition-all duration-300 hover:border-line-strong hover:bg-panel">
@@ -301,7 +303,7 @@ function RegionalFactorCard({
             </span>
           </div>
           <h4 className="mt-2 font-display text-sm font-semibold text-slate-900 dark:text-white leading-snug">
-            {factor.name}
+            {displayFactor.name}
             {isNew && (
               <span className="ml-1.5 inline-flex items-center rounded-full bg-teal-500 px-1.5 py-0.5 text-[9px] font-semibold text-slate-900 dark:text-white">
                 {t("regionalEvaluation.newBadge")}

@@ -114,7 +114,7 @@ export default function SolutionsSection({
   healthStatus,
   solutions,
 }: SolutionsSectionProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const allSolutions = useMemo(() => {
     if (solutions.length > 0) return solutions;
     
@@ -137,7 +137,7 @@ export default function SolutionsSection({
       let strategyTitle: string;
       let strategyActions: string[];
       
-      const name = factor.name.toLowerCase();
+      const name = (factor.translations?.[language]?.name ?? factor.name).toLowerCase();
       const commodities = factor.commodities.join(", ");
       if (index === 0) {
         // Strategic focus: Operational resilience
@@ -175,9 +175,10 @@ export default function SolutionsSection({
       }
       
       // Extract a concise, impactful explanation
-      const conciseExplanation = factor.explanation.length > 200
-        ? `${factor.explanation.slice(0, 200)}...`
-        : factor.explanation;
+      const displayExplanation = factor.translations?.[language]?.explanation ?? factor.explanation;
+      const conciseExplanation = displayExplanation.length > 200
+        ? `${displayExplanation.slice(0, 200)}...`
+        : displayExplanation;
       
       return {
         id: `solution-fallback-${factor.id}-${index}`, // Better ID
@@ -192,7 +193,7 @@ export default function SolutionsSection({
         scope: factor.scope,
       };
     });
-  }, [solutions, fallbackFactors, t]);
+  }, [solutions, fallbackFactors, t, language]);
 
   return (
     <section id="solutions" className="relative scroll-mt-20 border-t border-line py-16 sm:py-20">

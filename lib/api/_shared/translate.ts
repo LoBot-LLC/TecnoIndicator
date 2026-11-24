@@ -1,7 +1,8 @@
 import { kiloRouter } from "./kiloRouter";
 import { getCache, setCache } from "./cache";
-import { LANGUAGE_NAMES, type ApiLanguage } from "./language";
+import { API_LANGUAGES, LANGUAGE_NAMES, type ApiLanguage } from "./language";
 import { safeParseJson } from "./validation";
+import type { Factor } from "./types";
 
 export interface TranslateOptions {
   /** Abort the upstream call; defaults to a 15s timeout. */
@@ -164,4 +165,39 @@ export async function translateStructured<T>(
     return node;
   };
   return rebuild(value, null) as T;
+}
+
+/**
+ * Pre-translates every factor's `name` and `explanation` into all supported
+ * languages and stores them on `factor.translations`, so the UI can switch
+ * languages instantly without another network round-trip.
+ *
+ * Batched per language: one Kilo call for all names and one for all
+ * explanations per target language (same cache + number-preservation guards as
+ * `translateTexts`). Never throws; untranslatable strings fall back to the
+ * original English.
+ */
+export async function attachFactorTranslations(
+  factors: Factor[],
+  opts: TranslateOptions = {},
+): Promise<Factor[]> {
+  if (factors.length === 0) return factors;
+
+  for (const lang of API_LANGUAGES) {
+    if (lang === "en") continue;
+    const names = factors.map((f) => f.name);
+    const explanations = factors.map((f) => f.explanation);
+    const [translatedNames, translatedExplanations] = await Promise.all([
+      translateTexts(names, lang, opts),
+      translateTexts(explanations, lang, opts),
+    ]);
+    factors.forEach((factor, i) => {
+      if (!factor.translations) factor.translations = {};
+      factor.translations[lang] = {
+        name: translatedNames[i] ?? factor.name,
+        explanation: translatedExplanations[i] ?? factor.explanation,
+      };
+    });
+  }
+  return factors;
 }

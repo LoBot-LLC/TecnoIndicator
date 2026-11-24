@@ -1,3 +1,5 @@
+export type ApiLanguage = "en" | "es" | "vi";
+
 export const REGIONS = ["asia", "europe", "africa", "americas", "oceania"] as const;
 export type Region = typeof REGIONS[number];
 export type RegionId = Region | "global";
@@ -23,6 +25,11 @@ export interface FactorGrounding {
   asOf?: string;
 }
 
+export interface FactorTranslation {
+  name: string;
+  explanation: string;
+}
+
 export interface Factor {
   id: string;
   name: string;
@@ -41,6 +48,8 @@ export interface Factor {
   importanceScore: number;
   createdAt: string;
   updatedAt: string;
+  /** Pre-translated name/explanation for each supported API language. Populated during curation so language switching is instant without a new API call. */
+  translations?: Partial<Record<ApiLanguage, FactorTranslation>>;
 }
 
 export interface ForecastPoint {

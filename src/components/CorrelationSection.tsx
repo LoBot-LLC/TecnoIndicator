@@ -114,7 +114,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
         </Reveal>
 
         {horizon < 2 || topFactors.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400" aria-live="polite">
+          <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-600" aria-live="polite">
             {horizon < 2 ? t("correlation.needHorizon") : t("correlation.noFactors")}
           </p>
         ) : (
@@ -129,7 +129,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                   className="min-w-[560px]"
                 >
                   <div role="row" className="grid grid-cols-[1.4fr_repeat(3,1fr)] border-b border-line bg-base/40">
-                    <div role="columnheader" className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
+                    <div role="columnheader" className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-600">
                       {t("correlation.colFactor")}
                     </div>
                     {COMMODITIES.map((c) => (
@@ -145,7 +145,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                   </div>
                   {topFactors.map((f) => (
                     <div key={f.id} role="row" className="grid grid-cols-[1.4fr_repeat(3,1fr)] border-b border-line/60 last:border-0">
-                      <div role="rowheader" className="truncate px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200" title={f.name}>
+                      <div role="rowheader" className="truncate px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100" title={f.name}>
                         {f.name}
                       </div>
                       {COMMODITIES.map((c) => {
@@ -164,7 +164,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                               }`}
                               style={{
                                 background: hexToRgba(c.color, r === null ? 0.06 : Math.abs(r)),
-                                color: r === null ? undefined : Math.abs(r) > 0.5 ? "#0b1220" : undefined,
+                                color: r === null ? undefined : Math.abs(r) > 0.5 ? "var(--color-corr-text)" : undefined,
                               }}
                             >
                               {formatR(r)}
@@ -198,7 +198,7 @@ export default function CorrelationSection(props: CorrelationSectionProps) {
                         aria-label={t("correlation.regionAria", { region: meta?.name ?? d.regionId, r: formatR(d.r) })}
                         className="group flex w-full items-center gap-3 rounded-xl border border-line bg-base/40 px-3 py-2 text-left transition-all hover:border-teal-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60"
                       >
-                        <span className="w-28 shrink-0 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        <span className="w-28 shrink-0 text-xs font-semibold text-slate-700 dark:text-slate-600">
                           {meta?.flag} {meta?.name ?? d.regionId}
                         </span>
                         <span className="h-2 flex-1 overflow-hidden rounded-full bg-line">

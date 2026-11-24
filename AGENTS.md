@@ -11,17 +11,20 @@ Here are the following regulations for all AI agents to strictly adhere when you
 7. When you design a project, always **reimagine** what the UI looks like when deployed to a _REAL_ customer before you design something.
 8. Always use **Graphify** (https://github.com/Graphify-Labs/graphify) (install in your local environment:
 
+```
 graphify extract . --code-only
 graphify claude install (you need to replace "claude" with your AI coding harness)
 graphify hook install
 graphify install --project --strict
+```
 
 ) to give _shared context_ across codebases for agents and developers alike, thus saving _a lot of_ tokens for AI agents.
 
 9. Install the tool **Reverse Engineer Anything** (https://github.com/morluto/rea) (install in your local environment:
 
+```
 npx rea-agents@latest setup
-
+```
 ) so that you are fully able to _reverse engineer_ a feature if you are **required** to, with an existing application based on its _patterns_. You are also required to use it alongside **Ghidra** (https://github.com/NationalSecurityAgency/ghidra).
 
 10. Make a **fully specified** plan including the required **bug fix/ feature implementation**, the **tech stack** you need to use, the **environmental variables/API Keys** (Key-based/Non-key-based) you need to input to, _how_ you implement this feature specifically, what are the **issues** you need to fix, etc.... before you start coding.

@@ -1,7 +1,7 @@
 Here are the following regulations for all AI agents to strictly adhere when you work on this repository:
 
-1. DO NOT MODIFY this AGENTS.md file at ANY MEANS.
-2. Before you conduct your operations, you are required to read every file in the repo AND conduct websearch + webfetch operations so you can get to know what you MUST Be doing next for the task.
+1. DO NOT MODIFY this **AGENTS.md** file at _ANY MEANS_.
+2. Before you conduct your operations, you are required to read **every** file in the repo AND conduct **websearch + webfetch** operations so you can get to know what you MUST Be doing next for the task.
 3. After you conduct operations, you are required to update the README.md file to include new features, tech stack, API Keys, ...... (DO NOT CHANGE the name of the project, or the content inside the "Credits" or "Contribution guidelines" or any similar sections like these two) and test every single feature inside the repository and the whole app itself to see if they 100% works, before you push your commits to the remote repository.
 4. Delegating all your tasks to subagents is required, and you shall launch no more than 4 subagents at the same time.
 5. Make use of all the skills that you have in your environment to maximize your performance and output quality.

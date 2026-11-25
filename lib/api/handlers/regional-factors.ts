@@ -12,9 +12,50 @@ import {
 import { FACTORS_CACHE_MS } from "../_shared/http";
 import { isRegion, type Region } from "../_shared/regions";
 import { sanitizeError } from "../_shared/validation";
+import type { Factor } from "../_shared/types";
+import * as FactorAnalysisNS from "./factor-analysis";
 
-async function factorsResponse<T>(lang: ApiLanguage, payload: T, init: ResponseInit): Promise<Response> {
-  return Response.json(await translateStructured(payload, lang, ["explanation", "error"]), init);
+/** Best-effort eager pretranslation. Resolves undefined when helpers are missing, fail, or exceed ~10s. */
+async function pretranslateBestEffort(
+  factors: Factor[],
+  signal?: AbortSignal,
+): Promise<Record<string, Array<{ name: string; explanation: string }>> | undefined> {
+  try {
+    const fn = (FactorAnalysisNS as unknown as Record<string, unknown>)["pretranslateFactorWindow"];
+    if (typeof fn !== "function") return undefined;
+    const timeout = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 10_000));
+    const result = await Promise.race([
+      (fn as (f: Factor[], s?: AbortSignal) => Promise<unknown>)(factors, signal),
+      timeout,
+    ]);
+    if (!result || typeof result !== "object") return undefined;
+    return result as Record<string, Array<{ name: string; explanation: string }>>;
+  } catch {
+    return undefined;
+  }
+}
+
+async function factorsResponse<T>(lang: ApiLanguage, payload: T, init: ResponseInit, stored?: unknown): Promise<Response> {
+  if (lang !== "en" && stored && typeof stored === "object") {
+    try {
+      const apply = (FactorAnalysisNS as unknown as Record<string, unknown>)["applyStoredTranslations"];
+      const translations = (stored as { translations?: unknown }).translations as
+        | Partial<Record<string, Array<{ name: string; explanation: string }>>>
+        | undefined;
+      const factors = (payload as { factors?: Factor[] }).factors;
+      const arr = translations?.[lang as "es" | "vi"];
+      if (typeof apply === "function" && Array.isArray(arr) && Array.isArray(factors) && arr.length === factors.length) {
+        const localized = (apply as (f: Factor[], t: unknown, l: string) => Factor[])(factors, translations, lang);
+        if (Array.isArray(localized) && localized.length === factors.length) {
+          const base = payload as Record<string, unknown>;
+          return Response.json({ ...base, factors: localized, count: localized.length }, init);
+        }
+      }
+    } catch {
+      // Fall through to lazy translation.
+    }
+  }
+  return Response.json(await translateStructured(payload, lang, ["name", "explanation", "error"]), init);
 }
 
 /**
@@ -45,6 +86,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
         return factorsResponse(lang,
           toFactorsPayload(stored.factors, region, stored.aiCurated, { updatedAt: stored.updatedAt }),
           { status: 200 },
+          stored,
         );
       }
     }
@@ -53,10 +95,15 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     const timeoutId = setTimeout(() => abortController.abort(), 55000);
     try {
       const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
-      const stored = await writeFactorWindow(region, result.factors, result.aiCurated);
+      const translations = await pretranslateBestEffort(result.factors, abortController.signal);
+      const stored = await (writeFactorWindow as (...args: unknown[]) => Promise<{ updatedAt: string; translations?: unknown }>)(
+        region, result.factors, result.aiCurated, translations ?? undefined,
+      );
+      const windowWithTranslations = translations ? { ...stored, translations } : stored;
       return factorsResponse(lang,
         toFactorsPayload(result.factors, region, result.aiCurated, { updatedAt: stored.updatedAt }),
         { status: 200 },
+        windowWithTranslations,
       );
     } finally {
       clearTimeout(timeoutId);
@@ -71,6 +118,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
         error: "Regional factors temporarily unavailable; static fallbacks returned",
       }),
       { status: 200 },
+      stored,
     );
   }
 }

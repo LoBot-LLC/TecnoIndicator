@@ -69,6 +69,10 @@ The UI is available in **English**, **Español** and **Tiếng Việt**.
 - **API `lang` parameter** — API routes accept `lang=en|es|vi` (default `en`). Unknown values fall back to `en`. Example: `GET /api/forecast?lang=vi`.
 - **Translation is best-effort** — Web-searched content (factor explanations, solutions) is translated through the Kilo AI Gateway and cached. If translation fails or is unavailable, the English original is returned. Numeric values are preserved, and translations that change numbers are rejected.
 
+### Eager auto-translation (Factor Curation Pipeline)
+
+As soon as a source URL is fetched, Kilo Gateway pre-translates the factor `name` + `explanation` into all `API_LANGUAGES` (`es`, `vi`). The result is stored on the cached `FactorWindow.translations` (`{ es: [...], vi: [...] }`), so switching language serves instantly with no extra inference. If a stored translation is missing/incomplete, the route falls back to lazy best-effort translation at request time. Files: `lib/api/handlers/factor-analysis.ts` (pre-translate + `applyStoredTranslations`), `dynamic-factors.ts`, `regional-factors.ts` (serve stored, lazy fallback), `cron-curate-factors.ts` (nightly pre-warming).
+
 ## 🚀 How to Use
 
 ### Quick Start

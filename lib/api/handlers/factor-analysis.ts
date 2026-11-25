@@ -20,6 +20,7 @@ import {
 } from "../_shared/types";
 import { getScopePriceDefaults } from "../_shared/deterministicAnalytics";
 import { truncateAtWordBoundary, truncateAtSentenceBoundary } from "../_shared/textUtils";
+import { translateTexts } from "../_shared/translate";
 
 /**
  * The shape stored under the canonical `dynamic-factors:{scope}` key. Every
@@ -31,6 +32,7 @@ export interface FactorWindow {
   factors: Factor[];
   aiCurated: boolean;
   updatedAt: string;
+  translations?: Partial<Record<'es'|'vi', Array<{name:string; explanation:string}>>>;
 }
 
 export interface FactorAnalysisOptions {
@@ -1224,10 +1226,12 @@ export async function readFactorWindow(scope: RegionId): Promise<FactorWindow | 
   const entry = raw as Partial<FactorWindow>;
   const factors = Array.isArray(entry.factors) ? entry.factors.filter(isFactorLike) : [];
   if (factors.length === 0) return null;
+  const translations = isTranslationsLike(entry.translations) ? entry.translations : undefined;
   return {
     factors,
     aiCurated: entry.aiCurated === true,
     updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : new Date().toISOString(),
+    ...(translations ? { translations } : {}),
   };
 }
 
@@ -1235,10 +1239,120 @@ export async function writeFactorWindow(
   scope: RegionId,
   factors: Factor[],
   aiCurated: boolean,
+  translations?: FactorWindow['translations'],
 ): Promise<FactorWindow> {
-  const window: FactorWindow = { factors, aiCurated, updatedAt: new Date().toISOString() };
+  const window: FactorWindow = {
+    factors,
+    aiCurated,
+    updatedAt: new Date().toISOString(),
+    ...(translations ? { translations } : {}),
+  };
   await setCache(factorKeyForScope(scope), window, FACTORS_WINDOW_TTL_MS);
   return window;
+}
+
+function isTranslationsLike(value: unknown): value is FactorWindow['translations'] {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  for (const lang of ["es", "vi"] as const) {
+    const arr = record[lang];
+    if (arr === undefined) continue;
+    if (!Array.isArray(arr)) return false;
+    for (const item of arr) {
+      if (!item || typeof item !== "object") return false;
+      const entry = item as Partial<{ name: unknown; explanation: unknown }>;
+      if (typeof entry.name !== "string" || typeof entry.explanation !== "string") return false;
+    }
+  }
+  return true;
+}
+
+type PretranslateLang = 'es' | 'vi';
+
+function pretranslateSignal(signal: AbortSignal | undefined): AbortSignal {
+  const timeout = AbortSignal.timeout(15000);
+  if (!signal) return timeout;
+  try {
+    return AbortSignal.any([signal, timeout]);
+  } catch {
+    return timeout;
+  }
+}
+
+/**
+ * Eagerly pre-translates factor names + explanations for `es`/`vi` in one
+ * batched `translateTexts` call per language (order: all names, then all
+ * explanations). Never throws: on any failure returns partial/undefined.
+ */
+export async function pretranslateFactorWindow(
+  factors: Factor[],
+  signal?: AbortSignal,
+): Promise<FactorWindow['translations']> {
+  if (!Array.isArray(factors) || factors.length === 0) return undefined;
+  const langs: PretranslateLang[] = ['es', 'vi'];
+  const names = factors.map((f) => f?.name ?? "");
+  const explanations = factors.map((f) => f?.explanation ?? "");
+  const source = [...names, ...explanations];
+
+  const perLang = async (lang: PretranslateLang): Promise<[PretranslateLang, Array<{name:string; explanation:string}>] | null> => {
+    try {
+      const translated = await translateTexts(source, lang, { signal: pretranslateSignal(signal) });
+      if (!Array.isArray(translated) || translated.length !== source.length) return null;
+      const n = factors.length;
+      const out: Array<{name:string; explanation:string}> = [];
+      for (let i = 0; i < n; i++) {
+        const name = translated[i];
+        const explanation = translated[n + i];
+        out.push({
+          name: typeof name === "string" && name.length > 0 ? name : names[i],
+          explanation: typeof explanation === "string" && explanation.length > 0 ? explanation : explanations[i],
+        });
+      }
+      return [lang, out];
+    } catch {
+      return null;
+    }
+  };
+
+  try {
+    const settled = await Promise.allSettled(langs.map((lang) => perLang(lang)));
+    let result: Partial<Record<PretranslateLang, Array<{name:string; explanation:string}>>> | undefined;
+    for (const entry of settled) {
+      if (entry.status === "fulfilled" && entry.value) {
+        const [lang, arr] = entry.value;
+        if (!result) result = {};
+        result[lang] = arr;
+      }
+    }
+    return result;
+  } catch {
+    return undefined;
+  }
+}
+
+export const translateFactorWindow = pretranslateFactorWindow;
+
+/**
+ * Returns cloned factors with name/explanation replaced from stored
+ * translations for the requested language when present and non-empty.
+ */
+export function applyStoredTranslations(
+  factors: Factor[],
+  translations: FactorWindow['translations'],
+  lang: 'en'|'es'|'vi',
+): Factor[] {
+  if (!Array.isArray(factors)) return factors;
+  if (lang === 'en' || !translations) return factors.map((f) => ({ ...f }));
+  const arr = translations[lang];
+  if (!Array.isArray(arr) || arr.length === 0) return factors.map((f) => ({ ...f }));
+  return factors.map((f, i) => {
+    const t = arr[i];
+    if (!t || typeof t !== "object") return { ...f };
+    const name = typeof t.name === "string" && t.name.length > 0 ? t.name : f.name;
+    const explanation =
+      typeof t.explanation === "string" && t.explanation.length > 0 ? t.explanation : f.explanation;
+    return { ...f, name, explanation };
+  });
 }
 
 /** True when the stored window is recent enough to answer a request without re-curating. */

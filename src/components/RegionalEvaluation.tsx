@@ -43,6 +43,7 @@ import {
   type RegionEvaluation,
   type RegionId,
   type Factor,
+  type Magnitude,
 } from "../lib/model";
 import { buildRegionalMarkdown } from "../lib/markdown";
 import { truncateAtSentence } from "../lib/truncate";
@@ -95,6 +96,18 @@ const OUTLOOK_KEYS: Record<RegionEvaluation["outlook"], TranslationKey> = {
   bullish: "regionalEvaluation.outlook.bullish",
   neutral: "regionalEvaluation.outlook.neutral",
   bearish: "regionalEvaluation.outlook.bearish",
+};
+
+const MAGNITUDE_KEY: Record<Magnitude, TranslationKey> = {
+  High: "factors.magnitude.high",
+  Medium: "factors.magnitude.medium",
+  Low: "factors.magnitude.low",
+};
+
+const MAG_COLOR: Record<Magnitude, string> = {
+  High: "text-rose-300 dark:text-rose-400 border-rose-400/30 dark:border-rose-400/40 bg-rose-400/10 dark:bg-rose-400/15",
+  Medium: "text-amber-300 dark:text-amber-400 border-amber-400/30 dark:border-amber-400/40 bg-amber-400/10 dark:bg-amber-400/15",
+  Low: "text-slate-600 dark:text-slate-500 border-line bg-panel/5",
 };
 
 function unitFor(id: CommodityId, lengthUnit: "m" | "ft", energyUnit: "mwh" | "kwh" | "joule") {
@@ -296,8 +309,8 @@ function RegionalFactorCard({
             <span className="rounded-full border border-line bg-base/50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-400">
               {factor.category}
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold text-amber-300 border-amber-400/30 bg-amber-400/10">
-              {factor.magnitude}
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${MAG_COLOR[factor.magnitude] ?? "text-amber-300 border-amber-400/30 bg-amber-400/10"}`}>
+              {t(MAGNITUDE_KEY[factor.magnitude] ?? "factors.magnitude.medium" as TranslationKey)}
             </span>
           </div>
           <h4 className="mt-2 font-display text-sm font-semibold text-slate-900 dark:text-white leading-snug">

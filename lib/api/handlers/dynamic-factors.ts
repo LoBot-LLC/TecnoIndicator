@@ -9,10 +9,11 @@ import {
   toFactorsPayload,
   writeFactorWindow,
 } from "./factor-analysis";
+import * as FactorAnalysisNS from "./factor-analysis";
 import { FACTORS_CACHE_MS } from "../_shared/http";
 import { isRegion, type Region } from "../_shared/regions";
 import { sanitizeError } from "../_shared/validation";
-import type { RegionId } from "../_shared/types";
+import type { Factor, RegionId } from "../_shared/types";
 
 export const maxDuration = 58;
 
@@ -31,14 +32,54 @@ function resolveScope(url: URL): { ok: true; scope: RegionId } | { ok: false; re
   return { ok: true, scope: regionParam as Region };
 }
 
+/** Best-effort eager pretranslation. Resolves undefined when helpers are missing, fail, or exceed ~10s. */
+async function pretranslateBestEffort(
+  factors: Factor[],
+  signal?: AbortSignal,
+): Promise<Record<string, Array<{ name: string; explanation: string }>> | undefined> {
+  try {
+    const fn = (FactorAnalysisNS as unknown as Record<string, unknown>)["pretranslateFactorWindow"];
+    if (typeof fn !== "function") return undefined;
+    const timeout = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 10_000));
+    const result = await Promise.race([
+      (fn as (f: Factor[], s?: AbortSignal) => Promise<unknown>)(factors, signal),
+      timeout,
+    ]);
+    if (!result || typeof result !== "object") return undefined;
+    return result as Record<string, Array<{ name: string; explanation: string }>>;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * GET /api/dynamic-factors — curated price factors for a scope ("global" by
  * default, or a region via `?region=`). Serves the canonical
  * `dynamic-factors:{scope}` window and re-curates when the stored window is
  * older than {@link FACTORS_CACHE_MS}.
  */
-async function factorsResponse<T>(lang: ApiLanguage, payload: T, init: ResponseInit): Promise<Response> {
-  return Response.json(await translateStructured(payload, lang, ["explanation", "error"]), init);
+async function factorsResponse<T>(lang: ApiLanguage, payload: T, init: ResponseInit, stored?: unknown): Promise<Response> {
+  // Prefer stored eager translations when they cover every factor.
+  if (lang !== "en" && stored && typeof stored === "object") {
+    try {
+      const apply = (FactorAnalysisNS as unknown as Record<string, unknown>)["applyStoredTranslations"];
+      const translations = (stored as { translations?: unknown }).translations as
+        | Partial<Record<string, Array<{ name: string; explanation: string }>>>
+        | undefined;
+      const factors = (payload as { factors?: Factor[] }).factors;
+      const arr = translations?.[lang as "es" | "vi"];
+      if (typeof apply === "function" && Array.isArray(arr) && Array.isArray(factors) && arr.length === factors.length) {
+        const localized = (apply as (f: Factor[], t: unknown, l: string) => Factor[])(factors, translations, lang);
+        if (Array.isArray(localized) && localized.length === factors.length) {
+          const base = payload as Record<string, unknown>;
+          return Response.json({ ...base, factors: localized, count: localized.length }, init);
+        }
+      }
+    } catch {
+      // Fall through to lazy translation.
+    }
+  }
+  return Response.json(await translateStructured(payload, lang, ["name", "explanation", "error"]), init);
 }
 
 export async function handleDynamicFactors(req: Request): Promise<Response> {
@@ -57,6 +98,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
         return factorsResponse(lang,
           toFactorsPayload(stored.factors, scope, stored.aiCurated, { updatedAt: stored.updatedAt }),
           { status: 200 },
+          stored,
         );
       }
     }
@@ -65,10 +107,17 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
     const timeoutId = setTimeout(() => abortController.abort(), 55000);
     try {
       const result = await runFactorAnalysis(scope, { abortSignal: abortController.signal });
-      const stored = await writeFactorWindow(scope, result.factors, result.aiCurated);
+      const translations = await pretranslateBestEffort(result.factors, abortController.signal);
+      const stored = await (writeFactorWindow as (
+        ...args: unknown[]
+      ) => Promise<{ updatedAt: string; translations?: unknown }>)(
+        scope, result.factors, result.aiCurated, translations ?? undefined,
+      );
+      const windowWithTranslations = translations ? { ...stored, translations } : stored;
       return factorsResponse(lang,
         toFactorsPayload(result.factors, scope, result.aiCurated, { updatedAt: stored.updatedAt }),
         { status: 200 },
+        windowWithTranslations,
       );
     } finally {
       clearTimeout(timeoutId);
@@ -85,6 +134,7 @@ export async function handleDynamicFactors(req: Request): Promise<Response> {
         error: "Dynamic factors temporarily unavailable; static fallbacks returned",
       }),
       { status: 200 },
+      stored,
     );
   }
 }

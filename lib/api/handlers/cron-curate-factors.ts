@@ -1,7 +1,8 @@
 import { REGIONS } from "../_shared/regions";
 import { runFactorAnalysis, writeFactorWindow } from "./factor-analysis";
+import * as FactorAnalysisNS from "./factor-analysis";
 import { sanitizeError } from "../_shared/validation";
-import type { RegionId } from "../_shared/types";
+import type { Factor, RegionId } from "../_shared/types";
 
 export interface CronCurationResult {
   success: boolean;
@@ -35,7 +36,24 @@ export async function handleCurateFactorsCron(req: Request): Promise<Response> {
     for (const scope of scopes) {
       try {
         const result = await runFactorAnalysis(scope);
-        await writeFactorWindow(scope, result.factors, result.aiCurated);
+        // Best-effort eager pretranslation; never fail the cron scope on translation errors.
+        let translations: unknown;
+        try {
+          const fn = (FactorAnalysisNS as unknown as Record<string, unknown>)["pretranslateFactorWindow"];
+          if (typeof fn === "function") {
+            const timeout = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 10_000));
+            const raced = await Promise.race([
+              (fn as (f: Factor[]) => Promise<unknown>)(result.factors),
+              timeout,
+            ]);
+            if (raced && typeof raced === "object") translations = raced;
+          }
+        } catch {
+          translations = undefined;
+        }
+        await (writeFactorWindow as (...args: unknown[]) => Promise<unknown>)(
+          scope, result.factors, result.aiCurated, translations ?? undefined,
+        );
         results[scope] = { success: true, count: result.factors.length };
       } catch (error) {
         results[scope] = {

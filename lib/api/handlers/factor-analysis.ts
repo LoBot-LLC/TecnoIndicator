@@ -1344,7 +1344,7 @@ export function applyStoredTranslations(
   if (!Array.isArray(factors)) return factors;
   if (lang === 'en' || !translations) return factors.map((f) => ({ ...f }));
   const arr = translations[lang];
-  if (!Array.isArray(arr) || arr.length === 0) return factors.map((f) => ({ ...f }));
+  if (!Array.isArray(arr) || arr.length === 0 || arr.length !== factors.length) return factors.map((f) => ({ ...f }));
   return factors.map((f, i) => {
     const t = arr[i];
     if (!t || typeof t !== "object") return { ...f };

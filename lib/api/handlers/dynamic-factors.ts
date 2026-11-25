@@ -38,7 +38,7 @@ function resolveScope(url: URL): { ok: true; scope: RegionId } | { ok: false; re
  * older than {@link FACTORS_CACHE_MS}.
  */
 async function factorsResponse<T>(lang: ApiLanguage, payload: T, init: ResponseInit): Promise<Response> {
-  return Response.json(await translateStructured(payload, lang, ["explanation", "error"]), init);
+  return Response.json(await translateStructured(payload, lang, ["explanation", "error", "name", "category"]), init);
 }
 
 export async function handleDynamicFactors(req: Request): Promise<Response> {

@@ -39,7 +39,6 @@ function numericTokens(text: string): string[] {
   return (text.match(/\d+(?:[.,]\d+)*/g) ?? []).map((t) => t.replace(/,/g, "."));
 }
 
-/** Rejects translations that dropped or altered any number from the source. */
 function preservesNumbers(source: string, translated: string): boolean {
   const out = numericTokens(translated);
   return numericTokens(source).every((t) => out.includes(t));
@@ -49,10 +48,59 @@ function needsTranslation(text: string): boolean {
   return /\p{L}/u.test(text);
 }
 
-/**
- * Translates a batch of strings in one Kilo Gateway call. Returns the input
- * unchanged for `en`, for empty input, or on any failure. Never throws.
- */
+function applyTranslations(texts: string[], indexes: number[], translated: string[]): string[] {
+  const out = [...texts];
+  indexes.forEach((idx, j) => {
+    out[idx] = translated[j];
+  });
+  return out;
+}
+
+async function translateChunk(
+  chunk: string[],
+  lang: ApiLanguage,
+  opts: TranslateOptions,
+): Promise<string[] | null> {
+  const joinedLength = chunk.join("").length;
+  const maxTokens = Math.min(8192, 256 + joinedLength * 3);
+  const signal = opts.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+  
+  for (let attempt = 0; attempt <= 2; attempt++) {
+    try {
+      const response = await kiloRouter.kiloInfer(
+        {
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT(lang) },
+            { role: "user", content: JSON.stringify(chunk) },
+          ],
+          max_tokens: maxTokens,
+          temperature: 0,
+        },
+        signal,
+      );
+      
+      const content = response.choices?.[0]?.message?.content ?? "";
+      const parsed = safeParseJson<unknown>(content);
+      
+      if (!Array.isArray(parsed) || parsed.length !== chunk.length) {
+        throw new Error(`chunk length mismatch: expected ${chunk.length}, got ${Array.isArray(parsed) ? parsed.length : "non-array"}`);
+      }
+      if (!parsed.every((v) => typeof v === "string")) {
+        throw new Error("chunk contained non-string items");
+      }
+      
+      return parsed as string[];
+    } catch (error) {
+      console.error(`translateTexts chunk attempt ${attempt + 1} failed:`, error);
+      if (attempt === 2) {
+        // Exhausted all retries
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 export async function translateTexts(
   texts: string[],
   lang: ApiLanguage,
@@ -74,54 +122,44 @@ export async function translateTexts(
     // Cache is optional.
   }
 
-  try {
-    const response = await kiloRouter.kiloInfer(
-      {
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT(lang) },
-          { role: "user", content: JSON.stringify(pending) },
-        ],
-        max_tokens: Math.min(4096, 256 + pending.join("").length * 2),
-        temperature: 0,
-      },
-      opts.signal ?? AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-    );
-    const content = response.choices?.[0]?.message?.content ?? "";
-    const parsed = safeParseJson<unknown>(content);
-    if (!Array.isArray(parsed) || parsed.length !== pending.length) return texts;
-    if (!parsed.every((v) => typeof v === "string")) return texts;
+  // Chunk pending into chunks of up to 6 strings
+  const chunks: string[][] = [];
+  for (let i = 0; i < pending.length; i += 6) {
+    chunks.push(pending.slice(i, i + 6));
+  }
 
-    const translated = (parsed as string[]).map((out, i) =>
-      out.trim() && preservesNumbers(pending[i], out) ? out : pending[i],
-    );
-
-    memo.set(key, translated);
-    if (memo.size > MEMO_LIMIT) memo.delete(memo.keys().next().value as string);
-    try {
-      await setCache(key, translated, TRANSLATE_CACHE_MS);
-    } catch {
-      // Cache is optional.
+  const translatedPending: string[] = [];
+  for (const chunk of chunks) {
+    const chunkResult = await translateChunk(chunk, lang, opts);
+    if (chunkResult === null) {
+      // Chunk failed after all retries; return original texts
+      console.error("translateTexts chunk failed after retries; returning original texts");
+      return texts;
     }
-    return applyTranslations(texts, indexes, translated);
-  } catch (error) {
-    console.error("translateTexts failed; returning original text:", error);
+    translatedPending.push(...chunkResult);
+  }
+
+  if (translatedPending.length !== pending.length) {
+    console.error("translateTexts translatedPending length mismatch; returning original texts");
     return texts;
   }
-}
 
-function applyTranslations(texts: string[], indexes: number[], translated: string[]): string[] {
-  const out = [...texts];
-  indexes.forEach((idx, j) => {
-    out[idx] = translated[j];
+  // Build per-string result: out.trim() && preservesNumbers(src, out) ? out : src
+  const translated = pending.map((src, i) => {
+    const out = translatedPending[i];
+    return out.trim() && preservesNumbers(src, out) ? out : src;
   });
-  return out;
+
+  memo.set(key, translated);
+  if (memo.size > MEMO_LIMIT) memo.delete(memo.keys().next().value as string);
+  try {
+    await setCache(key, translated, TRANSLATE_CACHE_MS);
+  } catch {
+    // Cache is optional.
+  }
+  return applyTranslations(texts, indexes, translated);
 }
 
-/**
- * Translates the string leaves of a structured payload whose property name is
- * listed in `keys`, in one batched call. Everything else (numbers, ids, keys,
- * URLs, non-listed fields) is returned as-is. Never throws.
- */
 export async function translateStructured<T>(
   value: T,
   lang: ApiLanguage,

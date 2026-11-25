@@ -71,7 +71,7 @@ The UI is available in **English**, **Español** and **Tiếng Việt**.
 
 ### Eager auto-translation (Factor Curation Pipeline)
 
-As soon as a source URL is fetched, Kilo Gateway pre-translates the factor `name` + `explanation` into all `API_LANGUAGES` (`es`, `vi`). The result is stored on the cached `FactorWindow.translations` (`{ es: [...], vi: [...] }`), so switching language serves instantly with no extra inference. If a stored translation is missing/incomplete, the route falls back to lazy best-effort translation at request time. Files: `lib/api/handlers/factor-analysis.ts` (pre-translate + `applyStoredTranslations`), `dynamic-factors.ts`, `regional-factors.ts` (serve stored, lazy fallback), `cron-curate-factors.ts` (nightly pre-warming).
+As soon as a source URL is fetched, Kilo Gateway pre-translates the factor `name` + `explanation` into all `API_LANGUAGES` (`es`, `vi`). The result is stored on the cached `FactorWindow.translations` (`{ es: [...], vi: [...] }`), so the UI shows translated content instantly when the language changes, with no extra inference. If a translation is missing or fails, the UI falls back to English. Files: `lib/api/handlers/factor-analysis.ts` (pre-translate + `applyStoredTranslations`), `dynamic-factors.ts`, `regional-factors.ts` (serve stored, lazy fallback), `cron-curate-factors.ts` (nightly pre-warming).
 
 ## 🚀 How to Use
 

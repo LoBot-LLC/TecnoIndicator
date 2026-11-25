@@ -7,16 +7,13 @@ import {
 } from "./http";
 import { getCache, setCache } from "./cache";
 import type { Region } from "./regions";
+import { LANGUAGE_NAMES, type ApiLanguage } from "./language";
 
-export interface TinyFishKeyState {
+export interface ScrapedContent {
+  url: string;
+  title: string;
+  text: string;
   keyIndex: number;
-  envName: string;
-  available: boolean;
-  rateLimited: boolean;
-  rateLimitRemaining: number | null;
-  rateLimitResetAt: string | null;
-  lastCheckedAt: string | null;
-  lastSuccessAt: string | null;
 }
 
 interface SearchResult {
@@ -34,14 +31,7 @@ interface TinyFishSearchResponse {
   keyIndex: number;
 }
 
-export interface ScrapedContent {
-  url: string;
-  title: string;
-  text: string;
-  keyIndex: number;
-}
-
-export interface TinyFishScrapeBatchResponse {
+interface TinyFishScrapeBatchResponse {
   results: ScrapedContent[];
   errors: Array<{ url: string; error: string }>;
 }
@@ -99,7 +89,7 @@ export class TinyFishRouter {
     this.keyStates = keys.map((key, index) => ({
       keyIndex: index,
       envName: key.envName,
-      available: false, // Will be verified on first use
+      available: false,
       rateLimited: false,
       rateLimitRemaining: null,
       rateLimitResetAt: null,
@@ -107,8 +97,6 @@ export class TinyFishRouter {
       lastSuccessAt: null,
     }));
 
-    // Probe all keys in PARALLEL with a short timeout to avoid Vercel function timeouts.
-    // Sequential probing with 10s timeouts each would take too long with many keys.
     const controller = new AbortController();
     const combinedSignal = abortSignal
       ? combineAbortSignals(abortSignal, controller.signal)
@@ -119,7 +107,7 @@ export class TinyFishRouter {
         this.keyStates.map(async (keyState) => {
           const testKey = process.env[keyState.envName];
           if (!testKey) return { keyIndex: keyState.keyIndex, ok: false, status: 0, headers: null as Headers | null };
-
+          
           try {
             const response = await fetch(buildSearchUrl("test", 1), {
               headers: {
@@ -133,17 +121,17 @@ export class TinyFishRouter {
           }
         }),
       );
-
+      
       for (const result of probeResults) {
         const keyState = this.keyStates[result.keyIndex];
         if (!keyState) continue;
-
+        
         if (!result.ok) {
           keyState.available = false;
           keyState.lastCheckedAt = new Date().toISOString();
           continue;
         }
-
+        
         if (result.status === 200) {
           keyState.available = true;
           keyState.lastCheckedAt = new Date().toISOString();
@@ -157,17 +145,15 @@ export class TinyFishRouter {
           keyState.available = false;
           keyState.lastCheckedAt = new Date().toISOString();
         } else if (result.status === 429) {
+          this.parseRateLimitHeaders(keyState, result.headers);
           keyState.rateLimited = true;
           keyState.lastCheckedAt = new Date().toISOString();
-          if (result.headers) this.parseRateLimitHeaders(keyState, result.headers);
         }
       }
     } finally {
       clearTimeout(overallTimeout);
       controller.abort();
     }
-
-    this.initialized = true;
   }
 
   private parseRateLimitHeaders(
@@ -192,16 +178,16 @@ export class TinyFishRouter {
     const available = this.keyStates.filter(
       k => k.available && !k.rateLimited
     );
-
+    
     if (available.length === 0) return null;
-
+    
     const maxRemaining = Math.max(
       ...available.map(k => k.rateLimitRemaining ?? 0)
     );
     const topQuota = available.filter(
       k => (k.rateLimitRemaining ?? 0) === maxRemaining
     );
-
+    
     return topQuota[0];
   }
 
@@ -209,6 +195,12 @@ export class TinyFishRouter {
     failedKey.rateLimited = true;
     failedKey.lastCheckedAt = new Date().toISOString();
     return this.selectKey();
+  }
+
+  private async backoff(attempt: number): Promise<void> {
+    const delays = [500, 1000, 2000];
+    const delay = delays[Math.min(attempt, delays.length - 1)] ?? 2000;
+    await new Promise(resolve => setTimeout(resolve, delay));
   }
 
   async tinyfishSearch(
@@ -247,34 +239,35 @@ export class TinyFishRouter {
 
         const region = options.region ?? "global";
         const regionPrefix = region !== "global" ? `[${region}] ` : "";
-
-const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.limit ?? 10, purpose, recencyMinutes, options.includeDomains), {
-            headers: {
-              "X-API-Key": testKey,
-            },
-            signal: abortSignal ?? AbortSignal.timeout(10000),
-          });
-
+        
+        const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.limit ?? 10, purpose, recencyMinutes, options.includeDomains), {
+          headers: {
+            "X-API-Key": testKey,
+          },
+          signal: abortSignal ?? AbortSignal.timeout(10000),
+        });
+        
         const status = response.status;
-
+        
         if (status === 200) {
           const data = await response.json();
           const results: SearchResult[] = Array.isArray(data.results)
             ? data.results.map((r: any) => ({
-                position: r.position ?? 0,
-                site_name: r.site_name ?? "",
-                title: r.title ?? "",
-                snippet: r.snippet ?? "",
-                url: r.url ?? "",
-                publishedAt: r.published_at ?? undefined,
-              }))
+              position: r.position ?? 0,
+              site_name: r.site_name ?? "",
+              title: r.title ?? "",
+              snippet: r.snippet ?? "",
+              url: r.url ?? "",
+              publishedAt: r.published_at ?? undefined,
+            }))
             : [];
+            
           const result: TinyFishSearchResponse = {
             results,
             total: data.total_results ?? 0,
             keyIndex: keyState.keyIndex,
           };
-
+          
           keyState.lastCheckedAt = new Date().toISOString();
           keyState.lastSuccessAt = keyState.lastCheckedAt;
           const remaining = response.headers.get("x-ratelimit-remaining");
@@ -282,7 +275,7 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
             const parsed = Number(remaining);
             if (Number.isFinite(parsed)) keyState.rateLimitRemaining = parsed;
           }
-
+          
           await setCache(cacheKey, result, SEARCH_CACHE_MS);
           return result;
         }
@@ -305,21 +298,17 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
       }
-
-      // If the abort signal has been fired, stop retrying
+      
       if (abortSignal && abortSignal.aborted) {
         break;
       }
-
+      
       keyState = this.selectKey();
     }
 
-    const cachedFallback = await getCache<TinyFishSearchResponse>(
-      cacheKey,
-      60 * 60 * 1000
-    );
+    const cachedFallback = await getCache<TinyFishSearchResponse>(cacheKey, 60 * 60 * 1000);
     if (cachedFallback) return cachedFallback;
-
+    
     console.error("TinyFish search failed:", lastError?.message);
     return { results: [], total: 0, keyIndex: -1 };
   }
@@ -361,9 +350,6 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
           ttl: 0,
           format: "markdown",
         };
-        // A short purpose statement gives TinyFish additional signal to tailor
-        // extraction to the intent (e.g. "find the price-relevant reason on this
-        // page") and returns better-quality content for the model to summarize.
         if (options.purpose && options.purpose.trim().length > 0) {
           body.purpose = options.purpose.trim().slice(0, 2000);
         }
@@ -385,20 +371,18 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
           const firstResult = Array.isArray(data.results) && data.results.length > 0
             ? data.results[0]
             : null;
+          
           const result: ScrapedContent = {
             url: safeUrl,
             title: firstResult?.title ?? "",
             text: typeof firstResult?.text === "string" ? firstResult.text.slice(0, 10000) : "",
             keyIndex: keyState.keyIndex,
           };
-
+          
           keyState.lastCheckedAt = new Date().toISOString();
           keyState.lastSuccessAt = keyState.lastCheckedAt;
           this.parseRateLimitHeaders(keyState, response.headers);
-
-          // Written with the same TTL the read path uses; the shorter
-          // SEARCH_CACHE_MS write used to evict the scrape almost immediately,
-          // so every run re-scraped (and re-billed) each article.
+          
           await setCache(cacheKey, result, SCRAPE_CACHE_MS);
           return result;
         }
@@ -422,7 +406,6 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
         lastError = error instanceof Error ? error : new Error(String(error));
       }
 
-      // If the abort signal has been fired, stop retrying
       if (abortSignal && abortSignal.aborted) {
         break;
       }
@@ -443,11 +426,6 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
       await this.refreshTinyfishStatus(true, abortSignal);
     }
 
-    if (urls.length === 0) {
-      return { results: [], errors: [] };
-    }
-
-    // Sanitize and dedupe URLs, cap at the TinyFish batch limit of 10.
     const sanitizedUrls: string[] = [];
     const seen = new Set<string>();
     for (const rawUrl of urls) {
@@ -458,7 +436,7 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
     }
     const batchUrls = sanitizedUrls.slice(0, 10);
 
-    const cachedResults: ScrapedContent[] = [];
+    let cachedResults: ScrapedContent[] = [];
     const toFetch: string[] = [];
     for (const url of batchUrls) {
       const cacheKey = `tinyfish:scrape:${url}`;
@@ -490,7 +468,6 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
           keyState = this.rotateKey(keyState);
           continue;
         }
-        const activeKeyIndex = keyState.keyIndex;
 
         const body: Record<string, unknown> = {
           urls: toFetch,
@@ -515,40 +492,24 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
 
         if (status === 200) {
           const data = await response.json();
-          const fetched: ScrapedContent[] = Array.isArray(data.results)
+          const results: ScrapedContent[] = Array.isArray(data.results)
             ? data.results
-                .map((r: any) => ({
-                  url: typeof r?.url === "string" ? r.url : "",
-                  title: typeof r?.title === "string" ? r.title : "",
-                  text: typeof r?.text === "string" ? r.text.slice(0, 10000) : "",
-                  keyIndex: activeKeyIndex,
-                }))
-                .filter((item: ScrapedContent) => item.url)
-            : [];
-          const errors: Array<{ url: string; error: string }> = Array.isArray(
-            data.errors
-          )
-            ? data.errors
-                .map((e: any) => ({
-                  url: typeof e?.url === "string" ? e.url : "",
-                  error: typeof e?.error === "string" ? e.error : "",
-                }))
-                .filter((e: { url: string; error: string }) => e.url)
-            : [];
-
-          for (const item of fetched) {
-            await setCache(
-              `tinyfish:scrape:${item.url}`,
-              item,
-              SCRAPE_CACHE_MS
-            );
+              .map((r: any) => ({
+                url: typeof r.url === "string" ? r.url : "",
+                title: typeof r.title === "string" ? r.title : "",
+                text: typeof r.text === "string" ? r.text.slice(0, 10000) : "",
+                keyIndex: keyState.keyIndex,
+              }))
+              .filter((item: ScrapedContent) => item.url);
+          
+          for (const item of results) {
+            await setCache(`tinyfish:scrape:${item.url}`, item, SCRAPE_CACHE_MS);
           }
-
+          
           keyState.lastCheckedAt = new Date().toISOString();
           keyState.lastSuccessAt = keyState.lastCheckedAt;
           this.parseRateLimitHeaders(keyState, response.headers);
-
-          return { results: [...cachedResults, ...fetched], errors };
+          return { results, errors: [] };
         }
 
         if (status === 401 || status === 403) {
@@ -591,7 +552,6 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
       await this.refreshTinyfishStatus(true, abortSignal);
     }
 
-    // In quick mode, ensure keyStates is populated at least with configured keys
     if (!this.initialized && this.keyStates.length === 0) {
       const keys = readConfiguredKeys(TINYFISH_KEY_ENV_NAMES);
       this.keyStates = keys.map((key, index) => ({
@@ -607,12 +567,11 @@ const response = await fetch(buildSearchUrl(`${regionPrefix}${query}`, options.l
     }
 
     if (!this.initialized) {
-      // Quick mode: return basic status even if not initialized
       const usableKeys = this.keyStates.filter(k => k.available && !k.rateLimited).length;
       const rateLimitedKeys = this.keyStates
         .map((k, i) => (k.rateLimited ? i : -1))
         .filter(i => i >= 0);
-
+      
       return {
         available: false,
         configuredKeys: this.keyStates.length,

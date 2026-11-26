@@ -68,6 +68,10 @@ The UI is available in **English**, **Español** and **Tiếng Việt**.
 - **Switching language** — Open the Settings menu and choose a language. The choice is persisted in `localStorage` under `tecno.language`. Static UI strings and region names come from the dictionaries in `src/i18n/dictionaries.ts`.
 - **API `lang` parameter** — API routes accept `lang=en|es|vi` (default `en`). Unknown values fall back to `en`. Example: `GET /api/forecast?lang=vi`.
 - **Translation is best-effort** — Web-searched content (factor explanations, solutions) is translated through the Kilo AI Gateway and cached. If translation fails or is unavailable, the English original is returned. Numeric values are preserved, and translations that change numbers are rejected.
+- **NEW: Factor names are now translated server-side** — Factor names (`name` field) are translated when the `lang` parameter is provided in API requests to `/api/dynamic-factors` and `/api/regional-factors`. Factor names are derived from explanations and are now localized to match the user's language setting.
+- **Translation is best-effort** — Web-searched content (factor explanations, solutions) is translated through the Kilo AI Gateway and cached. If translation fails or is unavailable, the English original is returned. Numeric values are preserved, and translations that change numbers are rejected.
+
+---
 
 ## 🚀 How to Use
 
@@ -245,7 +249,7 @@ The curation flow runs end-to-end whenever factors are requested (on-demand or v
 4. **TinyFish Scrape** — Each candidate URL is scraped via `api.fetch.tinyfish.ai`, with a short `purpose` statement so TinyFish tailors extraction to the price-relevance goal. Full article text is preserved for use in deterministic fallbacks when AI curation is unavailable.
 5. **Kilo Gateway JSON Curation** — The scraped content is sent to Kilo Gateway (`api.kilo.ai/api/gateway`, OpenAI-compatible) with a `json_object` response request. The shared `safeParseJson` helper tolerates markdown code fences and surrounding prose. The system prompts include few-shot GOOD/BAD explanation examples that demonstrate concrete price drivers (supply changes, policy decisions, infrastructure events) — demand/forecast projections are explicitly excluded from GOOD examples.
 6. **Server-side Explanation Sanitization** — The `sanitizeExplanation` function strips embedded URLs/markdown links, strips markdown headers (`###`, `####`), strips a leading bullet/list marker (`- `, `• `, `* `, `– `, `— `) so a pasted article bullet never reaches the UI, collapses whitespace, and enforces **up to 3 meaningful sentences** by cutting at sentence boundaries (if the cut is at least 30 chars from the start, avoiding abbreviations like "U.S."). If no sentence boundary is found (e.g., table-of-contents text), it truncates at a word boundary to **400 chars** and appends an ellipsis. **NEW: it also splits scraped list-style text on the middle-dot separator (`·`) and keeps only the first meaningful prose segment, and removes trailing truncated fragments (e.g. "... petroleum products. E" → "... petroleum products.")**. Explanations are sanitized server-side as defense-in-depth against model output that ignores prompt instructions.
-7. **Explanation Quality Validation & Repair** — `validateExplanationQuality` checks format first (bullet starters, static "fallback factor maintained" placeholders, page chrome patterns like `#### Cite report`/`Share this report`/`Licence: CC BY 4.0`/`Report options`/`Download`, table-of-contents markers like "Chapters"/"Feature article"/"Archive", and a focused raw-article opener blacklist covering publication names, regional prefixes, modal verbs, demonstrative pronouns, prepositional openers, pronoun openers, adverb/conjunction openers, transitional phrases, question openers, and fragment starters like "demand " / "supply " — overly aggressive starters like "the ", "world ", "global " were removed to allow valid full-paragraph sentences), then length (>400 chars = too long, <50 chars = too short), then sentence-count enforcement (**1-3 sentences; rejects >3 sentences**). **NEW: Body-content check** — after the commodity+price opening, the explanation body must NOT contain generic forecast/meta-analysis text. The rejection list now includes projection language such as "forecast/projected/expected/anticipated/poised/set to (grow|fall|rise|decline|increase|decrease|expand|contract)", "estimates/outlook (sees|projects|forecasts) demand/supply/consumption/production", and "demand/consumption is (projected|expected|anticipated|poised|set) to" — these are generic demand forecasts, not concrete price drivers. **NEW: Generic scraped-fragment patterns** — phrases like "tight supply forecast", "recent prices are within expected ranges", "margins weakened almost everywhere", and "gas market in Q2 2026" are rejected as non-price-driver text. **NEW: Trailing-fragment rejection** — explanations ending with a single letter or short partial word after a period (e.g., "... products. E", "... gas co", "... cheaper") are flagged as "truncated trailing fragment" and repaired/dropped. Format checks run **before** the length check so a long bullet-pasted article is correctly classified as "starts with bullet point" and repaired. Failed explanations trigger `reSummarizeExplanation`, a second-pass Kilo summarization repair round that enforces **1-3 meaningful sentences under 400 chars** with a "With [commodity] at $[price]/[unit]..." opening; the repair prompt now explicitly forbids mere event descriptions, truncated fragments, middle-dot list glue, and requires a concrete price driver (supply change, demand change, outage, policy/sanctions, inventory change). Factors that still fail quality after repair are **rejected entirely**. Static fallback factors ("Static … fallback factor maintained when live AI curation is unavailable") are **auto-removed** rather than repaired.
+7. **Explanation Quality Validation & Repair** — `validateExplanationQuality` checks format first (bullet starters, static "fallback factor maintained" placeholders, page chrome patterns like `#### Cite report`/`Share this report`/`Licence: CC BY 4.0`/`Report options`/`Download`, table-of-contents markers like "Chapters"/"Feature article"/"Archive", and a focused raw-article opener blacklist covering publication names, regional prefixes, modal verbs, demonstrative pronouns, prepositional openers, pronoun openers, adverb/conjunction openers, transitional phrases, question openers, and fragment starters like "demand " / "supply " — overly aggressive starters like "the ", "world ", "global " were removed to allow valid full-paragraph sentences), then length (>400 chars = too long, <50 chars = too short), then sentence-count enforcement (**1-3 sentences; rejects >3 sentences**). **NEW: Body-content check** — after the commodity+price opening, the explanation body must NOT contain generic forecast/meta-analysis text. The rejection list now includes projection language such as "forecast/projected/expected/anticipated/poised/set to (grow|fall|rise|decline|increase|decrease|expand|contract)", "estimates/outlook (sees|projects|forecasts) demand/supply/consumption/production", and "demand/consumption is (projected|expected|anticipated|poised|set) to" — these are generic demand forecasts, not concrete price drivers. **NEW: Generic scraped-fragment patterns** — phrases like "tight supply forecast", "recent prices are within expected ranges", "margins weakened almost everywhere", and "gas market in Q2 2026" are rejected as non-price-driver text. **NEW: Trailing-fragment rejection** — explanations ending with a single letter or short partial word after a period (e.g., "... products. E", "... gas co", "... cheaper") are flagged as "truncated trailing fragment" and repaired/dropped. Format checks run **before** the length check so a long bullet-pasted article is correctly classifie... (line truncated to 2000 chars)
 8. **Factor Name Derivation from Explanations** — `normalizeFactor` detects publication-like names (report/outlook titles, agency names such as "World Oil Outlook", "Monthly Oil Market Report", "IEA", "OPEC") using `PUBLICATION_NAME_PATTERNS` and replaces them with a concise name derived from the explanation via `deriveFactorNameFromExplanation`. This function strips the "with [commodity] at $[price]/[unit]," preamble, takes the leading clause up to the first comma/semicolon, title-cases tokens while preserving acronyms (OPEC+, IEA) and units (mb/d, MWh), and truncates to ~80 chars. **NEW: All factor titles (model-provided, deterministic fallback, and cached) are now also sanitized by `sanitizeFactorTitle` — strips grounding preamble, publication prefixes, page chrome/@ticker tags, splits CamelCase glue, title-cases with acronym/unit preservation, caps at 100 chars, and trims dangling tail words so titles never end mid-word or on fragments like "…Entering A".** The Kilo curation system prompts (global + regional) now also instruct the model to return a concise 2–8 word `name` (never a full sentence, no preamble/URLs/@ticker tags/page chrome). The result: factor cards show meaningful driver names like "OPEC+ Extends Voluntary Production Cuts" instead of "OPEC Monthly Oil Market Report".
 9. **Deterministic Fallback with Clean Source Selection & Clause Quality Check** — When AI curation fails (invalid JSON, empty results, or all factors rejected), `buildFactorsFromCandidates` builds URL-backed factors. It prefers the **search snippet** when it is a clean, substantive sentence summary (>=50 chars, sentence-ending punctuation, not page chrome such as markdown headers/licence text), falling back to full scraped text only when the snippet is missing or fragmentary. **NEW: `clauseQualityCheck()`** validates the clause after the "With <commodity> at $<price>/<unit>, " prefix. It rejects clauses that start with "the global ", "the world ", "is forecast", "are forecast", "is on track", "are on track", "the report provides", "the study examines", "this analysis", "the analysis", **or any bare projection openers like "demand is projected to", "supply is expected to", "consumption is anticipated to", "production is poised to"**, or contain "key developments", "impacting", "as well as", "according to", **"projected to", "expected to", "anticipated to", "poised to", "set to", "estimated to", "forecasts that", "estimates that", "outlook sees", "outlook projects", "outlook forecasts"**, or are bare numbers/units ("1.4 mb/d"). **NEW: generic scraped-fragment patterns** — "tight supply forecast", "recent prices are within expected ranges", "margins weakened almost everywhere" are also rejected at the clause level. Failing clauses trigger re-extraction from full scraped text; if that fails, the candidate is skipped. **NEW: Deterministic factors are de-duplicated** — identical grounded explanations from different candidates are skipped so each factor has distinct trailing content. These factors still pass through `validateAndRepairWindow` for final quality enforcement.
 10. **Server-side Grounding** — Live oil/electricity/water spot prices (from `getScopePriceDefaults`, the same numbers shown on the dashboard) are injected into the curation prompt and attached to every factor as server-side `grounding`. The model cannot fabricate these.
@@ -556,238 +560,140 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js 22** (`@types/node` 22.19.17) — Runtime environment (via Next.js on Vercel); strict `tsconfig.json` (`strict`, `noUnusedLocals`, bundler module resolution, `@/*` → `src/*`)
 - **Kilo AI Gateway** — OpenAI-compatible inference API at `api.kilo.ai/api/gateway` (price extraction, factor curation, solutions, forecasting)
-- **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search with `include_domains` restriction and `recency_minutes` for both factor curation and the live-prices pipeline) and `api.fetch.tinyfish.ai` (single + batch URL scraping, up to 10 URLs per request via `tinyfishScrapeBatch`); each scrape uses `ttl: 0` for live (non-cached) fetches, returns markdown-format responses for clean downstream parsing, and carries a `purpose` statement to tailor extraction to price-relevance.
-- **Live Prices Pipeline** (`lib/api/handlers/prices.ts`) — Per-commodity TinyFish search (`include_domains`, `recency_minutes`) → batch Fetch/Scrape (`ttl: 0`, markdown) → Kilo extraction → deterministic regex fallback, with per-commodity plausibility ranges (oil 40–200 USD/bbl, electricity 30–300 USD/MWh, water 0.5–15 USD/m³), comma-aware number parsing, per-unit qualifier preference, annual-bill rejection, and USD/kWh → USD/MWh normalization. Three-tier degradation: Kilo → deterministic regex → static benchmark defaults.
-- **Single-Source-of-Truth Live Flow** — `src/hook/useLiveMarket.ts` refreshes `liveQuotes` (price + source + asOf) on every fetch/poll, and the Hero "Market Snapshot" / live global feed renders those URL-sourced numbers (matching the Interactive price forecast cards) with no ad-hoc unit conversion.
+- **TinyFish API** — Search (`api.search.tinyfish.ai`) + Scrape (`api.fetch.tinyfish.ai`) for web evidence retrieval
 - **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis REST (`lib/api/_shared/redis.ts`, no SDK dependency) for cross-instance sharing
 - **Text utilities** (`lib/api/_shared/textUtils.ts`) — Shared `truncateAtWordBoundary` and `truncateAtSentenceBoundary` for word-safe truncation of factor explanations.
-- **i18n (English, Español, Tiếng Việt)** — Custom client-side i18n in `src/i18n/` (dictionaries, `LanguageContext`, region text localization, `withLang` URL helper). Web-searched content (factor explanations, solutions) is translated via the Kilo AI Gateway (`lib/api/_shared/translate.ts`) with a translation cache in the shared cache layer; API routes accept a `lang` query parameter (`en` | `es` | `vi`, default `en`) parsed by `lib/api/_shared/language.ts`. See [Languages](#-languages).
-
-### Data & Models (`src/lib/`)
-- **Forecast Engine** (`model.ts`) — Client-side forecast computations, `FACTORS` / `REGIONAL_FACTORS` static fallbacks, commodity types, and scenario math
-- **Correlation Math** (`correlation.ts`) — **NEW** Pearson-r factor↔commodity series correlation (see [Correlation Matrix](#-correlation-matrix))
-- **Currency & Unit Conversion** (`currencies.ts`, `units.ts`) — Multi-currency support with real-time formatting
-- **Markdown Report Generator** (`markdown.ts`) — Export forecasts as `.md` reports
-
-### Deterministic Analytics (Backend)
+- **i18n (English, Español, Tiếng Việt)** — Custom client-side i18n in `src/i18n/` (dictionaries, `LanguageContext`, region text localization, `withLang` URL helper). Web-searched content (factor explanations, solutions, **factor names**) is translated via the Kilo AI Gateway (`lib/api/_shared/translate.ts`) with a translation cache in the shared cache layer; API routes accept a `lang` query parameter (`en` | `es` | `vi`, default `en`) parsed by `lib/api/_shared/language.ts`. See [Languages](#-languages).
 - **Fuel levy, grid loss, water scarcity calculations** (`lib/api/_shared/deterministicAnalytics.ts`)
 - **Price grounding and cache utilities** (`lib/api/_shared/deterministicAnalytics.ts`)
 - **Cache management** (`lib/api/_shared/cache.ts`) — In-memory + optional Upstash Redis with TTLs
 - **Health checks** (`lib/api/handlers/health.ts`)
-- **Environment & validation** (`lib/api/_shared/http.ts`, `lib/api/_shared/validation.ts`)
-
-### Development & Build Tooling
-- **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run typecheck` / `npm run build`)
-- **PostCSS** — Tailwind CSS 4 processing pipeline
-- **Playwright 1.64.0** — End-to-end testing (`playwright` dev dependency)
-- **dotenv 18.0.7** — Local environment loading
-- **@vercel/sandbox 3.7.0** — Used in the standalone `sandbox-quickstart/` dev environment
-
-### Deployment & Infrastructure
-- **Vercel** — Native Next.js hosting, edge functions, cron jobs
-- **Vercel Cron** (`vercel.json`) — Nightly factor re-curation (`0 2 * * *` UTC)
-- **Environment Variables** — Secure secret management (`.env.local` locally, Vercel dashboard in prod)
 
 ---
 
 ## 📁 Project Structure
 
 ```
-.
-├── AGENT_PROMPT.md                       # Agent instructions (if present)
-├── PRICES_PIPELINE_REPORT.md             # Pipeline documentation
-├── app/                                  # Next.js App Router (frontend + API)
-│   ├── api/                             # API route handlers (serverless functions)
-│   │   ├── ai-forecast/route.ts         # 11-year global forecast band
-│   │   ├── analytics/route.ts           # Global fuel/electricity/water indices
-│   │   ├── cron/
-│   │   │   └── curate-factors/route.ts  # Nightly AI factor re-curation (Vercel cron)
-│   │   ├── dynamic-factors/route.ts     # 8 curated global price factors
-│   │   ├── forecast/route.ts            # Public dashboard/BI forecast envelope (CORS/ETag/cache)
-│   │   ├── health/route.ts              # Gateway/key/cache status
-│   │   ├── prices/route.ts              # Live commodity spot prices via TinyFish search + batch scrape (ttl:0 for live fetches, maxDuration 120s)
-│   │   ├── rates/route.ts               # Exchange rates for currency conversion
-│   │   ├── regional-analytics/route.ts  # Regional fuel/electricity/water indices
-│   │   ├── regional-factors/route.ts    # 8 curated factors for a region
-│   │   ├── regional-forecast/route.ts   # 11-year region-specific forecast
-│   │   ├── solutions/route.ts           # Up to 3 AI-curated strategy recommendations
-│   │   └── telemetry/route.ts           # Client-side analytics ingestion
-│   ├── globals.css                      # Global styles + Tailwind CSS 4 imports + @custom-variant dark
-│   ├── layout.tsx                       # Root layout (providers, fonts, metadata, inline theme pre-hydration script)
-│   ├── page.tsx                         # Main single-page application entry
-│   ├── robots.ts                        # robots.txt generation
-│   └── sitemap.ts                       # sitemap.xml generation
-│
-├── lib/                                  # Backend API implementation layer
-│   └── api/
-│       ├── handlers/                    # Endpoint business logic
-│       │   ├── __tests__/
-│       │   │   ├── forecast.test.mjs    # Forecast envelope unit tests
-│       │   │   └── language.test.mjs    # `lang` parsing and translation tests
-│       │   ├── ai-forecast.ts           # Forecast band generation
-│       │   ├── analytics.ts             # Global indices computation
-│       │   ├── cron-curate-factors.ts   # Nightly curation job
-│       │   ├── dynamic-factors.ts       # Global factor curation
-│       │   ├── factor-analysis.ts       # Factor curation pipeline (TinyFish → Kilo → grounding → cache), including `sanitizeExplanation`, `sanitizeFactorTitle`, `deriveFactorNameFromExplanation`, `validateExplanationQuality`, `validateAndRepairWindow`, and deterministic fallback builders (`buildFactorsFromCandidates`, `clauseQualityCheck`)
-│       │   ├── forecast.ts                # Public /api/forecast envelope (bands/factors/sources/meta, CSV, ETag)
-│       │   ├── health.ts                # Health check implementation
-│       │   ├── prices.ts                # Live prices: TinyFish search + batch scrape (ttl:0, markdown format) + Kilo extraction + fallbacks
-│       │   ├── regional-analytics.ts    # Regional indices computation
-│       │   ├── regional-factors.ts      # Regional factor curation
-│       │   ├── regional-forecast.ts     # Regional forecast generation
-│       │   └── solutions.ts             # AI solution generation
-│       └── _shared/                     # Cross-cutting utilities
-│           ├── cache.ts                 # In-memory + optional Redis cache with TTLs
-│           ├── deterministicAnalytics.ts# Fuel/grid/water math + getScopePriceDefaults
-│           ├── http.ts                  # Constants, key utilities, shared HTTP helpers
-│           ├── kiloRouter.ts            # Kilo Gateway model routing
-│           ├── language.ts              # `lang` parsing (en|es|vi, default en) from query/body
-│           ├── redis.ts                 # Upstash Redis client (optional)
-│           ├── regions.ts               # Region definitions & metadata
-│           ├── textUtils.ts             # Word/sentence-boundary truncation utilities
-│           ├── translate.ts             # Best-effort Kilo Gateway translation of web-searched content (cached)
-│           ├── tinyfishRouter.ts        # TinyFish search (+ include_domains) + single/batch scrape routing
-│           ├── types.ts                 # Shared TypeScript interfaces
-│           └── validation.ts            # Request validation helpers
-│
-├── src/                                  # Frontend source code
-│   ├── components/                      # React UI components
-│   │   ├── AboutSection.tsx             # Project description & mission — includes "Web-grounded factor correlation" and "Reason–price correlation" methodology cards
-│   │   ├── CorrelationSection.tsx       # NEW factor×commodity correlation heatmap + per-region breakdown
-│   │   ├── CurrencySelector.tsx         # Multi-currency picker
-│   │   ├── FactorsSection.tsx           # 8 dynamic factors grid
-│   │   ├── Footer.tsx                   # Site footer
-│   │   ├── ForecastTool.tsx             # Main prediction UI (slider, cards, chart, table)
-│   │   ├── Hero.tsx                     # Landing hero with CTA
-│   │   ├── icons.tsx                    # Custom SVG icon components
-│   │   ├── Logo.tsx                     # Brand logo
-│   │   ├── MarketIndexStrip.tsx         # Live market ticker
-│   │   ├── Navbar.tsx                   # Top navigation + export menu
-│   │   ├── RegionalEvaluation.tsx       # Regional intelligence panel
-│   │   ├── Reveal.tsx                   # Scroll/fade animations
-│   │   ├── SettingsMenu.tsx             # Units, theme, currency preferences
-│   │   ├── SolutionsSection.tsx         # AI strategy recommendations
-│   │   ├── Ticker.tsx                   # Animated price ticker
-│   │   └── VercelAnalytics.tsx          # Analytics consent + init
-│   ├── context/                         # React Context providers
-│   │   ├── CurrencyContext.tsx          # Currency state & formatting
-│   │   ├── FontContext.tsx              # Font loading & selection
-│   │   ├── ThemeContext.tsx             # Light/dark/system color theme (persisted to localStorage `tecno.theme`)
-│   │   └── UnitContext.tsx              # Unit system (metric/imperial)
-│   ├── hook/                            # Custom React hooks
-│   │   ├── useFlash.ts                  # Toast/flash notifications
-│   │   └── useLiveMarket.ts             # Live market data polling
-│   ├── i18n/                            # Client i18n (English, Español, Tiếng Việt)
-│   │   ├── dictionaries.ts              # Language codes + UI string dictionaries
-│   │   ├── LanguageContext.tsx          # LanguageProvider / useLanguage (persisted to localStorage `tecno.language`)
-│   │   ├── regionText.ts                # localizeRegion — translated region names, blurbs and drivers
-│   │   └── withLang.ts                  # Appends `lang=` to API URLs
-│   ├── lib/                             # Frontend business logic
-│   │   ├── currencies.ts                # Currency codes, symbols, formatting
-│   │   ├── correlation.ts               # Pearson-r series builders + matrix computation (derivedDrift fix for TinyFish factors)
-│   │   ├── __tests__/                   # Correlation matrix pure-logic tests (15 tests, 6 suites; run via `npx tsx`)
-│   │   │   └── correlation.test.mjs
-│   │   ├── events.ts                    # Event bus for cross-component comms
-│   │   ├── fonts.ts                     # Font definitions & loading
-│   │   ├── markdown.ts                  # Markdown report generation
-│   │   ├── model.ts                     # Forecast engine + static FACTORS/REGIONAL_FACTORS
-│   │   ├── truncate.ts                  # Sentence-boundary truncation helper (truncateAtSentence)
-│   │   └── units.ts                     # Unit conversion & display
-│   └── utils/                           # Shared frontend utilities
-│       └── cn.ts                        # clsx + tailwind-merge helper
-│
-├── images/                              # Brand assets
-│   ├── lobotlogoonly.svg                # LoBot logo mark (SVG)
-│   ├── lobottecnoindicator.svg          # TecnoIndicator waveform mark (SVG)
-│   └── LoBot-Trademark.png              # LoBot brand wordmark (PNG)
-├── sandbox-quickstart/                  # Standalone dev sandbox (separate package.json)
-│   ├── .gitignore
-│   ├── index.ts
-│   ├── package.json
-│   └── pnpm-lock.yaml
-│
-├── .env.example                         # Environment variable template
-├── .github/
-│   ├── ISSUE_TEMPLATE/
-│   │   ├── bug_report.md                # Bug report template
-│   │   └── feature_request.md           # Feature request template
-│   └── workflows/                       # CI/CD workflows
-│       ├── nextjs.yml
-│       └── nodejs.yml
-├── .gitignore
-├── LICENSE                              # MIT License
-├── next.config.ts                       # Next.js configuration
-├── next-env.d.ts                        # Next.js TypeScript declarations
-├── package.json                         # Root dependencies & scripts
-├── package-lock.json                    # npm lockfile
-├── pnpm-lock.yaml                       # pnpm lockfile
-├── postcss.config.mjs                   # PostCSS + Tailwind CSS 4 config
-├── README.md                            # This file
-├── tsconfig.json                        # TypeScript configuration
-├── tsconfig.tsbuildinfo                 # TypeScript incremental build info
-└── vercel.json                          # Vercel deployment config (crons, headers)
+app/
+├── api/
+│   ├── analytics/route.ts
+│   ├── ai-forecast/route.ts
+│   ├── cron/curate-factors/route.ts
+│   ├── dynamic-factors/route.ts
+│   ├── forecast/route.ts
+│   ├── health/route.ts
+│   ├── prices/route.ts
+│   ├── rates/route.ts
+│   ├── regional-analytics/route.ts
+│   ├── regional-factors/route.ts
+│   ├── regional-forecast/route.ts
+│   ├── solutions/route.ts
+│   └── telemetry/route.ts
+├── globals.css
+├── layout.tsx
+├── page.tsx
+├── robots.ts
+└── sitemap.ts
+
+lib/
+├── api/
+│   ├── _shared/
+│   │   ├── cache.ts
+│   │   ├── cacheKeys.ts
+│   │   ├── correlation.ts
+│   │   ├── deterministicAnalytics.ts
+│   │   ├── http.ts
+│   │   ├── kiloRouter.ts
+│   │   ├── language.ts
+│   │   ├── redis.ts
+│   │   ├── regions.ts
+│   │   ├── textUtils.ts
+│   │   ├── tinyfishRouter.ts
+│   │   ├── translate.ts
+│   │   ├── types.ts
+│   │   └── validation.ts
+│   └── handlers/
+│       ├── __tests__/
+│       │   ├── language.test.mjs
+│       │   └── forecast.test.mjs
+│       ├── ai-forecast.ts
+│       ├── analytics.ts
+│       ├── cron-curate-factors.ts
+│       ├── dynamic-factors.ts
+│       ├── factor-analysis.ts
+│       ├── forecast.ts
+│       ├── health.ts
+│       ├── prices.ts
+│       ├── regional-analytics.ts
+│       ├── regional-factors.ts
+│       ├── regional-forecast.ts
+│       └── solutions.ts
+├── correlation.ts
+├── model.ts
+├── markdown.ts
+├── truncate.ts
+├── units.ts
+├── currencies.ts
+├── fonts.ts
+├── events.ts
+└── correlation.ts
+
+src/
+├── app/
+│   └── page.tsx          # Main client component
+├── components/
+│   ├── AboutSection.tsx
+│   ├── CorrelationSection.tsx
+│   ├── FactorsSection.tsx
+│   ├── ForecastTool.tsx
+│   ├── Hero.tsx
+│   ├── MarketIndexStrip.tsx
+│   ├── Navbar.tsx
+│   ├── RegionalEvaluation.tsx
+│   ├── Reveal.tsx
+│   ├── SolutionsSection.tsx
+│   ├── SettingsMenu.tsx
+│   ├── Ticker.tsx
+│   ├── VercelAnalytics.tsx
+│   ├── CurrencySelector.tsx
+│   ├── Footer.tsx
+│   ├── Logo.tsx
+│   └── icons.tsx
+├── context/
+│   ├── CurrencyContext.tsx
+│   ├── FontContext.tsx
+│   ├── ThemeContext.tsx
+│   └── UnitContext.tsx
+├── hook/
+│   ├── useFlash.ts
+│   └── useLiveMarket.ts
+├── i18n/
+│   ├── dictionaries.ts
+│   ├── LanguageContext.tsx
+│   ├── regionText.ts
+│   └── withLang.ts
+└── lib/
+    └── correlation.ts
+
+scripts/
+└── ...
 ```
 
 ---
 
-## 🛠️ Code of Conduct
+## 📝 Environment Variables
 
-We welcome contributions from everyone, including **AI-generated and AI-assisted code**.
+| Variable | Required | Description |
+| --- | --- | --- |
+| `KILO_API_KEY` | Yes | Kilo Gateway API key for OpenAI-compatible inference |
+| `TINYFISH_API_KEY` | Yes | TinyFish API key for search and scrape |
+| `UPSTASH_REDIS_REST_URL` | No | Upstash Redis URL for cross-instance caching |
+| `UPSTASH_REDIS_REST_TOKEN` | No | Upstash Redis token for cross-instance caching |
 
-### Our Standards
-- Be respectful and inclusive.
-- Provide constructive feedback.
-- Focus on improving the project.
-
-### Contribution Guidelines
-- All contributions are welcome (features, bug fixes, documentation, design improvements, etc.).
-- **AI-generated / AI-assisted contributions are explicitly allowed**, but **you must rigorously test the codebase** before pushing to the main repository.
-- Always run the site in multiple browsers and test responsiveness, chart rendering, data exports, and edge cases (horizon = 1 and horizon = 10).
-- Open a Pull Request with a clear description of changes.
-- You are required to justify why your UI looks better and more consistent compared to the original one (e.g. better functionality, etc.) if your Pull Request has a different UI from the original or if you want to remove a feature.
-- Ensure that your code passes the autotester before submitting a Pull Request.
-- Reference any related issues.
-
-Violations of this Code of Conduct may result in temporary or permanent bans from the project.
+Copy `.env.example` to `.env.local` and fill in your keys.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
-
----
-
-## 👤 Credits
-
-**Author & Maintainer**
-[LoBot LLC](https://github.com/LoBot-LLC)
-
-We would like to give special thanks to the open-source community for Tailwind CSS and Chart.js.
-
----
-
-## 🔐 Environment variables
-
-Create a `.env.local` file (git-ignored) for local development. On Vercel, set
-these as project environment variables.
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `TINYFISH_KEY_1` … `TINYFISH_KEY_5` | Required | TinyFish search/fetch API keys used to gather and scrape market evidence. Without them the app still runs and serves deterministic fallback data. |
-| `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_5` | Required | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. Also accepts bare `KILO_GATEWAY_KEY`. |
-| `FUEL_BASE_DIESEL_PRICE` | Optional | Override the base diesel price for fuel-levy calculations. |
-| `FUEL_FACTOR` | Optional | Override the fuel levy factor. |
-| `GRID_LOSS_FACTOR` | Optional | Override the electricity grid-loss factor. |
-| `WATER_SCARCITY_MULTIPLIER` | Optional | Override the water scarcity multiplier. |
-| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional | Upstash Redis REST credentials for a shared cache across serverless instances. `REDIS_URL` / `REDIS_TOKEN` are accepted as aliases. Without Redis an in-memory per-instance cache is used. |
-
-The site degrades gracefully: with no keys configured every endpoint still
-returns a response, backed by public benchmark defaults, and the health endpoint
-reports `onlineModelConnected: false`.
-
----
-
-## ⌨️ Keyboard Shortcuts
-
-- Press `/` (when focused on the page) to jump to the horizon slider.
+MIT — see `LICENSE` for details.

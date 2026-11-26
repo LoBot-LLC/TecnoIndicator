@@ -49,6 +49,22 @@ A commodity price forecasting dashboard for **oil**, **electricity**, and **wate
 
 ---
 
+## 🛠️ Tech Stack
+
+TecnoIndicator is built with the following technologies:
+
+- **Next.js 16.4.3** (App Router) — Full-stack React framework with server-side rendering and API routes.
+- **React 19.2.6** — UI library for building interactive interfaces.
+- **TypeScript 5.9.3** — Strongly typed JavaScript superset for safer, scalable code.
+- **Tailwind CSS 4.1.17** — Utility-first CSS framework with dark mode support via custom variant.
+- **Chart.js 4.5.1** — Interactive charting library for forecasts and data visualization.
+- **TinyFish API** — External service for web search and content scraping to gather real-time commodity price data and news.
+- **Kilo AI Gateway** — OpenAI-compatible inference service for AI-powered factor curation, strategy generation, and content translation.
+- **Vercel** — Deployment platform with serverless functions and edge caching.
+- **tsx** — Fast TypeScript runner for executing pure-logic tests.
+
+---
+
 ## 🎨 Theming / Color theme
 
 The app ships a **Light / Dark / System** color theme, selectable from the Settings menu ("Color theme").
@@ -282,6 +298,32 @@ The `aiCurated` flag on each API response tells the UI whether factors are live 
 - If no valid title can be derived, the factor is **dropped entirely** rather than surfacing a non-reason title to the UI.
 
 This applies at all entry points: `normalizeFactor` (model-curated factors), `sanitizeFactorTitle` (shared title sanitization used by `validateAndRepairWindow`), and `buildFactorsFromCandidates` (deterministic URL-backed factors). The result is that factor cards in the "Key Factors & Drivers" (global) and "Regional Intelligence" (continental) sections always show a valid reason title like "OPEC+ Production Cuts" or "Drought-Driven Water Scarcity" — never "Breaking News" or "Historically".
+
+---
+
+## 📁 Project Structure
+
+TecnoIndicator organizes its codebase into the following key directories and files:
+
+- **app/** — Next.js 16 App Router. Contains `layout.tsx`, `page.tsx`, `globals.css`, and serverless API route handlers under `app/api/*` (e.g., `dynamic-factors`, `regional-factors`, `solutions`, `prices`, etc.).
+- **lib/** — Shared library code. Includes API route logic in `lib/api/handlers/*`, shared utilities in `lib/api/_shared/*` (e.g., `tinyfishRouter`, `kiloRouter`, `translate`, `textUtils`), and types.
+- **src/** — React client source. Includes components (`src/components/*`), context providers (`src/context/*`), hooks (`src/hook/*`), i18n (`src/i18n/*`), and client-side utilities (`src/lib/*`).
+- **images/** — Static image assets used throughout the UI.
+- **sandbox-quickstart/** — Quickstart sandbox files for testing and development.
+- **package.json** — Project manifest with scripts (`dev`, `build`, `start`, `typecheck`) and dependencies (Next.js, React, TypeScript, Tailwind CSS, Chart.js, etc.).
+- **next.config.ts** — Next.js configuration file.
+- **tsconfig.json** — TypeScript compiler configuration.
+- **postcss.config.mjs** — PostCSS configuration, including Tailwind CSS v4 plugin.
+- **vercel.json** — Vercel deployment settings (e.g., maxDuration for API routes, cron jobs).
+- **.env.example** — Example environment variables file (e.g., TinyFish API keys, Kilo Gateway keys, etc.).
+- **.gitignore** — Git ignore rules.
+- **README.md** — This documentation file.
+- **LICENSE** — Project license.
+- **PRICES_PIPELINE_REPORT.md** — Detailed report on the prices pipeline.
+- **src/lib/__tests__/** — Pure-logic unit tests (e.g., `correlation.test.mjs`).
+- **lib/api/handlers/__tests__/** — Handler tests (e.g., `language.test.mjs`, `forecast.test.mjs`).
+
+The project uses **TypeScript** across the stack, with Next.js 16 (App Router) for server and client routing, and Tailwind CSS v4 for styling (configured via `@tailwindcss/postcss`). All AI features rely on the **Kilo AI Gateway** (OpenAI-compatible inference) and **TinyFish API** (search and scraping) to fetch and curate web-sourced content.
 
 ---
 

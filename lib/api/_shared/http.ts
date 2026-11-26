@@ -15,6 +15,7 @@ export const KILO_KEY_ENV_NAMES = [
   "KILO_GATEWAY_KEY_3",
   "KILO_GATEWAY_KEY_4",
   "KILO_GATEWAY_KEY_5",
+  "KILO_GATEWAY_KEY_6",
   "KILO_GATEWAY_KEY",
 ] as const;
 
@@ -24,6 +25,8 @@ export const TINYFISH_KEY_ENV_NAMES = [
   "TINYFISH_KEY_3",
   "TINYFISH_KEY_4",
   "TINYFISH_KEY_5",
+  "TINYFISH_KEY_6",
+  "TINYFISH_KEY_7",
 ] as const;
 
 export const FACTOR_COUNT = 8;

@@ -67,7 +67,7 @@ The UI is available in **English**, **Español** and **Tiếng Việt**.
 
 - **Switching language** — Open the Settings menu and choose a language. The choice is persisted in `localStorage` under `tecno.language`. Static UI strings and region names come from the dictionaries in `src/i18n/dictionaries.ts`.
 - **API `lang` parameter** — API routes accept `lang=en|es|vi` (default `en`). Unknown values fall back to `en`. Example: `GET /api/forecast?lang=vi`.
-- **Translation is best-effort** — Web-searched content (factor explanations, solutions) is translated through the Kilo AI Gateway and cached. If translation fails or is unavailable, the English original is returned. Numeric values are preserved, and translations that change numbers are rejected.
+- **Translation is best-effort** — Web-searched content (factor explanations, factor names, and solutions) is translated through the Kilo AI Gateway and cached. Both `explanation` and `name` fields of every factor are translated for all four sections: "Recommended strategies for businesses", "Key factors & drivers", "Correlation matrix", and "Regional factors". If translation fails or is unavailable, the English original is returned. Numeric values are preserved, and translations that change numbers are rejected.
 
 ## 🚀 How to Use
 

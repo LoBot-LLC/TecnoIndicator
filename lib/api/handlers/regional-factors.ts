@@ -14,7 +14,7 @@ import { isRegion, type Region } from "../_shared/regions";
 import { sanitizeError } from "../_shared/validation";
 
 async function factorsResponse<T>(lang: ApiLanguage, payload: T, init: ResponseInit): Promise<Response> {
-  return Response.json(await translateStructured(payload, lang, ["explanation", "error"]), init);
+  return Response.json(await translateStructured(payload, lang, ["explanation", "name", "error"]), init);
 }
 
 /**

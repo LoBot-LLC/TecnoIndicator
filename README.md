@@ -69,6 +69,17 @@ The UI is available in **English**, **Español** and **Tiếng Việt**.
 - **API `lang` parameter** — API routes accept `lang=en|es|vi` (default `en`). Unknown values fall back to `en`. Example: `GET /api/forecast?lang=vi`.
 - **Translation is best-effort** — Web-searched content (factor explanations, solutions) is translated through the Kilo AI Gateway and cached. If translation fails or is unavailable, the English original is returned. Numeric values are preserved, and translations that change numbers are rejected.
 
+### Kilo Gateway Auto-Translation of Web-Searched Content (All 4 Sections)
+
+Web-searched URL content (e.g., fetched by TinyFish from sources like IEA, OPEC, EIA, UN-Water, WRI, IRENA) is **auto-translated** by the Kilo AI Gateway models from the source content's original language to the language the user has selected in their user settings, and the translated content is displayed back in all four key sections:
+
+1. **Recommended strategies for businesses** (`src/components/SolutionsSection.tsx`) — Solution `title`, `summary`, and `actions` are translated via `translateStructured` in `/api/solutions`.
+2. **Key factors & drivers** (`src/components/FactorsSection.tsx`) — Factor `explanation` fields are translated via `translateStructured` in `/api/dynamic-factors`.
+3. **Correlation matrix** (`src/components/CorrelationSection.tsx`) — Displays the translated factor names/explanations (and correlation data) sourced from the translated factor APIs.
+4. **Evaluate 5 world regions → Regional factors** (`src/components/RegionalEvaluation.tsx`) — Regional factor `explanation` fields are translated via `translateStructured` in `/api/regional-factors`.
+
+Flow: TinyFish fetches web content → Kilo Gateway curates factors/solutions from the fetched content → Server translates the resulting web-content-derived strings into the user's language via the Kilo AI Gateway (`lib/api/_shared/translate.ts`) with a per-language cache (`translate:{lang}:{hash}`) → Client displays the translated content in all four sections.
+
 ## 🚀 How to Use
 
 ### Quick Start

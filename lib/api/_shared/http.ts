@@ -4,7 +4,7 @@ export type { RegionId } from "./types";
 
 import type { RegionId } from "./types";
 
-export const KILO_GATEWAY_BASE_URL = "https://api.kilo.ai/api/gateway";
+export const KILO_GATEWAY_BASE_URL = "https://ai-gateway.kilo.ai/api/v1";
 export const KILO_GATEWAY_MODELS_URL = `${KILO_GATEWAY_BASE_URL}/models`;
 export const KILO_GATEWAY_CHAT_URL = `${KILO_GATEWAY_BASE_URL}/chat/completions`;
 export const DEFAULT_KILO_MODEL_ID = "kilo-auto/free";

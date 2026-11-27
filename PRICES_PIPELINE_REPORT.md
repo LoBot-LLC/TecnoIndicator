@@ -19,7 +19,7 @@ GET /api/prices (route.ts:7-8)
         → [Build Kilo Prompt] searchResultsText + PRICE_EXTRACTION_PROMPT (prices.ts:181-201)
         → Kilo Inference (prices.ts:204)
           → kiloRouter.kiloInfer(payload, signal)
-            → kiloRouter.ts:474-659 → KILO_GATEWAY_CHAT_URL "https://api.kilo.ai/api/gateway/chat/completions"
+            → kiloRouter.ts:474-659 → KILO_GATEWAY_CHAT_URL "https://ai-gateway.kilo.ai/api/v1/chat/completions"
         → Parse JSON response (prices.ts:206-237)
         → [Validation] confidence ≥ 50, price > 0, all 3 commodities present (prices.ts:220, 229)
         → [Success] Return PricesPayload with isLive: true (prices.ts:230-237)

@@ -555,7 +555,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 ### Backend / API Layer
 - **Next.js Route Handlers** (`app/api/*`) — Serverless API endpoints
 - **Node.js 22** (`@types/node` 22.19.17) — Runtime environment (via Next.js on Vercel); strict `tsconfig.json` (`strict`, `noUnusedLocals`, bundler module resolution, `@/*` → `src/*`)
-- **Kilo AI Gateway** — OpenAI-compatible inference API at `ai-gateway.kilo.ai/api/v1` (price extraction, factor curation, solutions, forecasting)
+- **Kilo AI Gateway** — OpenAI-compatible inference API at `https://ai-gateway.kilo.ai/api/v1` (price extraction, factor curation, solutions, forecasting)
 - **TinyFish API** — Live web research via `api.search.tinyfish.ai` (search with `include_domains` restriction and `recency_minutes` for both factor curation and the live-prices pipeline) and `api.fetch.tinyfish.ai` (single + batch URL scraping, up to 10 URLs per request via `tinyfishScrapeBatch`); each scrape uses `ttl: 0` for live (non-cached) fetches, returns markdown-format responses for clean downstream parsing, and carries a `purpose` statement to tailor extraction to price-relevance.
 - **Live Prices Pipeline** (`lib/api/handlers/prices.ts`) — Per-commodity TinyFish search (`include_domains`, `recency_minutes`) → batch Fetch/Scrape (`ttl: 0`, markdown) → Kilo extraction → deterministic regex fallback, with per-commodity plausibility ranges (oil 40–200 USD/bbl, electricity 30–300 USD/MWh, water 0.5–15 USD/m³), comma-aware number parsing, per-unit qualifier preference, annual-bill rejection, and USD/kWh → USD/MWh normalization. Three-tier degradation: Kilo → deterministic regex → static benchmark defaults.
 - **Single-Source-of-Truth Live Flow** — `src/hook/useLiveMarket.ts` refreshes `liveQuotes` (price + source + asOf) on every fetch/poll, and the Hero "Market Snapshot" / live global feed renders those URL-sourced numbers (matching the Interactive price forecast cards) with no ad-hoc unit conversion.
@@ -582,6 +582,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 - **Playwright 1.64.0** — End-to-end testing (`playwright` dev dependency)
 - **dotenv 18.0.7** — Local environment loading
 - **@vercel/sandbox 3.7.0** — Used in the standalone `sandbox-quickstart/` dev environment
+- **Node test runner (`node:test`)** — Pure-logic unit tests (run via `tsx --test`)
 
 ### Deployment & Infrastructure
 - **Vercel** — Native Next.js hosting, edge functions, cron jobs

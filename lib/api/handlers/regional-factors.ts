@@ -39,7 +39,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
 
   try {
     if (!force) {
-      const stored = await readFactorWindow(region);
+      const stored = await readFactorWindow(region, lang);
       if (stored && isFreshWindow(stored, FACTORS_CACHE_MS)) {
         // runFactorAnalysis already validates/repairs; trust the cached window
         return factorsResponse(lang,
@@ -52,8 +52,8 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 55000);
     try {
-      const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
-      const stored = await writeFactorWindow(region, result.factors, result.aiCurated);
+      const result = await runFactorAnalysis(region, { lang, abortSignal: abortController.signal });
+      const stored = await writeFactorWindow(region, result.factors, result.aiCurated, lang);
       return factorsResponse(lang,
         toFactorsPayload(result.factors, region, result.aiCurated, { updatedAt: stored.updatedAt }),
         { status: 200 },
@@ -63,7 +63,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     }
   } catch (error) {
     console.error("Regional factors error:", sanitizeError(String(error)));
-    const stored = await readFactorWindow(region).catch(() => null);
+    const stored = await readFactorWindow(region, lang).catch(() => null);
     const factors = filterStaticFallbacks(stored?.factors.length ? stored.factors : buildFallbackFactors(region));
     return factorsResponse(lang,
       toFactorsPayload(factors, region, stored?.aiCurated ?? false, {

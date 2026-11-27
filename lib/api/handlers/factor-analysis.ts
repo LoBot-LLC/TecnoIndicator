@@ -20,6 +20,7 @@ import {
 } from "../_shared/types";
 import { getScopePriceDefaults } from "../_shared/deterministicAnalytics";
 import { truncateAtWordBoundary, truncateAtSentenceBoundary } from "../_shared/textUtils";
+import { languageInstruction, type ApiLanguage } from "../_shared/language";
 
 /**
  * The shape stored under the canonical `dynamic-factors:{scope}` key. Every
@@ -1210,8 +1211,8 @@ export function factorKeyForScope(scope: RegionId): string {
  * nothing has been curated yet. A legacy bare `Factor[]` payload (written by
  * the old cron endpoint) is accepted so in-flight deployments do not reset.
  */
-export async function readFactorWindow(scope: RegionId): Promise<FactorWindow | null> {
-  const key = factorKeyForScope(scope);
+export async function readFactorWindow(scope: RegionId, lang?: ApiLanguage): Promise<FactorWindow | null> {
+  const key = factorCacheKey(scope, lang);
   const raw = await getCache<unknown>(key, FACTORS_WINDOW_TTL_MS);
   if (!raw) return null;
   if (Array.isArray(raw)) {
@@ -1235,9 +1236,10 @@ export async function writeFactorWindow(
   scope: RegionId,
   factors: Factor[],
   aiCurated: boolean,
+  lang?: ApiLanguage,
 ): Promise<FactorWindow> {
   const window: FactorWindow = { factors, aiCurated, updatedAt: new Date().toISOString() };
-  await setCache(factorKeyForScope(scope), window, FACTORS_WINDOW_TTL_MS);
+  await setCache(factorCacheKey(scope, lang), window, FACTORS_WINDOW_TTL_MS);
   return window;
 }
 
@@ -1672,6 +1674,7 @@ function clauseQualityCheck(clause: string): boolean {
       water: { price: number; unit: string; source: string };
     },
     now: string,
+    _lang?: ApiLanguage,
   ): Factor[] {
     const region = scopeRegion(scope);
     const regions: RegionId[] = scope === "global" ? ["global"] : region ? [region] : [];
@@ -2174,11 +2177,12 @@ export function mergeRollingWindow(existing: Factor[], incoming: Factor[]): Fact
  */
 export async function runFactorAnalysis(
   scope: RegionId,
-  options: FactorAnalysisOptions = {},
+  options: FactorAnalysisOptions & { lang?: ApiLanguage } = {},
 ): Promise<FactorWindow> {
   const signal = options.abortSignal;
+  const lang = options.lang ?? "en";
   const region = scopeRegion(scope);
-  const previous = await readFactorWindow(scope);
+  const previous = await readFactorWindow(scope, lang);
   // The previously stored factors are the rolling window; the static fallbacks
   // are only used when nothing has been curated yet.
   const existing = filterStaticFallbacks(previous?.factors.length ? previous.factors : buildFallbackFactors(scope));
@@ -2252,7 +2256,7 @@ export async function runFactorAnalysis(
       if (knownCandidates.length > 0) {
         console.warn(`Factor analysis: scraped ${knownCandidates.length} known URLs for scope "${scope}"`);
         // Build deterministic factors from these known URLs
-        const deterministic = buildFactorsFromCandidates(knownCandidates, scope, currentPrices, now);
+        const deterministic = buildFactorsFromCandidates(knownCandidates, scope, currentPrices, now, lang);
         if (deterministic.length > 0) {
           console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors from known URLs for scope "${scope}"`);
           return {
@@ -2296,7 +2300,7 @@ export async function runFactorAnalysis(
       site_name: (c as { site_name?: string }).site_name,
     }));
 
-    const prompt = scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope));
+    const prompt = (scope === "global" ? SYSTEM_PROMPT_GLOBAL : SYSTEM_PROMPT_REGIONAL(scopeLabel(scope))) + languageInstruction(lang);
     const payload = {
       messages: [
         { role: "system", content: prompt },
@@ -2363,7 +2367,7 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
     if (!parsed?.factors || !Array.isArray(parsed.factors) || parsed.factors.length === 0) {
       console.warn(`Factor analysis: model did not return a valid non-empty factors array for scope "${scope}" even after retry (content length ${content.length}); building deterministic factors from ${excerpts.length} scraped excerpts`);
 
-      const deterministic = buildFactorsFromCandidates(excerpts, scope, currentPrices, now);
+      const deterministic = buildFactorsFromCandidates(excerpts, scope, currentPrices, now, lang);
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}"`);
         return {
@@ -2441,7 +2445,7 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
     if (normalized.length === 0) {
       console.warn(`Factor analysis: all model-returned factors were rejected for scope "${scope}" (parsed ${parsed.factors.length}, normalized ${normalized.length}); building deterministic factors from ${excerpts.length} scraped excerpts`);
 
-      const deterministic = buildFactorsFromCandidates(excerpts, scope, currentPrices, now);
+      const deterministic = buildFactorsFromCandidates(excerpts, scope, currentPrices, now, lang);
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}"`);
         return {
@@ -2486,7 +2490,7 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
           }
         }),
       );
-      const deterministic = buildFactorsFromCandidates(excerpts, scope, currentPrices, now);
+      const deterministic = buildFactorsFromCandidates(excerpts, scope, currentPrices, now, lang);
       if (deterministic.length > 0) {
         console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors for scope "${scope}" after error (aiCurated=false)`);
         return {
@@ -2513,7 +2517,7 @@ Every explanation you output must follow the GOOD format: literal "With <commodi
       const knownCandidates = knownExcerpts.filter((e): e is { url: string; title: string; snippet: string; text: string } => e !== null);
       if (knownCandidates.length > 0) {
         console.warn(`Factor analysis: scraped ${knownCandidates.length} known URLs for scope "${scope}" after error`);
-        const deterministic = buildFactorsFromCandidates(knownCandidates, scope, currentPrices, now);
+        const deterministic = buildFactorsFromCandidates(knownCandidates, scope, currentPrices, now, lang);
         if (deterministic.length > 0) {
           console.warn(`Factor analysis: built ${deterministic.length} deterministic URL-backed factors from known URLs for scope "${scope}" after error`);
           return {

@@ -56,9 +56,18 @@ export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
  * (solutions, forecasts) uses this scheme, so the reasons the UI shows are
  * exactly the reasons the solutions are generated from. `scope` is "global" or
  * a region id.
+ *
+ * When AI generation becomes language-aware, the factor window should be
+ * cached per language. `lang` is the user's chosen language code; the canonical
+ * English key (`dynamic-factors:{scope}`) is used when `lang` is omitted or is
+ * the default English value ("en"), keeping full backward compatibility with
+ * existing callers that do not pass a language.
+ *
+ * Convention: `en` (or omitted) -> `dynamic-factors:{scope}`; any other lang ->
+ * `dynamic-factors:{scope}:{lang}`.
  */
-export function factorCacheKey(scope: RegionId): string {
-  return `dynamic-factors:${scope}`;
+export function factorCacheKey(scope: RegionId, lang?: string): string {
+  return lang && lang !== "en" ? `dynamic-factors:${scope}:${lang}` : `dynamic-factors:${scope}`;
 }
 
 /** Canonical cache key for the analytics snapshot of a scope. */

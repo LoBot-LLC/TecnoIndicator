@@ -18,6 +18,12 @@ export function parseLanguage(value: unknown): ApiLanguage {
     : DEFAULT_API_LANGUAGE;
 }
 
+export function languageInstruction(lang: ApiLanguage): string {
+  if (lang === "en") return "";
+  const target = LANGUAGE_NAMES[lang];
+  return `Write all output text in ${target}. The source material you are analyzing may be written in English; translate its key insights into ${target} while preserving meaning. Keep numbers, units, currency codes, percentages, dates, tickers, symbols, URLs, emails, and proper nouns (organization names such as IEA, OPEC, EIA) unchanged.`;
+}
+
 export function languageFromRequest(req: Request, body?: unknown): ApiLanguage {
   const url = new URL(req.url, "http://localhost");
   const fromQuery = url.searchParams.get("lang");

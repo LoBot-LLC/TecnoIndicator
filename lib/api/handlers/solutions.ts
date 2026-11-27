@@ -6,7 +6,7 @@ import { getCache, setCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
 import { safeParseJson } from "../_shared/validation";
 import { isRegion, type Region } from "../_shared/regions";
-import { languageFromRequest } from "../_shared/language";
+import { languageFromRequest, languageInstruction } from "../_shared/language";
 import { translateStructured } from "../_shared/translate";
 import type { Factor, RegionId, Solution } from "../_shared/types";
 
@@ -325,7 +325,7 @@ export async function handleSolutions(req: Request): Promise<Response> {
     analytics = (scope === "global"
       ? await getGlobalAnalytics()
       : await getRegionalAnalytics(scope as Region)) as unknown as Record<string, unknown>;
-    factors = (await readFactorWindow(scope))?.factors ?? [];
+    factors = (await readFactorWindow(scope, lang))?.factors ?? [];
   } catch (error) {
     console.error("Analytics/factors fetch failed:", error);
     analytics = {
@@ -345,9 +345,11 @@ export async function handleSolutions(req: Request): Promise<Response> {
       freshEvidence = [];
     }
 
+    const systemPrompt = SOLUTION_PROMPT + languageInstruction(lang);
+
     const payload = {
       messages: [
-        { role: "system", content: SOLUTION_PROMPT },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
           content: JSON.stringify({

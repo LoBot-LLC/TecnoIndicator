@@ -7,4 +7,4 @@ Based on the following repo, can you please implement the following features and
 
 Before you conduct your operations, you need to **websearch + webfetch** so you know what you should be doing next. and after you conduct your operations, update the README.md file to include all the **latest tech stack** and **files and/or directories inside the project** structure once again, test the entire repo if they 100% work before committing to the remote repo.
 
-Delegating all tasks to subagents is **required.** (DO NOT launch more than 3 subagents at the same time)
+Delegating all tasks to subagents is **REQUIRED**. (DO NOT launch more than 3 subagents at the same time, if more than 3 agents are launched at the same time, force shut excessive active subagents down until <=3 subagents are active at the same time)

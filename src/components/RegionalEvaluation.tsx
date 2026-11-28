@@ -297,7 +297,7 @@ function RegionalFactorCard({
               {factor.category}
             </span>
             <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold text-amber-300 border-amber-400/30 bg-amber-400/10">
-              {factor.magnitude}
+              {t(factor.magnitude === "High" ? "factors.magnitude.high" : factor.magnitude === "Medium" ? "factors.magnitude.medium" : "factors.magnitude.low")}
             </span>
           </div>
           <h4 className="mt-2 font-display text-sm font-semibold text-slate-900 dark:text-white leading-snug">

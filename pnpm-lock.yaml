@@ -63,6 +63,9 @@ importers:
       tailwindcss:
         specifier: 4.1.17
         version: 4.1.17
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1600,7 +1603,7 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  '@vercel/analytics@1.6.1(next@16.4.0(@types/node@22.19.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react@19.2.6)':
+  '@vercel/analytics@1.6.1(next@16.4.3(@types/node@22.19.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react@19.2.6)':
     optionalDependencies:
       next: 16.4.3(@types/node@22.19.17)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6

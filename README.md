@@ -67,7 +67,11 @@ The UI is available in **English**, **Español** and **Tiếng Việt**.
 
 - **Switching language** — Open the Settings menu and choose a language. The choice is persisted in `localStorage` under `tecno.language`. Static UI strings and region names come from the dictionaries in `src/i18n/dictionaries.ts`.
 - **API `lang` parameter** — API routes accept `lang=en|es|vi` (default `en`). Unknown values fall back to `en`. Example: `GET /api/forecast?lang=vi`.
-- **Translation is best-effort** — Web-searched content (factor explanations, solutions) is translated through the Kilo AI Gateway and cached. If translation fails or is unavailable, the English original is returned. Numeric values are preserved, and translations that change numbers are rejected.
+- **Source-independent translation** — Kilo Gateway auto-detects each source string and translates into the user's selected language, **including English** when the source is Spanish, Vietnamese, or another language. Factor **names, categories and explanations** are localized for Key factors & drivers, Correlation matrix labels/details, and all five regions' Regional factors. Strategy **titles, summaries and actions** are localized too. Source URLs, IDs, numeric values, dates, machine enums and price grounding remain unchanged; magnitude badges use UI dictionaries.
+- **Bounded translation requests** — `lib/api/_shared/translate.ts` deduplicates strings, groups them into approximately 4,000-character batches (individual strings stay intact), runs at most three batches concurrently, and retries failed/invalid batches once within a shared 15-second deadline. System instructions explicitly prioritize the chosen language over web-source language and treat source text as untrusted data. JSON shape, non-empty output, numeric-token multiplicity and URL/email preservation are validated. Truncated completions are rejected rather than partially displayed.
+- **Required localization for the four research sections** — Factor and solution handlers use `required: true`. If translation fails or fails validation, these APIs return HTTP **503** with `error: "translation_unavailable"` and an empty factors/solutions array, not a successful source-language fallback. The UI shows localized loading/empty states (or locally generated, dictionary-based strategies from already-localized factors). Other endpoints retain best-effort translation for compatibility. Language quality still depends on the upstream model; structural validation is not a proof of linguistic correctness.
+- **Language-safe caching** — Successful translations use `translate:v2:{lang}:{sha256}` with a 24-hour TTL in the shared memory/optional Redis cache; failures are not cached. Solution responses use `solutions:v2:{lang}:{scope}`, bypassing older potentially untranslated entries. Canonical factor windows remain source-language, scope-keyed data, shared safely across languages.
+- **Switching without stale content** — Changing Settings language clears previous research, refetches every scope, ignores obsolete factor responses, and cancels obsolete solution requests. Correlations use only the returned localized factors, never English static substitutes. Each scope finishes independently so one failed fetch does not block all regions. The regional loading flag also follows the displayed region when global scope is selected.
 
 ## 🚀 How to Use
 
@@ -112,16 +116,34 @@ npm start       # next start
 | `npm run build` | Build for production (`next build`) |
 | `npm start` | Serve the production build (`next start`) |
 | `npm run typecheck` | Run `tsc --noEmit` for strict type checking |
+| `npm test` | Run all unit and handler integration tests via the pinned `tsx` dependency |
+| `npm run test:e2e` | Run desktop/mobile Playwright localization and stale-response regression tests against a running site |
 
 ### Tests
 
-Pure-logic tests run with `tsx`:
+The root test runner uses Node's test API through the lockfile-managed `tsx` dependency:
 
 ```bash
-npx tsx --test src/lib/__tests__/correlation.test.mjs
-npx tsx --test lib/api/handlers/__tests__/language.test.mjs
-npx tsx --test lib/api/handlers/__tests__/forecast.test.mjs
+npm ci
+npm run typecheck
+npm test
+npm run build
 ```
+
+`npm test` covers forecast parameter/envelope behavior, correlation math, language parsing, and mocked Kilo/TinyFish localization integration. The localization suite covers all five regional factor routes, factor names/categories/explanations, strategy fields, English-target translation, batching, retries, cache separation/expiry, preservation of factual fields, and failure behavior. It makes no live upstream requests.
+
+For the browser regression suite (Chromium, desktop 1440px and mobile 390px):
+
+```bash
+npx playwright install --with-deps chromium
+npm run build
+npm start -- --hostname 0.0.0.0 # leave running in another terminal
+npm run test:e2e
+```
+
+Optional environment overrides: `TEST_BASE_URL` (default `http://localhost:3000`) and `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` (use an existing compatible Chromium). Browser API fixtures exercise all four sections through English → Spanish → Vietnamese and deliberately release stale Spanish responses after Vietnamese loads. They also verify persisted Settings language and absence of browser runtime errors. These fixture tests do not assess live translation quality.
+
+**Verification (2026-11-28):** strict typecheck, all 37 root unit/integration tests, production build, and both desktop/mobile browser scenarios passed. Live Kilo/TinyFish and hosted Redis end-to-end behavior cannot be certified in a sandbox without access to those upstream services. The separate `sandbox-quickstart/package.json` still has its original placeholder test script; it is not an application test suite.
 
 ### API endpoints
 
@@ -287,7 +309,7 @@ The "3 actionable strategies" are **never hard-coded**. They are generated on-de
    - De-duplicates candidate URLs across queries.
    - **Batch-scrapes the top 8 URLs** via `tinyfishScrapeBatch` (markdown format, `ttl: 0` for live fetches) with a `purpose` statement tailored to extracting price drivers and strategic context.
 4. **Kilo Gateway Inference** — Sends a single prompt containing the analytics, all 8 factors (with explanations, grounding, sources), scope, and the scraped article content to `api.kilo.ai/api/gateway`. The system prompt (`SOLUTION_PROMPT`) instructs the model to produce exactly 3 differentiated strategies targeting: (1) operational resilience, (2) cost optimization, (3) strategic positioning.
-5. **Validation & Caching** — Parsed JSON is validated (`buildSolution`), cached under `solutions:{scope}` (TTL 60s), and returned with `aiCurated: true`. If Kilo fails, a **data-driven fallback** (`buildFallbackSolutions`) derives 3 strategies from the highest-importance factors in the current factor window — still grounded in live dashboard data, never static templates.
+5. **Validation & Caching** — Parsed JSON is validated (`buildSolution`), localized into the requested language, then cached under `solutions:v2:{lang}:{scope}` (TTL 60s), and returned with `aiCurated: true`. If Kilo fails, a **data-driven fallback** (`buildFallbackSolutions`) derives 3 strategies from the highest-importance factors in the current factor window — still grounded in live dashboard data, never static templates.
 6. **Real-Time Regeneration** — The frontend tracks a `factorSignature` (scope + factor IDs + `updatedAt`). Whenever the active scope's factor window changes identity, the client immediately calls `/api/solutions?force=true` to regenerate strategies matching the new reasons. This ensures the 3 strategies are always synchronized with the factors displayed in the UI.
 
 **Key guarantees:**
@@ -303,17 +325,14 @@ The "3 actionable strategies" are **never hard-coded**. They are generated on-de
 The factor curation and fetching architecture has been optimized for parallelism at multiple levels:
 
 ### 1. Client-Side Parallel Fetching (Frontend)
-The `app/page.tsx` polling logic now fires **all six scope requests simultaneously** (1 global + 5 regional) using `Promise.all`, eliminating the previous 8-second stagger between regions. This reduces the full factor refresh latency from ~40+ seconds (sequential) to the duration of the slowest single request.
+The `app/page.tsx` polling logic now fires **all six scope requests simultaneously** (1 global + 5 regional) using `Promise.all`, eliminating the previous 8-second stagger between regions. Each localized scope is applied as soon as its own response completes; a slow or failed global request no longer blocks regional rendering.
 
 ```tsx
-// Before: Sequential with 8s gaps
-global → wait → asia → wait 8s → europe → wait 8s → ...
-
-// After: Parallel Promise.all
-const [globalRes, ...regionalResults] = await Promise.all([
-  fetch("/api/dynamic-factors"),
-  ...EVAL_REGIONS.map(r => fetch(`/api/regional-factors?region=${r.id}`))
-]);
+await Promise.all(["global", ...EVAL_REGIONS.map((r) => r.id)].map(async (id) => {
+  const url = id === "global" ? "/api/dynamic-factors" : `/api/regional-factors?region=${id}`;
+  const res = await fetch(withLang(url, language));
+  // Parse, check the effect is still active, then update only this scope.
+}));
 ```
 
 Each scope maintains its own `factorsLoaded` state, so the UI shows skeleton loaders per region and updates cards incrementally as responses arrive.
@@ -561,7 +580,7 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 - **Single-Source-of-Truth Live Flow** — `src/hook/useLiveMarket.ts` refreshes `liveQuotes` (price + source + asOf) on every fetch/poll, and the Hero "Market Snapshot" / live global feed renders those URL-sourced numbers (matching the Interactive price forecast cards) with no ad-hoc unit conversion.
 - **In-memory cache** (`lib/api/_shared/cache.ts`) — Per-instance cache with TTLs, optionally backed by Upstash Redis REST (`lib/api/_shared/redis.ts`, no SDK dependency) for cross-instance sharing
 - **Text utilities** (`lib/api/_shared/textUtils.ts`) — Shared `truncateAtWordBoundary` and `truncateAtSentenceBoundary` for word-safe truncation of factor explanations.
-- **i18n (English, Español, Tiếng Việt)** — Custom client-side i18n in `src/i18n/` (dictionaries, `LanguageContext`, region text localization, `withLang` URL helper). Web-searched content (factor explanations, solutions) is translated via the Kilo AI Gateway (`lib/api/_shared/translate.ts`) with a translation cache in the shared cache layer; API routes accept a `lang` query parameter (`en` | `es` | `vi`, default `en`) parsed by `lib/api/_shared/language.ts`. See [Languages](#-languages).
+- **i18n (English, Español, Tiếng Việt)** — Custom client-side i18n in `src/i18n/` (dictionaries, `LanguageContext`, region text localization, `withLang` URL helper). Web-searched content (factor names, categories, explanations and strategy titles/summaries/actions) is translated via the Kilo AI Gateway (`lib/api/_shared/translate.ts`) with a translation cache in the shared cache layer; API routes accept a `lang` query parameter (`en` | `es` | `vi`, default `en`) parsed by `lib/api/_shared/language.ts`. See [Languages](#-languages).
 
 ### Data & Models (`src/lib/`)
 - **Forecast Engine** (`model.ts`) — Client-side forecast computations, `FACTORS` / `REGIONAL_FACTORS` static fallbacks, commodity types, and scenario math
@@ -578,8 +597,9 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 
 ### Development & Build Tooling
 - **TypeScript Compiler (`tsc`)** — Strict type checking (`npm run typecheck` / `npm run build`)
+- **tsx 4.23.15 + Node test runner** — Reproducible unit and mocked handler integration tests via `npm test`
 - **PostCSS** — Tailwind CSS 4 processing pipeline
-- **Playwright 1.64.0** — End-to-end testing (`playwright` dev dependency)
+- **Playwright 1.64.0** — Desktop/mobile Chromium localization regression tests (`tests/e2e/localization.mjs`, `npm run test:e2e`)
 - **dotenv 18.0.7** — Local environment loading
 - **@vercel/sandbox 3.7.0** — Used in the standalone `sandbox-quickstart/` dev environment
 
@@ -592,140 +612,153 @@ The client only falls back to the static `FACTORS` / `REGIONAL_FACTORS` arrays d
 
 ## 📁 Project Structure
 
-```
-.
-├── AGENT_PROMPT.md                       # Agent instructions (if present)
-├── PRICES_PIPELINE_REPORT.md             # Pipeline documentation
-├── app/                                  # Next.js App Router (frontend + API)
-│   ├── api/                             # API route handlers (serverless functions)
-│   │   ├── ai-forecast/route.ts         # 11-year global forecast band
-│   │   ├── analytics/route.ts           # Global fuel/electricity/water indices
+Source inventory refreshed on 2026-11-28. Generated/ignored files (`node_modules/`, `.next/`, `next-env.d.ts`, `*.tsbuildinfo`, temporary browser binaries, and secrets) are intentionally omitted. `app/` holds Next.js pages and route adapters; `lib/api/` holds backend handlers/shared integrations; `src/` holds client components, contexts, i18n and forecasting math; `tests/e2e/` holds browser regressions.
+
+```text
+lobot-tecnoindicator-free/
+├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.md
+│   │   └── feature_request.md
+│   └── workflows/
+│       ├── nextjs.yml
+│       └── nodejs.yml
+├── app/
+│   ├── api/
+│   │   ├── ai-forecast/
+│   │   │   └── route.ts
+│   │   ├── analytics/
+│   │   │   └── route.ts
 │   │   ├── cron/
-│   │   │   └── curate-factors/route.ts  # Nightly AI factor re-curation (Vercel cron)
-│   │   ├── dynamic-factors/route.ts     # 8 curated global price factors
-│   │   ├── forecast/route.ts            # Public dashboard/BI forecast envelope (CORS/ETag/cache)
-│   │   ├── health/route.ts              # Gateway/key/cache status
-│   │   ├── prices/route.ts              # Live commodity spot prices via TinyFish search + batch scrape (ttl:0 for live fetches, maxDuration 120s)
-│   │   ├── rates/route.ts               # Exchange rates for currency conversion
-│   │   ├── regional-analytics/route.ts  # Regional fuel/electricity/water indices
-│   │   ├── regional-factors/route.ts    # 8 curated factors for a region
-│   │   ├── regional-forecast/route.ts   # 11-year region-specific forecast
-│   │   ├── solutions/route.ts           # Up to 3 AI-curated strategy recommendations
-│   │   └── telemetry/route.ts           # Client-side analytics ingestion
-│   ├── globals.css                      # Global styles + Tailwind CSS 4 imports + @custom-variant dark
-│   ├── layout.tsx                       # Root layout (providers, fonts, metadata, inline theme pre-hydration script)
-│   ├── page.tsx                         # Main single-page application entry
-│   ├── robots.ts                        # robots.txt generation
-│   └── sitemap.ts                       # sitemap.xml generation
-│
-├── lib/                                  # Backend API implementation layer
+│   │   │   └── curate-factors/
+│   │   │       └── route.ts
+│   │   ├── dynamic-factors/
+│   │   │   └── route.ts
+│   │   ├── forecast/
+│   │   │   └── route.ts
+│   │   ├── health/
+│   │   │   └── route.ts
+│   │   ├── prices/
+│   │   │   └── route.ts
+│   │   ├── rates/
+│   │   │   └── route.ts
+│   │   ├── regional-analytics/
+│   │   │   └── route.ts
+│   │   ├── regional-factors/
+│   │   │   └── route.ts
+│   │   ├── regional-forecast/
+│   │   │   └── route.ts
+│   │   ├── solutions/
+│   │   │   └── route.ts
+│   │   └── telemetry/
+│   │       └── route.ts
+│   ├── globals.css
+│   ├── layout.tsx
+│   ├── page.tsx
+│   ├── robots.ts
+│   └── sitemap.ts
+├── images/
+│   ├── LoBot-Trademark.png
+│   ├── lobotlogoonly.svg
+│   └── lobottecnoindicator.svg
+├── lib/
 │   └── api/
-│       ├── handlers/                    # Endpoint business logic
-│       │   ├── __tests__/
-│       │   │   ├── forecast.test.mjs    # Forecast envelope unit tests
-│       │   │   └── language.test.mjs    # `lang` parsing and translation tests
-│       │   ├── ai-forecast.ts           # Forecast band generation
-│       │   ├── analytics.ts             # Global indices computation
-│       │   ├── cron-curate-factors.ts   # Nightly curation job
-│       │   ├── dynamic-factors.ts       # Global factor curation
-│       │   ├── factor-analysis.ts       # Factor curation pipeline (TinyFish → Kilo → grounding → cache), including `sanitizeExplanation`, `sanitizeFactorTitle`, `deriveFactorNameFromExplanation`, `validateExplanationQuality`, `validateAndRepairWindow`, and deterministic fallback builders (`buildFactorsFromCandidates`, `clauseQualityCheck`)
-│       │   ├── forecast.ts                # Public /api/forecast envelope (bands/factors/sources/meta, CSV, ETag)
-│       │   ├── health.ts                # Health check implementation
-│       │   ├── prices.ts                # Live prices: TinyFish search + batch scrape (ttl:0, markdown format) + Kilo extraction + fallbacks
-│       │   ├── regional-analytics.ts    # Regional indices computation
-│       │   ├── regional-factors.ts      # Regional factor curation
-│       │   ├── regional-forecast.ts     # Regional forecast generation
-│       │   └── solutions.ts             # AI solution generation
-│       └── _shared/                     # Cross-cutting utilities
-│           ├── cache.ts                 # In-memory + optional Redis cache with TTLs
-│           ├── deterministicAnalytics.ts# Fuel/grid/water math + getScopePriceDefaults
-│           ├── http.ts                  # Constants, key utilities, shared HTTP helpers
-│           ├── kiloRouter.ts            # Kilo Gateway model routing
-│           ├── language.ts              # `lang` parsing (en|es|vi, default en) from query/body
-│           ├── redis.ts                 # Upstash Redis client (optional)
-│           ├── regions.ts               # Region definitions & metadata
-│           ├── textUtils.ts             # Word/sentence-boundary truncation utilities
-│           ├── translate.ts             # Best-effort Kilo Gateway translation of web-searched content (cached)
-│           ├── tinyfishRouter.ts        # TinyFish search (+ include_domains) + single/batch scrape routing
-│           ├── types.ts                 # Shared TypeScript interfaces
-│           └── validation.ts            # Request validation helpers
-│
-├── src/                                  # Frontend source code
-│   ├── components/                      # React UI components
-│   │   ├── AboutSection.tsx             # Project description & mission — includes "Web-grounded factor correlation" and "Reason–price correlation" methodology cards
-│   │   ├── CorrelationSection.tsx       # NEW factor×commodity correlation heatmap + per-region breakdown
-│   │   ├── CurrencySelector.tsx         # Multi-currency picker
-│   │   ├── FactorsSection.tsx           # 8 dynamic factors grid
-│   │   ├── Footer.tsx                   # Site footer
-│   │   ├── ForecastTool.tsx             # Main prediction UI (slider, cards, chart, table)
-│   │   ├── Hero.tsx                     # Landing hero with CTA
-│   │   ├── icons.tsx                    # Custom SVG icon components
-│   │   ├── Logo.tsx                     # Brand logo
-│   │   ├── MarketIndexStrip.tsx         # Live market ticker
-│   │   ├── Navbar.tsx                   # Top navigation + export menu
-│   │   ├── RegionalEvaluation.tsx       # Regional intelligence panel
-│   │   ├── Reveal.tsx                   # Scroll/fade animations
-│   │   ├── SettingsMenu.tsx             # Units, theme, currency preferences
-│   │   ├── SolutionsSection.tsx         # AI strategy recommendations
-│   │   ├── Ticker.tsx                   # Animated price ticker
-│   │   └── VercelAnalytics.tsx          # Analytics consent + init
-│   ├── context/                         # React Context providers
-│   │   ├── CurrencyContext.tsx          # Currency state & formatting
-│   │   ├── FontContext.tsx              # Font loading & selection
-│   │   ├── ThemeContext.tsx             # Light/dark/system color theme (persisted to localStorage `tecno.theme`)
-│   │   └── UnitContext.tsx              # Unit system (metric/imperial)
-│   ├── hook/                            # Custom React hooks
-│   │   ├── useFlash.ts                  # Toast/flash notifications
-│   │   └── useLiveMarket.ts             # Live market data polling
-│   ├── i18n/                            # Client i18n (English, Español, Tiếng Việt)
-│   │   ├── dictionaries.ts              # Language codes + UI string dictionaries
-│   │   ├── LanguageContext.tsx          # LanguageProvider / useLanguage (persisted to localStorage `tecno.language`)
-│   │   ├── regionText.ts                # localizeRegion — translated region names, blurbs and drivers
-│   │   └── withLang.ts                  # Appends `lang=` to API URLs
-│   ├── lib/                             # Frontend business logic
-│   │   ├── currencies.ts                # Currency codes, symbols, formatting
-│   │   ├── correlation.ts               # Pearson-r series builders + matrix computation (derivedDrift fix for TinyFish factors)
-│   │   ├── __tests__/                   # Correlation matrix pure-logic tests (15 tests, 6 suites; run via `npx tsx`)
-│   │   │   └── correlation.test.mjs
-│   │   ├── events.ts                    # Event bus for cross-component comms
-│   │   ├── fonts.ts                     # Font definitions & loading
-│   │   ├── markdown.ts                  # Markdown report generation
-│   │   ├── model.ts                     # Forecast engine + static FACTORS/REGIONAL_FACTORS
-│   │   ├── truncate.ts                  # Sentence-boundary truncation helper (truncateAtSentence)
-│   │   └── units.ts                     # Unit conversion & display
-│   └── utils/                           # Shared frontend utilities
-│       └── cn.ts                        # clsx + tailwind-merge helper
-│
-├── images/                              # Brand assets
-│   ├── lobotlogoonly.svg                # LoBot logo mark (SVG)
-│   ├── lobottecnoindicator.svg          # TecnoIndicator waveform mark (SVG)
-│   └── LoBot-Trademark.png              # LoBot brand wordmark (PNG)
-├── sandbox-quickstart/                  # Standalone dev sandbox (separate package.json)
+│       ├── _shared/
+│       │   ├── cache.ts
+│       │   ├── deterministicAnalytics.ts
+│       │   ├── http.ts
+│       │   ├── kiloRouter.ts
+│       │   ├── language.ts
+│       │   ├── redis.ts
+│       │   ├── regions.ts
+│       │   ├── textUtils.ts
+│       │   ├── tinyfishRouter.ts
+│       │   ├── translate.ts
+│       │   ├── types.ts
+│       │   └── validation.ts
+│       └── handlers/
+│           ├── __tests__/
+│           │   ├── forecast.test.mjs
+│           │   ├── language.test.mjs
+│           │   └── localization.test.mjs
+│           ├── ai-forecast.ts
+│           ├── analytics.ts
+│           ├── cron-curate-factors.ts
+│           ├── dynamic-factors.ts
+│           ├── factor-analysis.ts
+│           ├── forecast.ts
+│           ├── health.ts
+│           ├── prices.ts
+│           ├── regional-analytics.ts
+│           ├── regional-factors.ts
+│           ├── regional-forecast.ts
+│           └── solutions.ts
+├── sandbox-quickstart/
 │   ├── .gitignore
 │   ├── index.ts
 │   ├── package.json
 │   └── pnpm-lock.yaml
-│
-├── .env.example                         # Environment variable template
-├── .github/
-│   ├── ISSUE_TEMPLATE/
-│   │   ├── bug_report.md                # Bug report template
-│   │   └── feature_request.md           # Feature request template
-│   └── workflows/                       # CI/CD workflows
-│       ├── nextjs.yml
-│       └── nodejs.yml
+├── src/
+│   ├── components/
+│   │   ├── AboutSection.tsx
+│   │   ├── CorrelationSection.tsx
+│   │   ├── CurrencySelector.tsx
+│   │   ├── FactorsSection.tsx
+│   │   ├── Footer.tsx
+│   │   ├── ForecastTool.tsx
+│   │   ├── Hero.tsx
+│   │   ├── icons.tsx
+│   │   ├── Logo.tsx
+│   │   ├── MarketIndexStrip.tsx
+│   │   ├── Navbar.tsx
+│   │   ├── RegionalEvaluation.tsx
+│   │   ├── Reveal.tsx
+│   │   ├── SettingsMenu.tsx
+│   │   ├── SolutionsSection.tsx
+│   │   ├── Ticker.tsx
+│   │   └── VercelAnalytics.tsx
+│   ├── context/
+│   │   ├── CurrencyContext.tsx
+│   │   ├── FontContext.tsx
+│   │   ├── ThemeContext.tsx
+│   │   └── UnitContext.tsx
+│   ├── hook/
+│   │   ├── useFlash.ts
+│   │   └── useLiveMarket.ts
+│   ├── i18n/
+│   │   ├── dictionaries.ts
+│   │   ├── LanguageContext.tsx
+│   │   ├── regionText.ts
+│   │   └── withLang.ts
+│   ├── lib/
+│   │   ├── __tests__/
+│   │   │   └── correlation.test.mjs
+│   │   ├── correlation.ts
+│   │   ├── currencies.ts
+│   │   ├── events.ts
+│   │   ├── fonts.ts
+│   │   ├── markdown.ts
+│   │   ├── model.ts
+│   │   ├── truncate.ts
+│   │   └── units.ts
+│   └── utils/
+│       └── cn.ts
+├── tests/
+│   └── e2e/
+│       └── localization.mjs
+├── .env.example
 ├── .gitignore
-├── LICENSE                              # MIT License
-├── next.config.ts                       # Next.js configuration
-├── next-env.d.ts                        # Next.js TypeScript declarations
-├── package.json                         # Root dependencies & scripts
-├── package-lock.json                    # npm lockfile
-├── pnpm-lock.yaml                       # pnpm lockfile
-├── postcss.config.mjs                   # PostCSS + Tailwind CSS 4 config
-├── README.md                            # This file
-├── tsconfig.json                        # TypeScript configuration
-├── tsconfig.tsbuildinfo                 # TypeScript incremental build info
-└── vercel.json                          # Vercel deployment config (crons, headers)
+├── AGENT_PROMPT.md
+├── LICENSE
+├── next.config.ts
+├── package-lock.json
+├── package.json
+├── pnpm-lock.yaml
+├── postcss.config.mjs
+├── PRICES_PIPELINE_REPORT.md
+├── README.md
+├── tsconfig.json
+└── vercel.json
 ```
 
 ---

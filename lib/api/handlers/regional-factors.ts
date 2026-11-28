@@ -1,5 +1,5 @@
 import { languageFromRequest, type ApiLanguage } from "../_shared/language";
-import { translateStructured } from "../_shared/translate";
+import { FACTOR_TRANSLATION_KEYS, translateStructured } from "../_shared/translate";
 import {
   buildFallbackFactors,
   filterStaticFallbacks,
@@ -14,7 +14,11 @@ import { isRegion, type Region } from "../_shared/regions";
 import { sanitizeError } from "../_shared/validation";
 
 async function factorsResponse<T>(lang: ApiLanguage, payload: T, init: ResponseInit): Promise<Response> {
-  return Response.json(await translateStructured(payload, lang, ["explanation", "error"]), init);
+  try {
+    return Response.json(await translateStructured(payload, lang, FACTOR_TRANSLATION_KEYS, { required: true }), init);
+  } catch {
+    return Response.json({ factors: [], error: "translation_unavailable" }, { status: 503 });
+  }
 }
 
 /**
@@ -50,7 +54,7 @@ export async function handleRegionalFactors(req: Request): Promise<Response> {
     }
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 55000);
+    const timeoutId = setTimeout(() => abortController.abort(), 40000);
     try {
       const result = await runFactorAnalysis(region, { abortSignal: abortController.signal });
       const stored = await writeFactorWindow(region, result.factors, result.aiCurated);

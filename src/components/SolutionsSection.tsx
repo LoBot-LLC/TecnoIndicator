@@ -138,14 +138,14 @@ export default function SolutionsSection({
       let strategyActions: string[];
       
       const name = factor.name.toLowerCase();
-      const commodities = factor.commodities.join(", ");
+      const commodities = factor.commodities.map((id) => t(`regionalEvaluation.commodity.${id}`)).join(", ");
       if (index === 0) {
         // Strategic focus: Operational resilience
         strategyTitle = factor.direction === "up"
           ? t("solutionsSection.fallback.secureSupply", { name })
           : t("solutionsSection.fallback.optimizeEfficiency", { name });
         strategyActions = [
-          t("solutionsSection.fallback.diversify", { commodity: factor.commodities[0] }),
+          t("solutionsSection.fallback.diversify", { commodity: t(`regionalEvaluation.commodity.${factor.commodities[0] ?? "oil"}`) }),
           factor.magnitude === "High" ? t("solutionsSection.fallback.buffersHigh") : t("solutionsSection.fallback.buffersLow"),
           t("solutionsSection.fallback.monitorWeekly", { name }),
           factor.magnitude === "High" ? t("solutionsSection.fallback.protection") : t("solutionsSection.fallback.tiered"),

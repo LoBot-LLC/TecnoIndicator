@@ -5,8 +5,6 @@ import Reveal from "./Reveal";
 import {
   COMMODITIES,
   EVAL_REGIONS,
-  FACTORS,
-  REGIONAL_FACTORS,
   hexToRgba,
   type CommodityId,
   type Factor,
@@ -44,7 +42,7 @@ function factorPool(props: CorrelationSectionProps): Factor[] {
     const seen = new Set<string>();
     return fromState.filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)));
   }
-  return [...FACTORS, ...Object.values(REGIONAL_FACTORS).flat()];
+  return [];
 }
 
 export default function CorrelationSection(props: CorrelationSectionProps) {

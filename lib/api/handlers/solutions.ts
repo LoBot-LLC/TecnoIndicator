@@ -6,8 +6,8 @@ import { getCache, setCache } from "../_shared/cache";
 import { readFactorWindow } from "./factor-analysis";
 import { safeParseJson } from "../_shared/validation";
 import { isRegion, type Region } from "../_shared/regions";
-import { languageFromRequest } from "../_shared/language";
-import { translateStructured } from "../_shared/translate";
+import { LANGUAGE_NAMES, languageFromRequest } from "../_shared/language";
+import { SOLUTION_TRANSLATION_KEYS, TranslationError, translateStructured } from "../_shared/translate";
 import type { Factor, RegionId, Solution } from "../_shared/types";
 
 const EVIDENCE_CACHE_MS = 30_000;
@@ -296,7 +296,7 @@ export async function handleSolutions(req: Request): Promise<Response> {
   const regionParam = url.searchParams.get("region");
   const isGlobal = regionParam === null || regionParam === "";
   const scope: RegionId = isGlobal ? "global" : isValidRegionId(regionParam) ? regionParam : "global";
-  const cacheKey = `solutions:${lang}:${scope}`;
+  const cacheKey = `solutions:v2:${lang}:${scope}`;
 
   if (!force) {
     const cached = await getCache<CachedSolutions>(cacheKey, SOLUTIONS_CACHE_MS);
@@ -347,7 +347,7 @@ export async function handleSolutions(req: Request): Promise<Response> {
 
     const payload = {
       messages: [
-        { role: "system", content: SOLUTION_PROMPT },
+        { role: "system", content: `${SOLUTION_PROMPT}\nWrite all titles, summaries and actions in ${LANGUAGE_NAMES[lang]}, regardless of the language of the evidence. Keep IDs, enums, URLs and numbers unchanged.` },
         {
           role: "user",
           content: JSON.stringify({
@@ -382,7 +382,8 @@ export async function handleSolutions(req: Request): Promise<Response> {
     const solutions = await translateStructured(
       [...aiSolutions, ...fallback].slice(0, MAX_SOLUTIONS),
       lang,
-      ["title", "summary", "actions"],
+      SOLUTION_TRANSLATION_KEYS,
+      { required: true },
     );
 
     await setCache(cacheKey, { solutions, aiCurated } satisfies CachedSolutions, SOLUTIONS_CACHE_MS);
@@ -403,7 +404,15 @@ export async function handleSolutions(req: Request): Promise<Response> {
     );
   } catch (error) {
     console.error("Solutions error:", error);
-    const fallback = await translateStructured(buildFallbackSolutions(scope, analytics, factors), lang, ["title", "summary", "actions"]);
+    if (error instanceof TranslationError) {
+      return Response.json({ solutions: [], error: "translation_unavailable" }, { status: 503 });
+    }
+    let fallback: Solution[];
+    try {
+      fallback = await translateStructured(buildFallbackSolutions(scope, analytics, factors), lang, SOLUTION_TRANSLATION_KEYS, { required: true });
+    } catch {
+      return Response.json({ solutions: [], error: "translation_unavailable" }, { status: 503 });
+    }
     return Response.json(
       {
         solutions: fallback,

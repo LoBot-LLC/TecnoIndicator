@@ -17,7 +17,6 @@ import { withLang } from "@/i18n/withLang";
 import {
   EVAL_REGIONS,
   generateForecast,
-  REGIONAL_FACTORS,
   type Factor,
   type RegionId,
   type Solution,
@@ -97,14 +96,17 @@ export default function HomePage() {
     [scope, scopeFactors],
   );
 
-  // Initialize regional factors with static fallbacks
+  // Never keep another language's research visible while localization reloads.
   useEffect(() => {
-    const init: Record<string, Factor[]> = {};
-    for (const r of EVAL_REGIONS) {
-      init[r.id] = REGIONAL_FACTORS[r.id] ?? [];
-    }
-    setRegionalFactors(init);
-  }, []);
+    setGlobalFactors([]);
+    setGlobalFactorsLoaded(false);
+    setGlobalFactorsAiCurated(false);
+    setRegionalFactors({});
+    setRegionalFactorsLoaded({});
+    setRegionalFactorsAiCurated({});
+    setSolutions([]);
+    setAnalytics({});
+  }, [language]);
 
   // Poll health endpoint
   useEffect(() => {
@@ -163,41 +165,29 @@ export default function HomePage() {
   useEffect(() => {
     let active = true;
     const pollFactors = async () => {
-      // Fire all requests simultaneously: global + all regions
-      const globalPromise = fetch(withLang("/api/dynamic-factors", language));
-      const regionalPromises = EVAL_REGIONS.map((r) =>
-        fetch(withLang(`/api/regional-factors?region=${r.id}`, language)).then(async (res) => {
-          if (!res.ok) return { region: r.id, factors: null, aiCurated: false, error: "fetch failed" };
-          const data = await res.json();
-          return { region: r.id, factors: Array.isArray(data.factors) ? data.factors : null, aiCurated: !!data.aiCurated };
-        }).catch(() => ({ region: r.id, factors: null, aiCurated: false, error: "network error" }))
-      );
-
-      // Await all in parallel
-      const [globalRes, ...regionalResults] = await Promise.all([globalPromise, ...regionalPromises]);
-
-      if (!active) return;
-
-      // Process global response
-      if (globalRes.ok) {
-        const data = await globalRes.json();
-        if (Array.isArray(data.factors)) {
-          setGlobalFactors(data.factors);
-          setGlobalFactorsAiCurated(!!data.aiCurated);
+      await Promise.all(["global", ...EVAL_REGIONS.map((r) => r.id)].map(async (id) => {
+        let factors: Factor[] = [];
+        let aiCurated = false;
+        try {
+          const url = id === "global" ? "/api/dynamic-factors" : `/api/regional-factors?region=${id}`;
+          const res = await fetch(withLang(url, language));
+          if (res.ok) {
+            const data = await res.json();
+            factors = Array.isArray(data.factors) ? data.factors : [];
+            aiCurated = !!data.aiCurated;
+          }
+        } catch { /* Render the localized empty state, never foreign-language fallbacks. */ }
+        if (!active) return;
+        if (id === "global") {
+          setGlobalFactors(factors);
+          setGlobalFactorsAiCurated(aiCurated);
           setGlobalFactorsLoaded(true);
+        } else {
+          setRegionalFactors((prev) => ({ ...prev, [id]: factors }));
+          setRegionalFactorsAiCurated((prev) => ({ ...prev, [id]: aiCurated }));
+          setRegionalFactorsLoaded((prev) => ({ ...prev, [id]: true }));
         }
-      } else {
-        setGlobalFactorsLoaded(true); // mark loaded even on error to show empty state
-      }
-
-      // Process regional responses
-      for (const result of regionalResults) {
-        if (result.factors !== null) {
-          setRegionalFactors((prev) => ({ ...prev, [result.region]: result.factors }));
-          setRegionalFactorsAiCurated((prev) => ({ ...prev, [result.region]: result.aiCurated }));
-        }
-        setRegionalFactorsLoaded((prev) => ({ ...prev, [result.region]: true }));
-      }
+      }));
     };
     pollFactors();
     const id = setInterval(pollFactors, FACTORS_POLL_MS);
@@ -219,11 +209,14 @@ export default function HomePage() {
       const controller = new AbortController();
       solutionsAbortRef.current = controller;
       try {
-        const qs = force ? "?force=true" : "";
+        const qs = force ? "&force=true" : "";
         const res = await fetch(withLang(`/api/solutions?region=${scope}${qs}`, language), {
           signal: controller.signal,
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!controller.signal.aborted) setSolutions([]);
+          return;
+        }
         const data = (await res.json()) as { solutions?: Solution[] };
         if (controller.signal.aborted || !Array.isArray(data.solutions)) return;
         setSolutions(data.solutions);
@@ -370,8 +363,8 @@ export default function HomePage() {
             onRegion={setRegion}
             dynamicFactors={regionalFactors}
             healthStatus={healthStatus}
-            aiCurated={regionalFactorsAiCurated[scope] ?? false}
-            factorsLoaded={regionalFactorsLoaded[scope] ?? false}
+            aiCurated={regionalFactorsAiCurated[scope === "global" ? EVAL_REGIONS[0].id : scope] ?? false}
+            factorsLoaded={regionalFactorsLoaded[scope === "global" ? EVAL_REGIONS[0].id : scope] ?? false}
           />
           <AboutSection />
         </main>

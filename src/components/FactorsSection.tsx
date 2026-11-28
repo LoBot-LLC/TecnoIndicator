@@ -29,6 +29,16 @@ const MAGNITUDE_KEY: Record<Magnitude, TranslationKey> = {
   Low: "factors.magnitude.low",
 };
 
+const CATEGORY_KEY: Record<string, TranslationKey> = {
+  Market: "factors.category.Market",
+  Policy: "factors.category.Policy",
+  Structural: "factors.category.Structural",
+  Infrastructure: "factors.category.Infrastructure",
+  Environmental: "factors.category.Environmental",
+  Geopolitical: "factors.category.Geopolitical",
+  Technological: "factors.category.Technological",
+};
+
 const TREND_KEY: Record<string, TranslationKey> = {
   rising: "factors.trend.rising",
   fading: "factors.trend.fading",
@@ -96,7 +106,7 @@ function FactorCard({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-line bg-base/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-500">
-              {factor.category}
+              {t(CATEGORY_KEY[factor.category] ?? factor.category)}
             </span>
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${MAG_COLOR[factor.magnitude]}`}

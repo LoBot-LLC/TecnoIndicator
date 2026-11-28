@@ -1,4 +1,4 @@
-import { languageFromRequest } from "../_shared/language";
+import { languageFromRequest, languageInstruction } from "../_shared/language";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { getGlobalAnalytics } from "../_shared/deterministicAnalytics";
 import { FORECAST_CACHE_MS, factorCacheKey } from "../_shared/http";
@@ -45,18 +45,18 @@ export async function handleAiForecast(req: Request): Promise<Response> {
     }
 
     const analytics = await getGlobalAnalytics();
-    const factors: Factor[] = (await readFactorWindow("global"))?.factors ?? [];
+    const factors: Factor[] = (await readFactorWindow("global", lang))?.factors ?? [];
 
     const payload = {
       model: kiloStatus.activeModel ?? kiloStatus.zeroCostModels[0] ?? "kilo-auto/free",
       messages: [
-        { role: "system", content: SYSTEM_PROMPT_GLOBAL },
+        { role: "system", content: SYSTEM_PROMPT_GLOBAL + languageInstruction(lang) },
         {
           role: "user",
           content: JSON.stringify({
             analytics,
             factors,
-            factorsCacheKey: factorCacheKey("global"),
+            factorsCacheKey: factorCacheKey("global", lang),
             request: "Generate 11-year global forecast for oil, electricity, and water with avg/min/max bands.",
           }),
         },

@@ -4,7 +4,7 @@ export type { RegionId } from "./types";
 
 import type { RegionId } from "./types";
 
-export const KILO_GATEWAY_BASE_URL = "https://api.kilo.ai/api/gateway";
+export const KILO_GATEWAY_BASE_URL = "https://ai-gateway.kilo.ai/api/v1";
 export const KILO_GATEWAY_MODELS_URL = `${KILO_GATEWAY_BASE_URL}/models`;
 export const KILO_GATEWAY_CHAT_URL = `${KILO_GATEWAY_BASE_URL}/chat/completions`;
 export const DEFAULT_KILO_MODEL_ID = "kilo-auto/free";
@@ -15,6 +15,7 @@ export const KILO_KEY_ENV_NAMES = [
   "KILO_GATEWAY_KEY_3",
   "KILO_GATEWAY_KEY_4",
   "KILO_GATEWAY_KEY_5",
+  "KILO_GATEWAY_KEY_6",
   "KILO_GATEWAY_KEY",
 ] as const;
 
@@ -24,6 +25,9 @@ export const TINYFISH_KEY_ENV_NAMES = [
   "TINYFISH_KEY_3",
   "TINYFISH_KEY_4",
   "TINYFISH_KEY_5",
+  "TINYFISH_KEY_6",
+  "TINYFISH_KEY_7",
+  "TINYFISH_KEY_8",
 ] as const;
 
 export const FACTOR_COUNT = 8;
@@ -53,9 +57,18 @@ export const GLOBAL_RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000];
  * (solutions, forecasts) uses this scheme, so the reasons the UI shows are
  * exactly the reasons the solutions are generated from. `scope` is "global" or
  * a region id.
+ *
+ * When AI generation becomes language-aware, the factor window should be
+ * cached per language. `lang` is the user's chosen language code; the canonical
+ * English key (`dynamic-factors:{scope}`) is used when `lang` is omitted or is
+ * the default English value ("en"), keeping full backward compatibility with
+ * existing callers that do not pass a language.
+ *
+ * Convention: `en` (or omitted) -> `dynamic-factors:{scope}`; any other lang ->
+ * `dynamic-factors:{scope}:{lang}`.
  */
-export function factorCacheKey(scope: RegionId): string {
-  return `dynamic-factors:${scope}`;
+export function factorCacheKey(scope: RegionId, lang?: string): string {
+  return lang && lang !== "en" ? `dynamic-factors:${scope}:${lang}` : `dynamic-factors:${scope}`;
 }
 
 /** Canonical cache key for the analytics snapshot of a scope. */

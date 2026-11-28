@@ -1,4 +1,4 @@
-import { languageFromRequest } from "../_shared/language";
+import { languageFromRequest, languageInstruction } from "../_shared/language";
 import { kiloRouter } from "../_shared/kiloRouter";
 import { tinyfishRouter } from "../_shared/tinyfishRouter";
 import { REGION_NAMES, isRegion, type Region } from "../_shared/regions";
@@ -76,19 +76,19 @@ export async function handleRegionalForecast(req: Request): Promise<Response> {
     const search = await tinyfishRouter.tinyfishSearch(`${REGION_NAMES[region]} oil electricity water prices 2026`, {
       region,
     });
-    const regionalWindow = await readFactorWindow(region);
-    const factors: Factor[] = regionalWindow?.factors ?? (await readFactorWindow("global"))?.factors ?? [];
+    const regionalWindow = await readFactorWindow(region, lang);
+    const factors: Factor[] = regionalWindow?.factors ?? (await readFactorWindow("global", lang))?.factors ?? [];
 
     const payload = {
       model: kiloStatus.activeModel ?? kiloStatus.zeroCostModels[0] ?? "kilo-auto/free",
       messages: [
-        { role: "system", content: SYSTEM_PROMPT_REGIONAL(REGION_NAMES[region]) },
+        { role: "system", content: SYSTEM_PROMPT_REGIONAL(REGION_NAMES[region]) + languageInstruction(lang) },
         {
           role: "user",
           content: JSON.stringify({
             analytics,
             factors,
-            factorsCacheKey: factorCacheKey(region),
+            factorsCacheKey: factorCacheKey(region, lang),
             region,
             search: search.results?.map((r) => ({
               title: r.title,

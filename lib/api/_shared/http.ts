@@ -27,6 +27,7 @@ export const TINYFISH_KEY_ENV_NAMES = [
   "TINYFISH_KEY_5",
   "TINYFISH_KEY_6",
   "TINYFISH_KEY_7",
+  "TINYFISH_KEY_8",
 ] as const;
 
 export const FACTOR_COUNT = 8;

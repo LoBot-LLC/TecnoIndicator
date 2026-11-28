@@ -775,7 +775,7 @@ these as project environment variables.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `TINYFISH_KEY_1` … `TINYFISH_KEY_7` | Required | TinyFish search/fetch API keys used to gather and scrape market evidence. Without them the app still runs and serves deterministic fallback data. |
+| `TINYFISH_KEY_1` … `TINYFISH_KEY_8` | Required | TinyFish search/fetch API keys used to gather and scrape market evidence. Without them the app still runs and serves deterministic fallback data. |
 | `KILO_GATEWAY_KEY_1` … `KILO_GATEWAY_KEY_6` | Required | Kilo Gateway keys used for price extraction, factor curation, solution generation and forecasting. Also accepts bare `KILO_GATEWAY_KEY`. |
 | `FUEL_BASE_DIESEL_PRICE` | Optional | Override the base diesel price for fuel-levy calculations. |
 | `FUEL_FACTOR` | Optional | Override the fuel levy factor. |
